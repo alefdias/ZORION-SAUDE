@@ -1,0 +1,67 @@
+{
+  "name": "Entrada",
+  "type": "object",
+  "properties": {
+    "medicamento_id": {
+      "type": "string",
+      "description": "ID do medicamento"
+    },
+    "medicamento_nome": {
+      "type": "string",
+      "description": "Nome do medicamento"
+    },
+    "lote_id": {
+      "type": "string",
+      "description": "ID do lote"
+    },
+    "numero_lote": {
+      "type": "string",
+      "description": "N\u00famero do lote"
+    },
+    "data_validade": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de validade"
+    },
+    "data_entrada": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da entrada"
+    },
+    "quantidade": {
+      "type": "number",
+      "description": "Quantidade recebida"
+    },
+    "valor_unitario": {
+      "type": "number",
+      "description": "Valor unit\u00e1rio"
+    },
+    "valor_total": {
+      "type": "number",
+      "description": "Valor total da entrada"
+    },
+    "nota_fiscal": {
+      "type": "string",
+      "description": "N\u00famero da nota fiscal"
+    },
+    "fornecedor_id": {
+      "type": "string",
+      "description": "ID do fornecedor"
+    },
+    "fornecedor_nome": {
+      "type": "string",
+      "description": "Nome do fornecedor"
+    },
+    "observacao": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es"
+    }
+  },
+  "required": [
+    "medicamento_id",
+    "numero_lote",
+    "data_validade",
+    "quantidade",
+    "data_entrada"
+  ]
+}

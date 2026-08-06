@@ -1,0 +1,36 @@
+{
+  "name": "Medicamento",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string",
+      "description": "Nome comercial do medicamento"
+    },
+    "principio_ativo": {
+      "type": "string",
+      "description": "Princ\u00edpio ativo"
+    },
+    "categoria": {
+      "type": "string",
+      "description": "Categoria do medicamento"
+    },
+    "apresentacao": {
+      "type": "string",
+      "enum": [
+        "comprimido",
+        "capsula",
+        "xarope",
+        "injetavel",
+        "pomada",
+        "creme",
+        "gotas",
+        "spray",
+        "supositorio",
+        "outro"
+      ],
+      "description": "Forma de apresenta\u00e7\u00e3o"
+    },
+    "dosagem": {
+      "type": "string",
+      "description": "Dosagem (ex: 500mg, 10ml)"
+    },

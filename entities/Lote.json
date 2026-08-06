@@ -1,0 +1,36 @@
+{
+  "name": "Lote",
+  "type": "object",
+  "properties": {
+    "medicamento_id": {
+      "type": "string",
+      "description": "ID do medicamento"
+    },
+    "medicamento_nome": {
+      "type": "string",
+      "description": "Nome do medicamento (para facilitar consultas)"
+    },
+    "numero_lote": {
+      "type": "string",
+      "description": "N\u00famero do lote"
+    },
+    "data_validade": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de validade"
+    },
+    "quantidade_atual": {
+      "type": "number",
+      "default": 0,
+      "description": "Quantidade atual dispon\u00edvel neste lote"
+    },
+    "quantidade_inicial": {
+      "type": "number",
+      "description": "Quantidade inicial recebida"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "disponivel",
+        "vencido",
+        "esgotado"

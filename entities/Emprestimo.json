@@ -1,0 +1,68 @@
+{
+  "name": "Emprestimo",
+  "type": "object",
+  "properties": {
+    "medicamento_id": {
+      "type": "string",
+      "description": "ID do medicamento"
+    },
+    "medicamento_nome": {
+      "type": "string",
+      "description": "Nome do medicamento"
+    },
+    "lote_id": {
+      "type": "string",
+      "description": "ID do lote"
+    },
+    "numero_lote": {
+      "type": "string",
+      "description": "N\u00famero do lote"
+    },
+    "quantidade": {
+      "type": "number",
+      "description": "Quantidade emprestada"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "emprestar",
+        "emprestado"
+      ],
+      "description": "emprestar = farm\u00e1cia emprestou para algu\u00e9m | emprestado = farm\u00e1cia pegou emprestado"
+    },
+    "local": {
+      "type": "string",
+      "description": "Nome do local/farm\u00e1cia destino ou origem"
+    },
+    "data_emprestimo": {
+      "type": "string",
+      "format": "date",
+      "description": "Data do empr\u00e9stimo"
+    },
+    "data_devolucao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de devolu\u00e7\u00e3o (se j\u00e1 devolvido)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pendente",
+        "devolvido"
+      ],
+      "default": "pendente"
+    },
+    "observacao": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es"
+    }
+  },
+  "required": [
+    "medicamento_id",
+    "lote_id",
+    "quantidade",
+    "tipo",
+    "local",
+    "data_emprestimo"
+  ]
+}

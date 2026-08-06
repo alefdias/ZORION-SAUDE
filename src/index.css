@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dynamic Theme Scale (Default: Azul Oceano) */
+    --theme-50: #eff6ff;
+    --theme-100: #dbeafe;
+    --theme-200: #bfdbfe;
+    --theme-300: #93c5fd;
+    --theme-400: #60a5fa;
+    --theme-500: #3b82f6;
+    --theme-600: #2563eb;
+    --theme-700: #1d4ed8;
+    --theme-800: #1e40af;
+    --theme-900: #1e3a8a;
+    --theme-950: #172554;
+
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .theme-verde {
+    --theme-50: #f0fdf4;
+    --theme-100: #dcfce7;
+    --theme-200: #bbf7d0;
+    --theme-300: #86efac;
+    --theme-400: #4ade80;
+    --theme-500: #22c55e;
+    --theme-600: #16a34a;
+    --theme-700: #15803d;
+    --theme-800: #166534;
+    --theme-900: #14532d;
+    --theme-950: #052e16;
+  }
+
+  .theme-roxo {
+    --theme-50: #faf5ff;
+    --theme-100: #f3e8ff;
+    --theme-200: #e9d5ff;
+    --theme-300: #d8b4fe;
+    --theme-400: #c084fc;
+    --theme-500: #a855f7;
+    --theme-600: #9333ea;
+    --theme-700: #7e22ce;
+    --theme-800: #6b21a8;
+    --theme-900: #581c87;
+    --theme-950: #3b0764;
+  }
+
+  .theme-ardosia {
+    --theme-50: #f8fafc;
+    --theme-100: #f1f5f9;
+    --theme-200: #e2e8f0;
+    --theme-300: #cbd5e1;
+    --theme-400: #94a3b8;
+    --theme-500: #64748b;
+    --theme-600: #475569;
+    --theme-700: #334155;
+    --theme-800: #1e293b;
+    --theme-900: #0f172a;
+    --theme-950: #020617;
+  }
+
+  .theme-rosa {
+    --theme-50: #fdf2f8;
+    --theme-100: #fce7f3;
+    --theme-200: #fbcfe8;
+    --theme-300: #f9a8d4;
+    --theme-400: #f472b6;
+    --theme-500: #ec4899;
+    --theme-600: #db2777;
+    --theme-700: #be185d;
+    --theme-800: #9d174d;
+    --theme-900: #831843;
+    --theme-950: #500724;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-variant-numeric: normal;
+    font-feature-settings: "zero" 0;
+  }
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: auto;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  aside, nav, header, .print\:hidden {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
