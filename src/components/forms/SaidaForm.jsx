@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { AlertTriangle, PackageMinus } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { db } from "@/api/db";
 
 const getLocalDateString = () => {
     const d = new Date();
@@ -33,6 +35,11 @@ const emptyForm = {
 
 export default function SaidaForm({ open, onClose, onSave, initialData = null, medicamentos = [], lotes = [], alas = [], isLoading }) {
     const [form, setForm] = useState(emptyForm);
+
+    const { data: pacientes = [] } = useQuery({
+        queryKey: ['pacientes'],
+        queryFn: () => db.entities.Paciente.list(),
+    });
 
     useEffect(() => {
         if (open) {
@@ -81,11 +88,11 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
 
     const handleAla = (id) => {
         if (id === "__none__") {
-            setForm((prev) => ({ ...prev, ala_id: "", ala_nome: "" }));
+            setForm((prev) => ({ ...prev, ala_id: "", ala_nome: "", paciente_nome: "" }));
             return;
         }
         const ala = alas.find((a) => a.id === id);
-        setForm((prev) => ({ ...prev, ala_id: id, ala_nome: ala?.nome || "" }));
+        setForm((prev) => ({ ...prev, ala_id: id, ala_nome: ala?.nome || "", paciente_nome: "" }));
     };
 
     const handleSubmit = (e) => {
@@ -264,13 +271,38 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
                                 <span className="text-slate-400 text-xs ml-1">(Opcional)</span>
                             )}
                         </Label>
-                        <Input
-                            id="paciente_nome"
-                            placeholder="Nome completo do paciente recebedor/destinatário"
-                            value={form.paciente_nome || ""}
-                            onChange={handleChange("paciente_nome")}
-                            className={(isPsicotropico(selectedMed?.categoria) || isMav(selectedMed?.nome)) && !form.paciente_nome ? "border-amber-300 focus-visible:ring-amber-300" : ""}
-                        />
+                        
+                        {form.ala_id ? (
+                            <Select 
+                                value={form.paciente_nome} 
+                                onValueChange={(val) => setForm(prev => ({ ...prev, paciente_nome: val === "__nenhum__" ? "" : val }))}
+                            >
+                                <SelectTrigger className={(isPsicotropico(selectedMed?.categoria) || isMav(selectedMed?.nome)) && !form.paciente_nome ? "border-amber-300 focus-visible:ring-amber-300" : ""}>
+                                    <SelectValue placeholder="Selecione um paciente da ala..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__nenhum__">— Não especificado —</SelectItem>
+                                    {pacientes
+                                        .filter(p => p.alaId === form.ala_id || p.alaNome === form.ala_nome)
+                                        .filter(p => p.status === "Ativo")
+                                        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
+                                        .map(p => (
+                                            <SelectItem key={p.id} value={p.nome}>
+                                                {p.nome} (Prontuário: {p.prontuario})
+                                            </SelectItem>
+                                        ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <Input
+                                id="paciente_nome"
+                                placeholder="Nome completo do paciente recebedor/destinatário"
+                                value={form.paciente_nome === "__nenhum__" ? "" : (form.paciente_nome || "")}
+                                onChange={handleChange("paciente_nome")}
+                                className={(isPsicotropico(selectedMed?.categoria) || isMav(selectedMed?.nome)) && !form.paciente_nome ? "border-amber-300 focus-visible:ring-amber-300" : ""}
+                            />
+                        )}
+                        
                         {(isPsicotropico(selectedMed?.categoria) || isMav(selectedMed?.nome)) && (
                             <p className="text-xs text-amber-600 mt-1 font-medium">
                                 Recomendado para medicamentos de controle especial ou alta vigilância (MAV).

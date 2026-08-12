@@ -91,13 +91,14 @@ export default function SateliteEstoque() {
 
   const handleExportCSV = () => {
     try {
-      const headers = ["Código", "Medicamento", "Dosagem", "Apresentação", "Estoque Satélite", "Padronizado"];
+      const headers = ["Código", "Medicamento", "Dosagem", "Apresentação", "Estoque Satélite", "Estoque Central", "Padronizado"];
       const rows = filteredEstoque.map(med => [
         med.codigo || "S/C",
         med.nome,
         med.unidade_medida || "-",
         med.apresentacao || "-",
         med.estoque_satelite || 0,
+        med.estoque_atual || 0,
         med.padronizado !== false ? "Sim" : "Não"
       ]);
 
@@ -179,10 +180,16 @@ export default function SateliteEstoque() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Estoque Satélite</p>
-                    <p className={cn("text-lg font-bold", med.temAlerta ? "text-amber-600" : "text-indigo-600 dark:text-indigo-400")}>
+                <div className="flex items-center gap-6">
+                  <div className="text-right border-r border-slate-200 dark:border-slate-700 pr-6">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 mb-0.5">Estoque Central</p>
+                    <p className="text-base font-bold text-slate-600 dark:text-slate-300">
+                      {med.estoque_atual || 0}
+                    </p>
+                  </div>
+                  <div className="text-right min-w-[100px]">
+                    <p className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Estoque Satélite</p>
+                    <p className={cn("text-xl font-black", med.temAlerta ? "text-amber-600" : "text-indigo-600 dark:text-indigo-400")}>
                       {med.estoque_satelite || 0}
                     </p>
                   </div>

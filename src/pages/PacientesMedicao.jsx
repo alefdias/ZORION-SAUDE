@@ -38,7 +38,8 @@ import {
   Power,
   Eye,
   FileText,
-  LogOut
+  LogOut,
+  Undo2
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -76,6 +77,7 @@ export default function PacientesMedicao() {
   const [reportSubTab, setReportSubTab] = useState("consolidado");
   const [periodoDias, setPeriodoDias] = useState(1);
   const [searchPatient, setSearchPatient] = useState("");
+  const [filterAla, setFilterAla] = useState("all");
   const [searchPrescription, setSearchPrescription] = useState("");
 
   // Modais State
@@ -120,12 +122,20 @@ export default function PacientesMedicao() {
   const [altaTipo, setAltaTipo] = useState("Alta Médica");
   const [altaDiasMedicao, setAltaDiasMedicao] = useState(0);
   const [altaReportData, setAltaReportData] = useState(null);
+  const [altaDevolucoes, setAltaDevolucoes] = useState({}); // { [prescId]: { qtd: number, motivo: string } }
 
   // Estados de Exclusão Auditada com Motivo & Pacientes de Alta
   const [deleteLogModalOpen, setDeleteLogModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'paciente' | 'prescricao', id: string, name: string }
   const [deleteReason, setDeleteReason] = useState("");
   const [searchAltaPatient, setSearchAltaPatient] = useState("");
+
+  // Estados de Devolução
+  const [devolucaoModalOpen, setDevolucaoModalOpen] = useState(false);
+  const [devolucaoPresc, setDevolucaoPresc] = useState(null);
+  const [devolucaoQtd, setDevolucaoQtd] = useState("");
+  const [devolucaoTipo, setDevolucaoTipo] = useState("Alta a Pedido");
+  const [devolucaoMotivo, setDevolucaoMotivo] = useState("");
 
   // Queries
   const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
@@ -435,11 +445,14 @@ export default function PacientesMedicao() {
       const nowStr = new Date().toISOString();
       const todayDateStr = getLocalDateString();
 
+      const firstMed = medicamentos.length > 0 ? medicamentos[0] : null;
+      const firstLote = lotes.length > 0 ? lotes[0] : null;
+
       // 1. Gravar Registro de LOG de Auditoria nas Saídas/Histórico
       await db.entities.Saida.create({
-        medicamento_id: id || "LOG-MED",
+        medicamento_id: type === 'paciente' ? (firstMed ? firstMed.id : null) : id,
         medicamento_nome: `[LOG EXCLUSÃO] ${type === 'paciente' ? 'Paciente' : 'Prescrição'}: ${name}`,
-        lote_id: "LOG-AUDITORIA",
+        lote_id: firstLote ? firstLote.id : null,
         numero_lote: "AUDITORIA",
         quantidade: 0,
         destino: "Auditoria de Logs",
@@ -474,9 +487,61 @@ export default function PacientesMedicao() {
     }
   });
 
+  // Mutation de Devolução
+  const efetuarDevolucaoMutation = useMutation({
+    mutationFn: async ({ presc, qtd, tipo, motivo }) => {
+      const nowStr = new Date().toISOString();
+      const todayDateStr = getLocalDateString();
+      
+      const med = medicamentos.find(m => m.id === (presc.medicamentoId || presc.medicamento_id));
+      if (!med) throw new Error("Medicamento não encontrado.");
+      
+      const pac = pacientes.find(p => p.id === (presc.pacienteId || presc.paciente_id));
+
+      // Atualiza Estoque Satélite
+      const newSatelite = (med.estoque_satelite || 0) + parseInt(qtd, 10);
+      await db.entities.Medicamento.update(med.id, {
+        estoque_satelite: newSatelite
+      });
+
+      const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
+      
+      // Cria Entrada para constar no Livro Portaria e relatórios
+      await db.entities.Entrada.create({
+        medicamento_id: med.id,
+        medicamento_nome: med.nome,
+        fornecedor_nome: (pac ? `Devolução Paciente: ${pac.nome}` : "Devolução") + ` - ${tipo} ${motivo ? '('+motivo+')' : ''}`,
+        lote_id: loteDoMed ? loteDoMed.id : null,
+        numero_lote: loteDoMed ? loteDoMed.numero_lote : "DEVOLVIDO",
+        quantidade: parseInt(qtd, 10),
+        data_entrada: todayDateStr,
+        created_at: nowStr
+      });
+
+      // Altera status da prescrição
+      await db.entities.PrescricaoPaciente.update(presc.id, {
+        status: "Devolvida",
+        observacoes: (presc.observacoes || "") + ` [Devolução de ${qtd}un: ${tipo}${motivo ? " - " + motivo : ""}]`
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['entradas'] });
+      setDevolucaoModalOpen(false);
+      setDevolucaoPresc(null);
+      setDevolucaoQtd("");
+      setDevolucaoMotivo("");
+      toast.success("Medicação devolvida! Estoque Satélite atualizado.");
+    },
+    onError: (err) => {
+      toast.error("Erro ao devolver medicação: " + (err.message || err));
+    }
+  });
+
   // Mutation para Dar Alta ao Paciente
   const darAltaPacienteMutation = useMutation({
-    mutationFn: async ({ pacienteId, tipo, dias }) => {
+    mutationFn: async ({ pacienteId, tipo, dias, devolucoes }) => {
       const pac = pacientes.find(p => p.id === pacienteId);
       if (!pac) return null;
 
@@ -485,10 +550,7 @@ export default function PacientesMedicao() {
 
       // 1. Alterar status do paciente para Alta
       await db.entities.Paciente.update(pacienteId, {
-        status: "Alta",
-        dataAlta: nowStr,
-        tipoAlta: tipo,
-        diasMedicaoAlta: dias
+        status: "Alta"
       });
 
       // 2. Coletar e Suspender todas as prescrições do paciente
@@ -506,7 +568,7 @@ export default function PacientesMedicao() {
           const totalDiario = d08 + d14 + d22 + d06;
           
           if (totalDiario > 0) {
-            const med = medicamentos.find(m => m.id === pr.medicamentoId);
+            const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
             relatorioAlta.push({
               medNome: med ? med.nome : pr.medicamentoNome,
               posologia: `${d08}-${d14}-${d22}-${d06}`,
@@ -515,17 +577,50 @@ export default function PacientesMedicao() {
           }
         }
 
+        // Lógica de Devolução Automática (se houver devolucoes informadas)
+        let extraObs = "";
+        const devInfo = devolucoes && devolucoes[pr.id];
+        if (devInfo && parseInt(devInfo.qtd, 10) > 0) {
+          const devQtd = parseInt(devInfo.qtd, 10);
+          const devMotivo = devInfo.motivo || "";
+          const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+          
+          if (med) {
+             // Atualizar estoque satélite
+             await db.entities.Medicamento.update(med.id, {
+                estoque_satelite: (med.estoque_satelite || 0) + devQtd
+             });
+             const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
+             
+             // Criar Entrada no DB
+             await db.entities.Entrada.create({
+                medicamento_id: med.id,
+                medicamento_nome: med.nome,
+                fornecedor_nome: `Devolução Alta Paciente: ${pac.nome} - ${tipo} ${devMotivo ? '('+devMotivo+')' : ''}`,
+                lote_id: loteDoMed ? loteDoMed.id : null,
+                numero_lote: loteDoMed ? loteDoMed.numero_lote : "DEVOLVIDO",
+                quantidade: devQtd,
+                data_entrada: todayDateStr,
+                created_at: nowStr
+             });
+             extraObs = ` [Devolução de ${devQtd}un: ${devMotivo || 'Alta'}]`;
+          }
+        }
+
         await db.entities.PrescricaoPaciente.update(pr.id, {
-          status: "Suspensa",
-          observacoes: (pr.observacoes || "") + ` [Suspensa por ${tipo.toUpperCase()}]`
+          status: devInfo && parseInt(devInfo.qtd, 10) > 0 ? "Devolvida" : "Suspensa",
+          observacoes: (pr.observacoes || "") + ` [Suspensa por ${tipo.toUpperCase()}]${extraObs}`
         });
       }
 
       // 3. Registrar Log Auditado de Alta
+      const firstMed = medicamentos.length > 0 ? medicamentos[0] : null;
+      const firstLote = lotes.length > 0 ? lotes[0] : null;
+
       await db.entities.Saida.create({
-        medicamento_id: pacienteId || "LOG-PAC",
+        medicamento_id: firstMed ? firstMed.id : null,
         medicamento_nome: `[LOG ALTA] Paciente: ${pac.nome}`,
-        lote_id: "LOG-ALTA",
+        lote_id: firstLote ? firstLote.id : null,
         numero_lote: "ALTA",
         quantidade: 0,
         destino: "Histórico de Altas",
@@ -559,13 +654,12 @@ export default function PacientesMedicao() {
   const reativarPacienteMutation = useMutation({
     mutationFn: async (pacienteId) => {
       await db.entities.Paciente.update(pacienteId, {
-        status: "Ativo",
-        dataAlta: null
+        status: "Ativo"
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
-      toast.success("Paciente reativado na internação com sucesso!");
+      toast.success("Paciente reativado! Os remédios antigos estão no histórico. Lembre-se de cadastrar as novas medicações.");
     }
   });
 
@@ -765,13 +859,17 @@ export default function PacientesMedicao() {
 
   const filteredPatients = useMemo(() => {
     const search = searchPatient.toLowerCase();
-    return activePatients.filter(p => 
-      p.nome?.toLowerCase().includes(search) ||
-      p.prontuario?.toLowerCase().includes(search) ||
-      p.leito?.toLowerCase().includes(search) ||
-      p.alaNome?.toLowerCase().includes(search)
-    );
-  }, [activePatients, searchPatient]);
+    return activePatients.filter(p => {
+      const matchSearch = p.nome?.toLowerCase().includes(search) ||
+        p.prontuario?.toLowerCase().includes(search) ||
+        p.leito?.toLowerCase().includes(search) ||
+        p.alaNome?.toLowerCase().includes(search);
+        
+      const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
+      
+      return matchSearch && matchAla;
+    });
+  }, [activePatients, searchPatient, filterAla]);
 
   const filteredAltaPatients = useMemo(() => {
     const search = searchAltaPatient.toLowerCase();
@@ -873,14 +971,29 @@ export default function PacientesMedicao() {
           )}
 
           <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                placeholder="Buscar paciente por nome, prontuário, ala ou leito..."
-                value={searchPatient}
-                onChange={(e) => setSearchPatient(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex flex-col md:flex-row gap-4 items-center w-full">
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Input
+                  placeholder="Buscar paciente por nome, prontuário, ala ou leito..."
+                  value={searchPatient}
+                  onChange={(e) => setSearchPatient(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="w-full md:w-[250px]">
+                <Select value={filterAla} onValueChange={setFilterAla}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filtrar por Ala..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as Alas</SelectItem>
+                    {alas.map(a => (
+                      <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </Card>
 
@@ -1459,92 +1572,112 @@ export default function PacientesMedicao() {
 
       {/* ─── MODAL: DETALHES & PRESCRIÇÕES COMPLETAS DO PACIENTE ─────────── */}
       <Dialog open={!!viewPatientDetails} onOpenChange={(open) => !open && setViewPatientDetails(null)}>
-        <DialogContent className="sm:max-w-[850px] max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xl shadow-sm">
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto p-0 border-0 shadow-2xl rounded-2xl bg-white dark:bg-slate-900">
+          <div className="bg-gradient-to-r from-slate-100 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/30 ring-4 ring-white dark:ring-slate-900">
                   {viewPatientDetails?.nome?.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <DialogTitle className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
                     {viewPatientDetails?.nome}
-                    <Badge variant={viewPatientDetails?.status === "Ativo" ? "default" : "secondary"} className={viewPatientDetails?.status === "Ativo" ? "bg-emerald-600" : ""}>
+                    <Badge variant="outline" className={cn(
+                      "px-2.5 py-0.5 border-2 uppercase tracking-wider text-[10px]",
+                      viewPatientDetails?.status === "Ativo" 
+                        ? "border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10" 
+                        : "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-500/10"
+                    )}>
                       {viewPatientDetails?.status || "Ativo"}
                     </Badge>
                   </DialogTitle>
-                  <p className="text-xs text-slate-500 font-mono mt-0.5">
-                    Prontuário: <span className="font-bold text-slate-700 dark:text-slate-300">{viewPatientDetails?.prontuario}</span> • Setor: <span className="font-bold text-slate-700 dark:text-slate-300">{viewPatientDetails?.alaNome || "Não informado"}</span> • Leito: <span className="font-bold text-slate-700 dark:text-slate-300">{viewPatientDetails?.leito || "S/L"}</span>
-                  </p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium">
+                    <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono text-slate-800 dark:text-slate-200">
+                      <FileText className="w-3.5 h-3.5 text-blue-500" />
+                      PRONT: {viewPatientDetails?.prontuario}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                      Setor: <strong className="text-slate-800 dark:text-slate-200">{viewPatientDetails?.alaNome || "Não informado"}</strong>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Bed className="w-3.5 h-3.5 text-slate-400" />
+                      Leito: <strong className="text-slate-800 dark:text-slate-200">{viewPatientDetails?.leito || "S/L"}</strong>
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mt-4 sm:mt-0">
                 <Button 
                   size="sm" 
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-sm"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-md hover:shadow-lg transition-all rounded-full px-5 font-bold"
                   onClick={() => handleOpenNewPresc(viewPatientDetails?.id)}
                 >
                   <Plus className="w-4 h-4" />
-                  Nova Medicação Fixa
+                  Nova Prescrição
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
+                  className="rounded-full w-9 h-9 p-0 border-slate-200 text-slate-600 hover:bg-slate-100"
                   onClick={() => handleOpenEditPatient(viewPatientDetails)}
                   title="Editar dados cadastrais do paciente"
                 >
-                  <Pencil className="w-4 h-4 text-slate-600" />
+                  <Pencil className="w-4 h-4" />
                 </Button>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
-          <div className="space-y-4 py-3">
+          <div className="space-y-6 p-6 pt-2">
             {viewPatientDetails?.observacoes && (
-              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 p-3 rounded-lg flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-300">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-900/30 border border-amber-200 dark:border-amber-800 p-4 rounded-xl flex items-start gap-3 shadow-sm animate-in fade-in">
+                <div className="bg-amber-100 dark:bg-amber-900 p-2 rounded-full shrink-0 animate-pulse">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
                 <div>
-                  <strong className="font-bold block">Observações / Alergias Clínicas:</strong>
-                  <span>{viewPatientDetails.observacoes}</span>
+                  <strong className="font-black text-amber-900 dark:text-amber-300 block text-sm">Alergias e Observações Clínicas Relevantes</strong>
+                  <span className="text-amber-800/90 dark:text-amber-400/90 text-sm mt-0.5 block leading-relaxed">{viewPatientDetails.observacoes}</span>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <Pill className="w-4 h-4 text-blue-600" />
-                Prescrições e Horários Fixos do Paciente
+            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+              <h4 className="text-base font-black text-slate-800 dark:text-slate-200 flex items-center gap-2 uppercase tracking-wide">
+                <div className="w-1.5 h-5 bg-blue-500 rounded-full"></div>
+                Prescrições Ativas e Histórico
               </h4>
-              <span className="text-xs text-slate-500 font-mono">
-                {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).length} medicação(ões) cadastrada(s)
-              </span>
+              <Badge variant="secondary" className="bg-white dark:bg-slate-900 border border-slate-200 shadow-sm font-mono text-blue-600">
+                {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).length} itens
+              </Badge>
             </div>
 
             {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).length === 0 ? (
-              <div className="text-center py-10 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
-                <Pill className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 font-medium">Nenhuma medicação prescrita para este paciente.</p>
+              <div className="text-center py-16 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/50 transition-all hover:bg-slate-50">
+                <div className="bg-white p-4 rounded-full inline-block shadow-sm mb-3">
+                  <Pill className="w-8 h-8 text-blue-300" />
+                </div>
+                <p className="text-base text-slate-500 font-bold">Prontuário limpo.</p>
+                <p className="text-sm text-slate-400 mb-4">Nenhuma medicação prescrita para este paciente ainda.</p>
                 <Button 
                   onClick={() => handleOpenNewPresc(viewPatientDetails?.id)} 
-                  variant="outline" 
-                  size="sm" 
-                  className="mt-3 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 shadow-md hover:shadow-lg transition-all"
                 >
-                  <Plus className="w-4 h-4 mr-1.5" />
+                  <Plus className="w-4 h-4 mr-2" />
                   Prescrever Primeira Medicação
                 </Button>
               </div>
             ) : (
-              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
                 <Table>
-                  <TableHeader className="bg-slate-100 dark:bg-slate-800">
-                    <TableRow>
-                      <TableHead>Medicamento / Apresentação</TableHead>
-                      <TableHead className="text-center">Grade Posológica (08h - 14h - 22h - 06h)</TableHead>
-                      <TableHead className="text-center">Dose Diária</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
+                  <TableHeader className="bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-200">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="font-bold text-slate-700">Medicamento</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700">Grade Posológica</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700">Dose/Dia</TableHead>
+                      <TableHead className="text-center font-bold text-slate-700">Status</TableHead>
+                      <TableHead className="text-right font-bold text-slate-700 pr-6">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1553,84 +1686,123 @@ export default function PacientesMedicao() {
                       const d14 = getDoseForHora(pr.horarios, "14:00");
                       const d22 = getDoseForHora(pr.horarios, "22:00");
                       const d06 = getDoseForHora(pr.horarios, "06:00");
+                      const isSuspensa = pr.status === "Suspensa" || pr.status === "Devolvida";
 
                       return (
-                        <TableRow key={pr.id} className={cn("hover:bg-slate-50/80 dark:hover:bg-slate-800/50", pr.status === "Suspensa" && "opacity-60 bg-slate-50/50")}>
-                          <TableCell>
+                        <TableRow 
+                          key={pr.id} 
+                          className={cn(
+                            "transition-all duration-300 border-b border-slate-100",
+                            isSuspensa 
+                              ? "bg-slate-50/60 dark:bg-slate-900/40 opacity-70 grayscale-[0.2]" 
+                              : "bg-white dark:bg-slate-900 border-l-4 border-l-emerald-500 hover:bg-slate-50 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.05)]"
+                          )}
+                        >
+                          <TableCell className="py-4">
                             <div>
-                              <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <p className={cn(
+                                "font-black flex items-center gap-2",
+                                isSuspensa ? "text-slate-600 line-through decoration-slate-300" : "text-slate-900 dark:text-slate-100"
+                              )}>
                                 {pr.medicamentoNome}
                                 {pr.is_mav && (
-                                  <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 px-1 py-0">
+                                  <Badge variant="outline" className="text-[9px] font-black bg-red-100 text-red-700 border-red-300 px-1.5 py-0 rounded-sm uppercase">
                                     MAV
                                   </Badge>
                                 )}
                               </p>
-                              <p className="text-xs text-slate-500 font-mono">
-                                Código: {pr.medicamentoCodigo || "N/A"} • Dosagem: {pr.dosagem || pr.apresentacao || "-"}
+                              <p className="text-xs text-slate-500 font-medium mt-1">
+                                {pr.apresentacao && <span className="mr-2 text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{pr.apresentacao}</span>}
+                                <span>Cod: {pr.medicamentoCodigo || "N/A"}</span>
                               </p>
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-center">
-                            <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-mono">
-                              <span className={cn("px-1.5 py-0.5 rounded font-bold", d08 > 0 ? "bg-blue-600 text-white" : "text-slate-400")}>08h: {d08}</span>
-                              <span className="text-slate-300 dark:text-slate-600">•</span>
-                              <span className={cn("px-1.5 py-0.5 rounded font-bold", d14 > 0 ? "bg-amber-600 text-white" : "text-slate-400")}>14h: {d14}</span>
-                              <span className="text-slate-300 dark:text-slate-600">•</span>
-                              <span className={cn("px-1.5 py-0.5 rounded font-bold", d22 > 0 ? "bg-purple-600 text-white" : "text-slate-400")}>22h: {d22}</span>
-                              <span className="text-slate-300 dark:text-slate-600">•</span>
-                              <span className={cn("px-1.5 py-0.5 rounded font-bold", d06 > 0 ? "bg-indigo-600 text-white" : "text-slate-400")}>06h: {d06}</span>
+                          <TableCell className="text-center py-4">
+                            <div className={cn(
+                              "inline-flex items-center gap-1.5 p-1.5 rounded-xl border font-mono shadow-inner text-xs",
+                              isSuspensa ? "bg-slate-100 border-slate-200" : "bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700"
+                            )}>
+                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d08 > 0 ? "bg-blue-500 text-white shadow-sm" : "text-slate-300")}>{d08 > 0 ? `${d08}x` : '-'}</span>
+                              <span className="text-slate-200">|</span>
+                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d14 > 0 ? "bg-amber-500 text-white shadow-sm" : "text-slate-300")}>{d14 > 0 ? `${d14}x` : '-'}</span>
+                              <span className="text-slate-200">|</span>
+                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d22 > 0 ? "bg-purple-500 text-white shadow-sm" : "text-slate-300")}>{d22 > 0 ? `${d22}x` : '-'}</span>
+                              <span className="text-slate-200">|</span>
+                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d06 > 0 ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300")}>{d06 > 0 ? `${d06}x` : '-'}</span>
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-center font-bold font-mono text-sm text-slate-800 dark:text-slate-200">
-                            {pr.totalDiario} <span className="text-xs font-normal text-slate-500">un/dia</span>
+                          <TableCell className="text-center py-4">
+                            <div className="flex flex-col items-center">
+                              <span className="font-black text-lg text-slate-700 dark:text-slate-200 leading-none">{pr.totalDiario}</span>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 mt-1">Dose/Dia</span>
+                            </div>
                           </TableCell>
 
-                          <TableCell className="text-center">
+                          <TableCell className="text-center py-4">
                             <Badge 
-                              variant={pr.status === "Ativa" ? "default" : "secondary"}
+                              variant={!isSuspensa ? "default" : "secondary"}
                               className={cn(
-                                "cursor-pointer select-none",
-                                pr.status === "Ativa" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-500 hover:bg-amber-600 text-white"
+                                "cursor-pointer select-none px-3 py-1 font-bold uppercase tracking-wider text-[10px] transition-all hover:scale-105",
+                                !isSuspensa ? "bg-emerald-500 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20" : "bg-slate-200 text-slate-600 hover:bg-slate-300"
                               )}
                               onClick={() => togglePrescStatusMutation.mutate({ id: pr.id, status: pr.status })}
-                              title="Clique para alterar status (Ativa / Suspensa)"
+                              title="Clique para alternar status (Ativa / Suspensa)"
                             >
                               {pr.status || "Ativa"}
                             </Badge>
                           </TableCell>
 
-                          <TableCell className="text-right space-x-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleOpenEditPresc(pr)}
-                              title="Alterar posologia / horários"
-                            >
-                              <Pencil className="w-4 h-4 text-blue-600" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => togglePrescStatusMutation.mutate({ id: pr.id, status: pr.status })}
-                              title={pr.status === "Ativa" ? "Suspender prescrição" : "Ativar prescrição"}
-                            >
-                              <Power className={cn("w-4 h-4", pr.status === "Ativa" ? "text-amber-500" : "text-emerald-600")} />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setDeleteTarget({ type: 'prescricao', id: pr.id, name: pr.medicamentoNome });
-                                setDeleteReason("");
-                                setDeleteLogModalOpen(true);
-                              }}
-                              title="Excluir prescrição (Solicita motivo e grava log)"
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </Button>
+                          <TableCell className="text-right py-4 pr-6">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-8 h-8 rounded-full text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                onClick={() => handleOpenEditPresc(pr)}
+                                title="Editar prescrição"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className={cn("w-8 h-8 rounded-full transition-colors", !isSuspensa ? "text-amber-500 hover:bg-amber-50" : "text-emerald-600 hover:bg-emerald-50")}
+                                onClick={() => togglePrescStatusMutation.mutate({ id: pr.id, status: pr.status })}
+                                title={!isSuspensa ? "Suspender prescrição" : "Ativar prescrição"}
+                              >
+                                <Power className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-8 h-8 rounded-full text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                                onClick={() => {
+                                  setDevolucaoPresc(pr);
+                                  setDevolucaoQtd("");
+                                  setDevolucaoTipo("Alta a Pedido");
+                                  setDevolucaoMotivo("");
+                                  setDevolucaoModalOpen(true);
+                                }}
+                                title="Devolver medicação ao estoque central"
+                              >
+                                <Undo2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-8 h-8 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                onClick={() => {
+                                  setDeleteTarget({ type: 'prescricao', id: pr.id, name: pr.medicamentoNome });
+                                  setDeleteReason("");
+                                  setDeleteLogModalOpen(true);
+                                }}
+                                title="Excluir Permanentemente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -1641,45 +1813,46 @@ export default function PacientesMedicao() {
             )}
           </div>
 
-          <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-slate-200 dark:border-slate-800 pt-3">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 text-slate-600">
+          <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-4 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-b-2xl border-t border-slate-200 dark:border-slate-800">
+            <Button variant="ghost" size="sm" onClick={() => setViewPatientDetails(null)} className="w-full sm:w-auto font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 rounded-full px-6">
+              Fechar Prontuário
+            </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2 text-slate-600 bg-white shadow-sm hover:shadow rounded-full font-bold">
                 <Printer className="w-4 h-4" />
-                Imprimir Prontuário
+                Imprimir
               </Button>
               <Button 
                 size="sm" 
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-sm"
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold gap-2 shadow-md hover:shadow-lg transition-all rounded-full px-5"
                 onClick={() => {
                   setSelectedPatientIds([viewPatientDetails?.id]);
                   setBatchBaixaModalOpen(true);
                 }}
               >
                 <PackageMinus className="w-4 h-4" />
-                Dar Baixa no Estoque
+                Baixar Estoque
               </Button>
               {viewPatientDetails?.status !== "Alta" && (
                 <Button 
                   size="sm" 
                   variant="outline"
-                  className="border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold gap-1.5 shadow-sm"
+                  className="border-amber-300 bg-gradient-to-br from-amber-50 to-orange-100 hover:from-amber-100 hover:to-orange-200 text-amber-900 font-bold gap-2 shadow-sm rounded-full px-5"
                   onClick={() => {
                     if (window.confirm(`Tem certeza que deseja DAR ALTA para o paciente ${viewPatientDetails?.nome}? Todas as prescrições serão suspensas e ele sairá dos relatórios.`)) {
                       setAltaPacienteId(viewPatientDetails.id);
+                      setAltaDevolucoes({});
                       setAltaModalOpen(true);
                     }
                   }}
                   title="Dar alta hospitalar ao paciente"
                 >
                   <LogOut className="w-4 h-4 text-amber-700" />
-                  Dar Alta ao Paciente
+                  Conceder Alta
                 </Button>
               )}
             </div>
-            <Button variant="default" size="sm" onClick={() => setViewPatientDetails(null)}>
-              Fechar
-            </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2118,7 +2291,7 @@ export default function PacientesMedicao() {
             </div>
             
             {altaTipo !== "Alta a Pedido" && altaTipo !== "Óbito" && altaTipo !== "Evasão" && (
-              <div className="space-y-2">
+              <div className="space-y-2 border-t border-slate-100 pt-3">
                 <Label>Kit de Separação (Dias de Medicação para levar)</Label>
                 <Input 
                   type="number" 
@@ -2131,12 +2304,78 @@ export default function PacientesMedicao() {
                 </p>
               </div>
             )}
+
+            {/* Nova Seção de Devolução na Alta */}
+            <div className="space-y-3 border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
+              <Label className="font-bold text-indigo-700 flex items-center gap-1.5">
+                <Undo2 className="w-4 h-4" />
+                Devolução Rápida (Opcional)
+              </Label>
+              <p className="text-xs text-slate-500 mb-2">
+                Se o paciente está devolvendo medicações neste momento, informe abaixo. As quantidades serão repostas no Estoque Satélite.
+              </p>
+              
+              <div className="max-h-[220px] overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-md">
+                <Table className="text-xs w-full">
+                  <TableHeader className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-10">
+                    <TableRow>
+                      <TableHead className="font-bold py-2">Medicamento</TableHead>
+                      <TableHead className="font-bold py-2 text-center w-20">Qtd (un)</TableHead>
+                      <TableHead className="font-bold py-2 w-1/3">Motivo / Horários</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {prescricoes.filter(pr => (pr.pacienteId === altaPacienteId || pr.paciente_id === altaPacienteId) && (pr.status === "Ativa" || !pr.status)).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-4 text-slate-400">Nenhuma medicação ativa.</TableCell>
+                      </TableRow>
+                    ) : (
+                      prescricoes.filter(pr => (pr.pacienteId === altaPacienteId || pr.paciente_id === altaPacienteId) && (pr.status === "Ativa" || !pr.status)).map(pr => (
+                        <TableRow key={pr.id}>
+                          <TableCell className="font-medium">{pr.medicamentoNome}</TableCell>
+                          <TableCell className="p-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              className="h-7 text-xs text-center"
+                              value={altaDevolucoes[pr.id]?.qtd || ""}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setAltaDevolucoes(prev => ({
+                                  ...prev,
+                                  [pr.id]: { ...(prev[pr.id] || {}), qtd: val }
+                                }));
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="p-1">
+                            <Input
+                              placeholder="Ex: Não tomou às 14h"
+                              className="h-7 text-xs"
+                              value={altaDevolucoes[pr.id]?.motivo || ""}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setAltaDevolucoes(prev => ({
+                                  ...prev,
+                                  [pr.id]: { ...(prev[pr.id] || {}), motivo: val }
+                                }));
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAltaModalOpen(false)}>Cancelar</Button>
             <Button
               className="bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => darAltaPacienteMutation.mutate({ pacienteId: altaPacienteId, tipo: altaTipo, dias: altaDiasMedicao })}
+              onClick={() => darAltaPacienteMutation.mutate({ pacienteId: altaPacienteId, tipo: altaTipo, dias: altaDiasMedicao, devolucoes: altaDevolucoes })}
               disabled={darAltaPacienteMutation.isPending}
             >
               {darAltaPacienteMutation.isPending ? "Registrando Alta..." : "Confirmar Alta"}
@@ -2197,6 +2436,97 @@ export default function PacientesMedicao() {
             <Button onClick={() => window.print()} className="gap-2">
               <Printer className="w-4 h-4" />
               Imprimir Relatório de Alta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL: DEVOLUÇÃO DE MEDICAÇÃO ──────────────────────────────────── */}
+      <Dialog open={devolucaoModalOpen} onOpenChange={setDevolucaoModalOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-indigo-700 flex items-center gap-2">
+              <Undo2 className="w-5 h-5 text-indigo-600" />
+              Devolução de Medicação
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 p-3 rounded-lg text-xs text-indigo-900 dark:text-indigo-300">
+              <p className="font-bold">Reposição na Farmácia Satélite</p>
+              <p className="mt-1">
+                Ao confirmar, a quantidade informada será somada ao estoque da <strong>Farmácia Satélite</strong> e a prescrição passará para o status "Devolvida" no histórico do paciente.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <Label className="font-bold">Medicação a Devolver</Label>
+                <Input value={devolucaoPresc?.medicamentoNome || ""} disabled className="bg-slate-100" />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="font-bold">Qtd Devolvida (un) *</Label>
+                  <Input
+                    type="number"
+                    placeholder="Ex: 2"
+                    value={devolucaoQtd}
+                    onChange={(e) => setDevolucaoQtd(e.target.value)}
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <Label className="font-bold">Motivo da Devolução</Label>
+                  <Select value={devolucaoTipo} onValueChange={setDevolucaoTipo}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Alta a Pedido">Alta a Pedido</SelectItem>
+                      <SelectItem value="Alta Médica">Alta Médica</SelectItem>
+                      <SelectItem value="Terapia Suspensa">Terapia Suspensa</SelectItem>
+                      <SelectItem value="Trocado para Injetável">Trocado para Injetável</SelectItem>
+                      <SelectItem value="Recusa do Paciente">Recusa do Paciente</SelectItem>
+                      <SelectItem value="Óbito">Óbito</SelectItem>
+                      <SelectItem value="Outro">Outro...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="font-bold text-slate-800 dark:text-slate-200">
+                  Detalhes / Horários (Opcional)
+                </Label>
+                <Textarea
+                  placeholder="Ex: Devolveu medicamentos das 14h em diante, paciente teve alta às 10h."
+                  value={devolucaoMotivo}
+                  onChange={(e) => setDevolucaoMotivo(e.target.value)}
+                  className="mt-1.5 min-h-[70px]"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-between items-center border-t border-slate-200 dark:border-slate-800 pt-3">
+            <Button variant="outline" onClick={() => setDevolucaoModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2 shadow-sm"
+              disabled={efetuarDevolucaoMutation.isPending || !devolucaoQtd || parseInt(devolucaoQtd, 10) <= 0}
+              onClick={() => {
+                efetuarDevolucaoMutation.mutate({
+                  presc: devolucaoPresc,
+                  qtd: devolucaoQtd,
+                  tipo: devolucaoTipo,
+                  motivo: devolucaoMotivo.trim()
+                });
+              }}
+            >
+              <Undo2 className="w-4 h-4" />
+              {efetuarDevolucaoMutation.isPending ? "Devolvendo..." : "Confirmar Devolução"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -8,7 +8,6 @@ import { useState, useEffect } from "react";
 import logo from "../assets/logo-tr.png";
 import { Toaster, toast } from "sonner";
 import { addLog } from "./logger";
-import { useLicense } from "./LicenseContext";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 
 // ─── Ícones SVG ───────────────────────────────────────────────────────────────
@@ -219,7 +218,6 @@ function ModuleCard({ mod, delay, visible, onClick }) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function WelcomeScreen({ onEnter }) {
-  const { valid, openModal } = useLicense();
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
   
@@ -232,6 +230,7 @@ export function WelcomeScreen({ onEnter }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isFirstLogin, setIsFirstLogin] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
+  const [availableUsers, setAvailableUsers] = useState([]);
   
   // Mouse hover effect state
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -279,6 +278,7 @@ export function WelcomeScreen({ onEnter }) {
         localStorage.setItem("axion_users", JSON.stringify(users));
       }
     }
+    setAvailableUsers(users);
   }, []);
 
   const handleModuleClick = (mod) => {

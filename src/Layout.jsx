@@ -4,6 +4,7 @@ import { createPageUrl } from "./utils";
 import logo from "./assets/logo-tr.png";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 import { useWelcome } from "@/lib/AppInitializer";
+import { TransferenciaAcceptModal } from "@/components/TransferenciaAcceptModal";
 
 import {
   LayoutDashboard,
@@ -106,6 +107,9 @@ const moduleSections = [
 ];
 
 function getCurrentSection(pageName) {
+  if (pageName === "LivroRegistro") {
+    return moduleSections.find(sec => sec.id === "satelite");
+  }
   for (const sec of moduleSections) {
     if (sec.menu.some(m => m.page === pageName)) {
       return sec;
@@ -163,6 +167,7 @@ export default function Layout({ children, currentPageName }) {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 transition-colors flex flex-col">
       <Toaster position="top-right" richColors />
+      <TransferenciaAcceptModal activeSection={activeSection} />
 
       {/* TOP HEADER NAVIGATION BAR */}
       <header className="sticky top-0 z-50 bg-[#0F172A] text-white shadow-lg border-b border-slate-800 print:hidden">

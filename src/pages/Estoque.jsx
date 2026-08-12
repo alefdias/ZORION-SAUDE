@@ -297,7 +297,7 @@ export default function Estoque() {
     if (!deleteLoteId) return;
     try {
       toast.loading("Excluindo lote...");
-      await invoke("delete_lote_cascade", { loteId: deleteLoteId });
+      await db.entities.Lote.delete(deleteLoteId);
       toast.dismiss();
       toast.success("Lote excluído com sucesso.");
       queryClient.invalidateQueries();
@@ -313,7 +313,7 @@ export default function Estoque() {
     if (!deleteMedId) return;
     try {
       toast.loading("Excluindo medicamento...");
-      await invoke("delete_medicamento_cascade", { medicamentoId: deleteMedId });
+      await db.entities.Medicamento.delete(deleteMedId);
       toast.dismiss();
       toast.success("Medicamento excluído com sucesso.");
       queryClient.invalidateQueries();
@@ -336,10 +336,9 @@ export default function Estoque() {
     if (!trocaValidade || !novaValidade || !novoNumeroLote) return;
     try {
       toast.loading("Atualizando lote...");
-      await invoke("update_entity", {
-        name: "Lote",
-        id: trocaValidade.loteId,
-        data: { data_validade: novaValidade, numero_lote: novoNumeroLote },
+      await db.entities.Lote.update(trocaValidade.loteId, {
+        data_validade: novaValidade,
+        numero_lote: novoNumeroLote
       });
       toast.dismiss();
       toast.success(`Lote atualizado! Número: ${novoNumeroLote} | Validade: ${format(new Date(novaValidade + 'T00:00:00'), "dd/MM/yyyy")}`);
@@ -381,126 +380,73 @@ export default function Estoque() {
         if (!lote || lote.quantidade_atual < qtd) {
           throw new Error("Estoque insuficiente no lote selecionado");
         }
-        // Update Lote
-        await invoke("update_entity", {
-          name: "Lote",
-          id: lote.id,
-          data: { quantidade_atual: lote.quantidade_atual - qtd, status: (lote.quantidade_atual - qtd) <= 0 ? "esgotado" : lote.status }
+        // Update Lote (Deduz da origem)
+        await db.entities.Lote.update(lote.id, {
+          quantidade_atual: lote.quantidade_atual - qtd,
+          status: (lote.quantidade_atual - qtd) <= 0 ? "esgotado" : lote.status
         });
-        // Update Medicamento
-        await invoke("update_entity", {
-          name: "Medicamento",
-          id: med.id,
-          data: { 
-            estoque_atual: Math.max(0, (med.estoque_atual || 0) - qtd),
-            estoque_satelite: (med.estoque_satelite || 0) + qtd
-          }
+        // Update Medicamento (Deduz da origem)
+        await db.entities.Medicamento.update(med.id, {
+          estoque_atual: Math.max(0, (med.estoque_atual || 0) - qtd)
         });
-        // Registrar histórico
-        await db.entities.Saida.create({
+        
+        // Cria a transferência pendente
+        await db.entities.TransferenciaPendente.create({
           medicamento_id: med.id,
           medicamento_nome: med.nome,
           lote_id: lote.id,
           numero_lote: lote.numero_lote,
-          data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
           quantidade: qtd,
-          destino: "Farmácia Satélite",
-          motivo: "Transferência de Estoque",
-          observacao: "Transferido do Estoque Geral para Farmácia Satélite"
+          direcao: "para_satelite",
+          status: "Pendente",
+          data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
+
       } else if (transferenciaForm.direcao === "para_carrinho_parada") {
         if (!lote || lote.quantidade_atual < qtd) {
           throw new Error("Estoque insuficiente no lote selecionado");
         }
         // Update Lote
-        await invoke("update_entity", {
-          name: "Lote",
-          id: lote.id,
-          data: { quantidade_atual: lote.quantidade_atual - qtd, status: (lote.quantidade_atual - qtd) <= 0 ? "esgotado" : lote.status }
+        await db.entities.Lote.update(lote.id, {
+          quantidade_atual: lote.quantidade_atual - qtd,
+          status: (lote.quantidade_atual - qtd) <= 0 ? "esgotado" : lote.status
         });
         // Update Medicamento
-        await invoke("update_entity", {
-          name: "Medicamento",
-          id: med.id,
-          data: { 
-            estoque_atual: Math.max(0, (med.estoque_atual || 0) - qtd)
-          }
+        await db.entities.Medicamento.update(med.id, {
+          estoque_atual: Math.max(0, (med.estoque_atual || 0) - qtd)
         });
         
-        // Registrar no CarrinhoEstoqueCentral
-        // Verifica se já existe um registro deste medicamento/lote no estoque central do carrinho
-        const centralStock = await db.entities.CarrinhoEstoqueCentral.list();
-        const existingCentral = centralStock.find(c => c.medicamento_id === med.id && c.lote_id === lote.id);
-        
-        if (existingCentral) {
-           await db.entities.CarrinhoEstoqueCentral.update(existingCentral.id, {
-             quantidade: (existingCentral.quantidade || 0) + qtd
-           });
-        } else {
-           await db.entities.CarrinhoEstoqueCentral.create({
-             medicamento_id: med.id,
-             medicamento_nome: med.nome,
-             lote_id: lote.id,
-             numero_lote: lote.numero_lote,
-             data_validade: lote.data_validade,
-             quantidade: qtd
-           });
-        }
-        
-        // Registrar histórico do Carrinho
-        await db.entities.CarrinhoMovimentacao.create({
-             tipo: 'transferencia_central',
-             medicamento_id: med.id,
-             medicamento_nome: med.nome,
-             lote_id: lote.id,
-             numero_lote: lote.numero_lote,
-             quantidade: qtd,
-             responsavel: "Sistema - Transferência de Estoque",
-             observacao: "Transferido do Estoque Geral para o Centro de Distribuição dos Carrinhos"
-        });
-
-        // Registrar histórico de Saída do Estoque Principal
-        await db.entities.Saida.create({
+        // Cria a transferência pendente
+        await db.entities.TransferenciaPendente.create({
           medicamento_id: med.id,
           medicamento_nome: med.nome,
           lote_id: lote.id,
           numero_lote: lote.numero_lote,
-          data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
           quantidade: qtd,
-          destino: "Carrinho de Parada (Estoque Central)",
-          motivo: "Transferência de Estoque",
-          observacao: "Transferido do Estoque Geral para o Centro de Distribuição dos Carrinhos de Parada"
+          direcao: "para_carrinho_parada",
+          status: "Pendente",
+          data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
+        
       } else {
         if ((med.estoque_satelite || 0) < qtd) {
           throw new Error("Estoque insuficiente na satélite");
         }
-        // Update Lote
-        await invoke("update_entity", {
-          name: "Lote",
-          id: lote.id,
-          data: { quantidade_atual: lote.quantidade_atual + qtd, status: "disponivel" }
+        // Update Medicamento (Deduz da origem satélite)
+        await db.entities.Medicamento.update(med.id, {
+          estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd)
         });
-        // Update Medicamento
-        await invoke("update_entity", {
-          name: "Medicamento",
-          id: med.id,
-          data: { 
-            estoque_atual: (med.estoque_atual || 0) + qtd,
-            estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd)
-          }
-        });
-        // Registrar histórico
-        await db.entities.Saida.create({
+
+        // Cria a transferência pendente
+        await db.entities.TransferenciaPendente.create({
           medicamento_id: med.id,
           medicamento_nome: med.nome,
           lote_id: lote.id,
           numero_lote: lote.numero_lote,
-          data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
           quantidade: qtd,
-          destino: "Estoque Geral",
-          motivo: "Transferência de Estoque",
-          observacao: "Devolvido da Farmácia Satélite para o Estoque Geral"
+          direcao: "para_estoque",
+          status: "Pendente",
+          data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
       }
     },

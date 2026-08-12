@@ -151,11 +151,9 @@ export default function Entradas({ isTab = false }) {
           // Criar novo lote
           const newLote = await db.entities.Lote.create({
             medicamento_id: data.medicamento_id,
-            medicamento_nome: data.medicamento_nome,
             numero_lote: data.numero_lote,
             data_validade: data.data_validade,
             quantidade_atual: data.quantidade,
-            quantidade_inicial: data.quantidade,
             status: "disponivel",
           });
           finalLoteId = newLote.id;
@@ -164,7 +162,14 @@ export default function Entradas({ isTab = false }) {
         // 2. Criar a entrada com o lote_id vinculado
         console.log("Criando registro de entrada...");
         const entradaData = {
-          ...data,
+          medicamento_id: data.medicamento_id,
+          medicamento_nome: data.medicamento_nome,
+          numero_lote: data.numero_lote,
+          data_validade: data.data_validade,
+          data_entrada: data.data_entrada,
+          quantidade: data.quantidade,
+          fornecedor_id: data.fornecedor_id,
+          fornecedor_nome: data.fornecedor_nome,
           lote_id: finalLoteId
         };
         console.log("Dados da entrada a serem salvos:", entradaData);
@@ -196,7 +201,7 @@ export default function Entradas({ isTab = false }) {
     },
     onError: (error) => {
       console.error("Erro ao registrar entrada:", error);
-      toast.error(error.message || "Erro ao deletar entrada");
+      toast.error(typeof error === 'string' ? error : (error.message || "Erro ao registrar entrada"));
     },
   });
 
@@ -233,8 +238,18 @@ export default function Entradas({ isTab = false }) {
         }
 
         // 3. Atualizar a entrada
-        console.log("Salvando dados da entrada atualizada:", data);
-        return await db.entities.Entrada.update(oldEntrada.id, data);
+        const entradaData = {
+          medicamento_id: data.medicamento_id,
+          medicamento_nome: data.medicamento_nome,
+          numero_lote: data.numero_lote,
+          data_validade: data.data_validade,
+          data_entrada: data.data_entrada,
+          quantidade: data.quantidade,
+          fornecedor_id: data.fornecedor_id,
+          fornecedor_nome: data.fornecedor_nome,
+        };
+        console.log("Salvando dados da entrada atualizada:", entradaData);
+        return await db.entities.Entrada.update(oldEntrada.id, entradaData);
       } catch (error) {
         console.error("ERRO AO ATUALIZAR ENTRADA:", error);
         throw error;
@@ -249,7 +264,7 @@ export default function Entradas({ isTab = false }) {
       toast.success("Entrada atualizada com sucesso!");
     },
     onError: (error) => {
-      toast.error("Erro ao atualizar entrada: " + (error.message || error));
+      toast.error("Erro ao atualizar entrada: " + (typeof error === 'string' ? error : (error.message || error)));
     },
   });
 

@@ -6,7 +6,6 @@ import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AppInitializer } from './lib/AppInitializer';
 import { Toaster as SonnerToaster } from "sonner";
-import { LicenseProvider } from './lib/LicenseContext';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -19,7 +18,6 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 function App() {
   return (
     <QueryClientProvider client={queryClientInstance}>
-      <LicenseProvider>
       <AppInitializer>
         <Router>
           <Routes>
@@ -45,7 +43,6 @@ function App() {
         <Toaster />
         <SonnerToaster position="top-right" richColors />
       </AppInitializer>
-      </LicenseProvider>
     </QueryClientProvider>
   )
 }

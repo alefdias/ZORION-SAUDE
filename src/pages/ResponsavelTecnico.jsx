@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, Lock, History, FileText, AlertTriangle, UserX, LogOut, FileCheck } from "lucide-react";
-import { Toaster, toast } from "sonner";
+import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck } from "lucide-react";
+import { toast } from "sonner";
 import { getLogs } from "../lib/logger";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +30,14 @@ export default function ResponsavelTecnico() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [cargo, setCargo] = useState("farmaceutico");
+  const [selectedUserModules, setSelectedUserModules] = useState(["estoque_farmacia", "farmacia_satelite", "carrinho_parada"]);
+
+  const AVAILABLE_MODULES = [
+    { id: "estoque_farmacia", name: "Estoque Central" },
+    { id: "farmacia_satelite", name: "Farmácia Satélite" },
+    { id: "carrinho_parada", name: "Carrinho de Parada" },
+    { id: "responsavel_tecnico", name: "Responsável Técnico" }
+  ];
 
   useEffect(() => {
     const saved = localStorage.getItem("axion_users");
@@ -72,11 +80,16 @@ export default function ResponsavelTecnico() {
       return;
     }
 
-    const selectedModules = cargo === "administrador" 
-      ? ["estoque_farmacia", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"]
-      : cargo === "enfermeiro"
-        ? ["carrinho_enfermagem", "carrinho_parada"]
-        : ["estoque_farmacia", "farmacia_satelite", "carrinho_farmacia", "carrinho_parada"];
+    if (selectedUserModules.length === 0) {
+      toast.error("Selecione pelo menos um módulo de acesso para este usuário.");
+      return;
+    }
+
+    const finalModules = [...selectedUserModules];
+    // Se for administrador, forçar acesso ao RT caso não esteja marcado (opcional, mas seguro)
+    if (cargo === "administrador" && !finalModules.includes("responsavel_tecnico")) {
+      finalModules.push("responsavel_tecnico");
+    }
 
     if (editingId) {
       // update
@@ -84,7 +97,7 @@ export default function ResponsavelTecnico() {
         if (u.id === editingId) {
           const passChanged = u.password !== password;
           return {
-            ...u, nome, username, password, cargo, modules: selectedModules,
+            ...u, nome, username, password, cargo, modules: finalModules,
             first_login: passChanged ? true : u.first_login
           };
         }
@@ -105,7 +118,7 @@ export default function ResponsavelTecnico() {
         username,
         password,
         cargo,
-        modules: selectedModules,
+        modules: finalModules,
         first_login: true
       };
       saveUsers([...users, newUser]);
@@ -122,6 +135,7 @@ export default function ResponsavelTecnico() {
     setUsername("");
     setPassword("");
     setCargo("farmaceutico");
+    setSelectedUserModules(["estoque_farmacia", "farmacia_satelite", "carrinho_parada"]);
   };
 
   const handleEdit = (u) => {
@@ -130,6 +144,7 @@ export default function ResponsavelTecnico() {
     setUsername(u.username);
     setPassword(u.password);
     setCargo(u.cargo || (u.modules.includes("responsavel_tecnico") ? "administrador" : "farmaceutico"));
+    setSelectedUserModules(u.modules || []);
     setShowForm(true);
   };
 
@@ -395,6 +410,31 @@ export default function ResponsavelTecnico() {
                     <span className="block text-xs text-slate-500">Apenas Carrinho de Parada (Enfermagem)</span>
                   </div>
                 </label>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Módulos de Acesso Permitidos</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {AVAILABLE_MODULES.map(module => (
+                  <label key={module.id} className={`flex items-center gap-2 cursor-pointer p-3 border rounded-xl transition-colors ${selectedUserModules.includes(module.id) ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-500' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    <input 
+                      type="checkbox"
+                      checked={selectedUserModules.includes(module.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedUserModules([...selectedUserModules, module.id]);
+                        } else {
+                          setSelectedUserModules(selectedUserModules.filter(m => m !== module.id));
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600"
+                    />
+                    <span className={`text-sm font-medium ${selectedUserModules.includes(module.id) ? 'text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                      {module.name}
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
             

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import MedicamentoForm from "@/components/forms/MedicamentoForm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 const CATEGORIA_LABELS = {
   analgesico: "Analgésico",
@@ -52,61 +53,12 @@ const APRESENTACAO_LABELS = {
 export function getApresentacaoEDosagem(med) {
   if (!med) return { apresentacao: "-", dosagem: "-" };
 
-  let rawApres = (med.apresentacao || med.forma || "").trim();
-  let rawDosagem = (med.dosagem || med.concentracao || "").trim();
-  let rawUnidade = (med.unidade_medida || "").trim();
+  const apresentacao = (med.apresentacao || "-").trim();
+  const dosagem = (med.dosagem || med.unidade_medida || "-").trim();
 
-  const mapSiglas = {
-    'ENV': 'Envelope',
-    'COMP': 'Comprimido',
-    'CPR': 'Comprimido',
-    'CAPS': 'Cápsula',
-    'CAP': 'Cápsula',
-    'TUBO': 'Tubo',
-    'AMP': 'Ampola',
-    'FRASCO': 'Frasco',
-    'FA': 'Frasco-Ampola',
-    'SOL': 'Solução',
-    'XRP': 'Xarope',
-    'GTS': 'Gotas'
-  };
-
-  if (rawDosagem && !["un", "unidade", "unid", "-", ""].includes(rawDosagem.toLowerCase())) {
-    const apresClean = mapSiglas[rawApres.toUpperCase()] || APRESENTACAO_LABELS[rawApres] || rawApres;
-    return {
-      apresentacao: apresClean || "-",
-      dosagem: rawDosagem
-    };
-  }
-
-  const regexDose = /\b(\d+([\.,]\d+)?\s*(mg|g|ml|mcg|ui|%|mmeq|meq))\b/i;
-  const match = rawApres.match(regexDose);
-
-  if (match) {
-    const extractedDosagem = match[0].toUpperCase();
-    let extractedApres = rawApres.replace(match[0], "").trim();
-
-    const apresUpper = extractedApres.toUpperCase();
-    const finalApres = mapSiglas[apresUpper] || APRESENTACAO_LABELS[extractedApres] || extractedApres || rawApres;
-
-    return {
-      apresentacao: finalApres,
-      dosagem: extractedDosagem
-    };
-  }
-
-  if (rawUnidade && !["un", "unidade", "unid", "-", ""].includes(rawUnidade.toLowerCase())) {
-    const apresClean = mapSiglas[rawApres.toUpperCase()] || APRESENTACAO_LABELS[rawApres] || rawApres;
-    return {
-      apresentacao: apresClean || "-",
-      dosagem: rawUnidade
-    };
-  }
-
-  const apresClean = mapSiglas[rawApres.toUpperCase()] || APRESENTACAO_LABELS[rawApres] || rawApres;
   return {
-    apresentacao: apresClean || "-",
-    dosagem: rawDosagem && !["un", "unidade"].includes(rawDosagem.toLowerCase()) ? rawDosagem : "-"
+    apresentacao: apresentacao || "-",
+    dosagem: (dosagem && !["un", "unidade", "unid", "-", ""].includes(dosagem.toLowerCase())) ? dosagem : "-"
   };
 }
 
@@ -115,6 +67,7 @@ export default function Medicamentos() {
   const [activeTab, setActiveTab] = useState("padronizados");
   const [formOpen, setFormOpen] = useState(false);
   const [editingMed, setEditingMed] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [visibleColumns, setVisibleColumns] = useState({
     codigo: true,
     medicamento: true,
@@ -173,9 +126,12 @@ export default function Medicamentos() {
   };
 
   const handleDelete = (id) => {
-    if (confirm("Tem certeza que deseja excluir este medicamento?")) {
-      deleteMutation.mutate(id);
-    }
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = () => {
+    deleteMutation.mutate(deleteConfirm.id);
+    setDeleteConfirm({ open: false, id: null });
   };
 
   const filteredMeds = medicamentos.filter(m => {
@@ -390,6 +346,15 @@ export default function Medicamentos() {
         onSave={handleSave}
         medicamento={editingMed}
         isLoading={createMutation.isPending || updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirm.open}
+        onOpenChange={(open) => setDeleteConfirm({ open, id: deleteConfirm.id })}
+        title="Excluir Medicamento"
+        description="Tem certeza que deseja excluir este medicamento? Esta ação não pode ser desfeita."
+        onConfirm={confirmDelete}
+        confirmLabel="Sim, excluir"
       />
 
       {/* Relatório Oculto para Impressão */}

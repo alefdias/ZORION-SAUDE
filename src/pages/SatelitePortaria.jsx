@@ -182,7 +182,7 @@ export default function SatelitePortaria() {
                     .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
                     .map(med => (
                       <SelectItem key={med.id} value={med.id}>
-                        {med.nome} {med.unidade_medida && med.unidade_medida.toLowerCase() !== 'un' ? `- ${med.unidade_medida}` : ""} {med.apresentacao ? `- ${med.apresentacao}` : ""}
+                        {med.nome} {med.dosagem ? `- ${med.dosagem}` : ""} {med.unidade_medida && med.unidade_medida.toLowerCase() !== 'un' ? `- ${med.unidade_medida}` : ""} {med.apresentacao ? `- ${med.apresentacao}` : ""}
                       </SelectItem>
                     ))}
                 </SelectContent>

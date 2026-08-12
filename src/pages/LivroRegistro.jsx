@@ -47,19 +47,39 @@ export default function LivroRegistro() {
   const historicoMovimentos = (() => {
     if (!selectedLivroMedId) return [];
 
-    const entradas = entradasLivro.filter(e => e.medicamento_id === selectedLivroMedId).map(e => ({
-      ...e,
-      tipo: 'ENTRADA',
-      dataObj: parseISO(e.data_entrada || e.created_at)
-    }));
+    const entradas = entradasLivro.filter(e => e.medicamento_id === selectedLivroMedId && (e.quantidade || 0) > 0).map(e => {
+      let parsedDate = new Date();
+      try {
+        const dateStr = e.data_entrada || e.created_at || new Date().toISOString();
+        parsedDate = parseISO(dateStr);
+        if (isNaN(parsedDate)) parsedDate = new Date();
+      } catch (err) {
+        parsedDate = new Date();
+      }
+      return {
+        ...e,
+        tipo: 'ENTRADA',
+        dataObj: parsedDate
+      };
+    });
     
-    const saidas = saidasLivro
-      .filter(s => s.medicamento_id === selectedLivroMedId && s.motivo !== 'Transferência de Estoque')
-      .map(s => ({
-        ...s,
-        tipo: s.destino === 'Perda' || s.motivo === 'Perda' ? 'PERDA' : 'SAIDA',
-        dataObj: parseISO(s.data_saida || s.created_at)
-      }));
+      const saidas = saidasLivro
+      .filter(s => s.medicamento_id === selectedLivroMedId && s.motivo !== 'Transferência de Estoque' && (s.quantidade || 0) > 0)
+      .map(s => {
+        let parsedDate = new Date();
+        try {
+          const dateStr = s.data_saida || s.created_at || new Date().toISOString();
+          parsedDate = parseISO(dateStr);
+          if (isNaN(parsedDate)) parsedDate = new Date();
+        } catch (e) {
+          parsedDate = new Date();
+        }
+        return {
+          ...s,
+          tipo: s.destino === 'Perda' || s.motivo === 'Perda' ? 'PERDA' : 'SAIDA',
+          dataObj: parsedDate
+        };
+      });
     
     const todos = [...entradas, ...saidas].sort((a, b) => {
       const dayA = format(a.dataObj, 'yyyy-MM-dd');
