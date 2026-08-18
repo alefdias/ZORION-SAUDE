@@ -203,10 +203,10 @@ export default function Estoque() {
   });
 
   const { data: historicoTransferencias = [] } = useQuery({
-    queryKey: ['saidas', 'transferencias'],
+    queryKey: ['transferencias'],
     queryFn: async () => {
-      const allSaidas = await db.entities.Saida.list('-created_date');
-      return allSaidas.filter(s => s.motivo === "Transferência de Estoque");
+      const allTransfers = await db.entities.TransferenciaPendente.list('-created_at');
+      return allTransfers;
     }
   });
 
@@ -403,6 +403,71 @@ export default function Estoque() {
     });
     if (node) observer.current.observe(node);
   };
+
+  const [deleteTransferenciaModal, setDeleteTransferenciaModal] = useState(null);
+  const [deleteTransferenciaMotivo, setDeleteTransferenciaMotivo] = useState("");
+
+  const deleteTransferenciaMutation = useMutation({
+    mutationFn: async ({ transferencia, motivo }) => {
+      const lote = lotes.find(l => l.id === transferencia.lote_id);
+      const med = medicamentos.find(m => m.id === transferencia.medicamento_id);
+
+      // Reverter o estoque baseado na direção da transferência
+      if (transferencia.direcao === "para_satelite" || transferencia.direcao === "para_carrinho_parada") {
+        // Volta pro lote/estoque_atual
+        if (lote) {
+           await db.entities.Lote.update(lote.id, {
+             quantidade_atual: (lote.quantidade_atual || 0) + transferencia.quantidade,
+             status: ((lote.quantidade_atual || 0) + transferencia.quantidade) > 0 ? "disponivel" : "esgotado"
+           });
+        }
+        if (med) {
+           await db.entities.Medicamento.update(med.id, {
+             estoque_atual: (med.estoque_atual || 0) + transferencia.quantidade
+           });
+        }
+      } else {
+        // Volta pra satélite
+        if (med) {
+           await db.entities.Medicamento.update(med.id, {
+             estoque_satelite: (med.estoque_satelite || 0) + transferencia.quantidade
+           });
+        }
+      }
+
+      // Se a transferência já foi aceita no carrinho, não deveria ser apagada assim sem reverter lá,
+      // mas como as transferências pendentes geralmente são o que está no histórico de transferências...
+      
+      // Apagar a transferência e gerar log
+      await db.entities.TransferenciaPendente.delete(transferencia.id);
+
+      // Registrar no log / auditoria via Saida ou logAuditoria (fazemos via Saida com obs)
+      const nowStr = new Date().toISOString();
+      await db.entities.Saida.create({
+          medicamento_id: transferencia.medicamento_id,
+          medicamento_nome: transferencia.medicamento_nome,
+          lote_id: transferencia.lote_id,
+          numero_lote: transferencia.numero_lote,
+          quantidade: transferencia.quantidade,
+          destino: "Reversão de Transferência",
+          motivo: "Cancelamento de Transferência",
+          observacao: `Excluída por usuário. Motivo fornecido: ${motivo}`,
+          data_saida: format(new Date(), 'yyyy-MM-dd'),
+          created_at: nowStr
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      setDeleteTransferenciaModal(null);
+      setDeleteTransferenciaMotivo("");
+      toast.success("Transferência cancelada e revertida com sucesso!");
+    },
+    onError: (error) => {
+      toast.error("Erro ao cancelar transferência: " + (error.message || error));
+    }
+  });
 
   const realizarTransferencia = useMutation({
     mutationFn: async () => {
@@ -1104,26 +1169,49 @@ export default function Estoque() {
                   <TableHead>Lote</TableHead>
                   <TableHead className="text-center">Quantidade</TableHead>
                   <TableHead>Destino</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {historicoTransferencias.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-6 text-slate-500">
+                    <TableCell colSpan={7} className="text-center py-6 text-slate-500">
                       Nenhuma transferência registrada
                     </TableCell>
                   </TableRow>
                 ) : (
                   historicoTransferencias.map(t => (
                     <TableRow key={t.id}>
-                      <TableCell className="text-sm">{safeFormatDate(t.data_saida)}</TableCell>
+                      <TableCell className="text-sm">{safeFormatDate(t.data_solicitacao || t.created_at)}</TableCell>
                       <TableCell className="font-medium text-slate-800">{t.medicamento_nome}</TableCell>
                       <TableCell><Badge variant="outline">{t.numero_lote}</Badge></TableCell>
                       <TableCell className="text-center font-bold text-blue-700">{t.quantidade}</TableCell>
                       <TableCell>
-                        <Badge className={t.destino === "Farmácia Satélite" ? "bg-indigo-100 text-indigo-700" : "bg-emerald-100 text-emerald-700"}>
-                          {t.destino}
+                        <Badge className={
+                          t.direcao === "para_satelite" ? "bg-indigo-100 text-indigo-700" :
+                          t.direcao === "para_carrinho_parada" ? "bg-amber-100 text-amber-700" :
+                          "bg-emerald-100 text-emerald-700"
+                        }>
+                          {t.direcao === "para_satelite" ? "Farmácia Satélite" :
+                           t.direcao === "para_carrinho_parada" ? "Carrinho Parada" :
+                           "Estoque Central"}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                         <Badge className={t.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>
+                             {t.status || 'Concluída'}
+                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                         <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           onClick={() => setDeleteTransferenciaModal(t)} 
+                           className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                         >
+                           <Trash2 className="w-4 h-4"/>
+                         </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1136,6 +1224,50 @@ export default function Estoque() {
 
 
       </Tabs>
+
+      {/* Modal de Cancelamento de Transferência */}
+      <Dialog open={!!deleteTransferenciaModal} onOpenChange={(open) => !open && setDeleteTransferenciaModal(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <ShieldAlert className="w-5 h-5" />
+              Cancelar Transferência
+            </DialogTitle>
+            <DialogDescription>
+              Você está prestes a excluir/cancelar uma transferência e reverter o estoque para sua origem. Essa ação ficará registrada no log de segurança (Auditoria).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+             <div className="bg-red-50 p-3 rounded-lg border border-red-100 text-sm text-red-800">
+                <p><strong>Medicamento:</strong> {deleteTransferenciaModal?.medicamento_nome}</p>
+                <p><strong>Quantidade:</strong> {deleteTransferenciaModal?.quantidade}</p>
+                <p><strong>Lote:</strong> {deleteTransferenciaModal?.numero_lote}</p>
+             </div>
+            <div className="space-y-2">
+              <Label htmlFor="motivo-exclusao" className="text-slate-700 font-semibold">Motivo do Cancelamento <span className="text-red-500">*</span></Label>
+              <Input
+                id="motivo-exclusao"
+                placeholder="Ex: Lançamento duplicado, quantidade incorreta..."
+                value={deleteTransferenciaMotivo}
+                onChange={(e) => setDeleteTransferenciaMotivo(e.target.value)}
+                className="border-slate-300"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTransferenciaModal(null); setDeleteTransferenciaMotivo(""); }}>
+              Sair
+            </Button>
+            <Button
+              onClick={() => deleteTransferenciaMutation.mutate({ transferencia: deleteTransferenciaModal, motivo: deleteTransferenciaMotivo })}
+              disabled={deleteTransferenciaMutation.isPending || deleteTransferenciaMotivo.trim().length < 5}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Confirmar Exclusão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <style>{`
         @media print {
