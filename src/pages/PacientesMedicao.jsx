@@ -362,13 +362,8 @@ export default function PacientesMedicao() {
 
       const medDeductions = {};
 
+      // Primeira etapa: Calcular o total necessário por medicamento
       for (const pr of activePrescs) {
-        const pacId = pr.pacienteId || pr.paciente_id;
-        const medId = pr.medicamentoId || pr.medicamento_id;
-        const pac = selectedPacs.find(p => p.id === pacId);
-        const med = medicamentos.find(m => m.id === medId);
-
-        // Calcular a dose diária
         const d08 = getDoseForHora(pr.horarios, "08:00");
         const d14 = getDoseForHora(pr.horarios, "14:00");
         const d22 = getDoseForHora(pr.horarios, "22:00");
@@ -377,17 +372,42 @@ export default function PacientesMedicao() {
         const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (pr.totalDiario || 0);
 
         const qtdSaida = dailyTotal * dias;
-
         if (qtdSaida <= 0) continue;
 
-        // Acumular total por medicação para decrementar do estoque
+        const medId = pr.medicamentoId || pr.medicamento_id;
         medDeductions[medId] = (medDeductions[medId] || 0) + qtdSaida;
+      }
+
+      // Segunda etapa: Validar se há estoque suficiente para TODAS as deduções
+      for (const [medId, totalQtd] of Object.entries(medDeductions)) {
+        const med = medicamentos.find(m => m.id === medId);
+        const atualSatelite = med ? (med.estoque_satelite || 0) : 0;
+        if (atualSatelite < totalQtd) {
+          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${med ? med.nome : "Medicamento Desconhecido"}. Necessário: ${totalQtd}, Disponível: ${atualSatelite}`);
+        }
+      }
+
+      // Terceira etapa: Criar registros de saída e efetivar a baixa
+      for (const pr of activePrescs) {
+        const pacId = pr.pacienteId || pr.paciente_id;
+        const medId = pr.medicamentoId || pr.medicamento_id;
+        const pac = selectedPacs.find(p => p.id === pacId);
+        const med = medicamentos.find(m => m.id === medId);
+
+        const d08 = getDoseForHora(pr.horarios, "08:00");
+        const d14 = getDoseForHora(pr.horarios, "14:00");
+        const d22 = getDoseForHora(pr.horarios, "22:00");
+        const d06 = getDoseForHora(pr.horarios, "06:00");
+        const calculatedDaily = d08 + d14 + d22 + d06;
+        const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (pr.totalDiario || 0);
+
+        const qtdSaida = dailyTotal * dias;
+        if (qtdSaida <= 0) continue;
 
         const loteDoMed = lotes.find(l => (l.medicamento_id === medId || l.medicamentoId === medId));
         const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
         const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Paciente";
 
-        // Criar registro de Saída no db.entities.Saida para aparecer na tela de Saída
         await db.entities.Saida.create({
           medicamento_id: medId,
           medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),

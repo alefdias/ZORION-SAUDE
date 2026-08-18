@@ -98,6 +98,15 @@ export default function Saidas({ isTab = false }) {
       const { itens, ...commonData } = data;
       const createdSaidas = [];
       
+      // Validar se há estoque suficiente na Farmácia Satélite para todos os itens primeiro
+      for (const item of itens) {
+        const medicamento = medicamentos.find(m => m.id === item.medicamento_id);
+        const atualSatelite = medicamento ? (medicamento.estoque_satelite || 0) : 0;
+        if (atualSatelite < item.quantidade) {
+          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${item.medicamento_nome}. (Saldo disponível: ${atualSatelite})`);
+        }
+      }
+
       for (const item of itens) {
         const saidaData = {
           ...commonData,
