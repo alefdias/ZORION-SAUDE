@@ -107,6 +107,28 @@ const ensureTableQuery = {
     INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil") 
     VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin')
     ON CONFLICT DO NOTHING;
+  `,
+  PrescricaoPaciente: `
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "pacienteId" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "pacienteNome" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "prontuario" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "alaNome" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "leito" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medicamentoId" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medicamentoNome" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medicamentoCodigo" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "apresentacao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "concentracao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose08" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose14" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose22" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose06" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "totalDiario" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "esquemaPosologico" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "horarios" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataInicio" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataFim" TEXT;
   `
 };
 
