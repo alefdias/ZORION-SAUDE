@@ -109,8 +109,10 @@ const ensureTableQuery = {
         "status" TEXT,
         "data_solicitacao" TEXT,
         "data_aceite" TEXT,
+        "created_at" TEXT,
         "deleted_at" TEXT
     );
+    ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
   `,
   Usuario: `
     CREATE TABLE IF NOT EXISTS "Usuario" (
