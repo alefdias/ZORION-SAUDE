@@ -11,6 +11,28 @@ function getPgConfig() {
   return { ip, dbName, password };
 }
 
+async function logAuditoria(entityName, acao, entidadeId, detalhes, ip, dbName, password) {
+  try {
+    const user = JSON.parse(localStorage.getItem("pharma_user") || "null");
+    const userName = user ? (user.nome || user.login || "Sistema") : "Sistema";
+    const auditId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    let safeDetalhes = "";
+    if (typeof detalhes === "object") {
+      try { safeDetalhes = JSON.stringify(detalhes); } catch (e) { safeDetalhes = "Objeto modificado"; }
+    } else {
+      safeDetalhes = detalhes || "";
+    }
+    const safeDetalhesEscaped = safeDetalhes.replace(/'/g, "''");
+    
+    const q = `INSERT INTO "Auditoria" ("id", "acao", "entidade", "entidade_id", "detalhes", "usuario", "data_hora", "created_at") 
+               VALUES ('${auditId}', '${acao}', '${entityName}', '${entidadeId}', '${safeDetalhesEscaped}', '${userName}', '${now}', '${now}')`;
+    await invoke("execute_postgres", { ip, dbName, password, query: q });
+  } catch (e) {
+    console.warn("[db.js] Falha ao registrar auditoria silenciosamente:", e);
+  }
+}
+
 const ensureTableQuery = {
   Medicamento: `
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "estoque_satelite" INTEGER DEFAULT 0;
@@ -219,11 +241,17 @@ const createEntityProxy = (entityName) => ({
     const query = `INSERT INTO "${entityName}" (${cols}) VALUES (${vals})`;
     try {
       await invoke("execute_postgres", { ip, dbName, password, query });
+      if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+        await logAuditoria(entityName, 'Criar', data.id, `Criação de registro`, ip, dbName, password);
+      }
       return data;
     } catch (e) {
       await autoEnsureTable(entityName);
       try {
         await invoke("execute_postgres", { ip, dbName, password, query });
+        if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+          await logAuditoria(entityName, 'Criar', data.id, `Criação de registro`, ip, dbName, password);
+        }
         return data;
       } catch (finalErr) {
         throw new Error(`${finalErr} | QUERY: ${query}`);
@@ -249,11 +277,17 @@ const createEntityProxy = (entityName) => ({
     const query = `UPDATE "${entityName}" SET ${updates} WHERE "id" = '${id}'`;
     try {
       await invoke("execute_postgres", { ip, dbName, password, query });
+      if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+        await logAuditoria(entityName, 'Atualizar', id, data, ip, dbName, password);
+      }
       return data;
     } catch (e) {
       await autoEnsureTable(entityName);
       try {
         await invoke("execute_postgres", { ip, dbName, password, query });
+        if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+          await logAuditoria(entityName, 'Atualizar', id, data, ip, dbName, password);
+        }
         return data;
       } catch (finalErr) {
         throw new Error(`${finalErr} | QUERY: ${query}`);
@@ -281,6 +315,7 @@ const createEntityProxy = (entityName) => ({
             for (let q of queries) {
                 try { await invoke("execute_postgres", { ip, dbName, password, query: q }); } catch (e) {}
             }
+            await logAuditoria(entityName, 'Excluir', id, `Exclusão em cascata do Medicamento`, ip, dbName, password);
             return;
         } else if (entityName === "Lote") {
             // Soft delete Lote and cascade
@@ -294,6 +329,7 @@ const createEntityProxy = (entityName) => ({
             for (let q of queries) {
                 try { await invoke("execute_postgres", { ip, dbName, password, query: q }); } catch (e) {}
             }
+            await logAuditoria(entityName, 'Excluir', id, `Exclusão em cascata do Lote`, ip, dbName, password);
             return;
         } else {
             query = `UPDATE "${entityName}" SET deleted_at = CURRENT_TIMESTAMP WHERE "id" = '${id}'`;
@@ -301,8 +337,25 @@ const createEntityProxy = (entityName) => ({
     } else {
         query = `DELETE FROM "${entityName}" WHERE "id" = '${id}'`;
     }
-    
-    await invoke("execute_postgres", { ip, dbName, password, query });
+
+    try {
+      await invoke("execute_postgres", { ip, dbName, password, query });
+      if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+        await logAuditoria(entityName, 'Excluir', id, `Registro excluído com sucesso`, ip, dbName, password);
+      }
+      return id;
+    } catch (e) {
+      await autoEnsureTable(entityName);
+      try {
+        await invoke("execute_postgres", { ip, dbName, password, query });
+        if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
+          await logAuditoria(entityName, 'Excluir', id, `Registro excluído com sucesso`, ip, dbName, password);
+        }
+        return id;
+      } catch (finalErr) {
+        throw new Error(`${finalErr} | QUERY: ${query}`);
+      }
+    }
   },
 });
 
