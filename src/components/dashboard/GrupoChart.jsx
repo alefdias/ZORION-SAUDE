@@ -2,7 +2,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recha
 
 const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f97316", "#ef4444", "#06b6d4", "#ec4899", "#f59e0b"];
 
-const CATEGORIA_LABELS = {
+const GRUPO_LABELS = {
   analgesico: "Analgésico",
   antitermico: "Antitérmico",
   anti_inflamatorio: "Anti-inflam.",
@@ -20,7 +20,7 @@ const CustomTooltip = ({ active, payload }) => {
     const item = payload[0];
     return (
       <div className="bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 shadow-xl text-xs">
-        <p className="text-slate-300 font-semibold">{CATEGORIA_LABELS[item.name] || item.name}</p>
+        <p className="text-slate-300 font-semibold">{GRUPO_LABELS[item.name] || item.name}</p>
         <p className="text-white font-bold mt-0.5">{item.value} un.</p>
       </div>
     );
@@ -35,14 +35,14 @@ const renderCustomLegend = (props) => {
       {payload.map((entry, index) => (
         <div key={index} className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
-          <span className="text-[11px] text-slate-500">{CATEGORIA_LABELS[entry.value] || entry.value}</span>
+          <span className="text-[11px] text-slate-500">{GRUPO_LABELS[entry.value] || entry.value}</span>
         </div>
       ))}
     </div>
   );
 };
 
-export default function CategoriaChart({ data = [] }) {
+export default function GrupoChart({ data = [] }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
       <div className="mb-5">

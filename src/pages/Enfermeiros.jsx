@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { UserPlus, Save, Trash2 } from "lucide-react";
+import { UserPlus, Save, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { db } from "@/api/db";
 
 export default function Enfermeiros({ _isTab }) {
   const [enfermeiros, setEnfermeiros] = useState([]);
@@ -9,53 +10,80 @@ export default function Enfermeiros({ _isTab }) {
   const [coren, setCoren] = useState('');
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('axion_enfermeiros');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setEnfermeiros(parsed);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to parse enfermeiros", e);
-    }
+    carregarEnfermeiros();
   }, []);
 
-  const handleSave = (e) => {
+  const carregarEnfermeiros = async () => {
+    try {
+      setFetching(true);
+      const data = await db.entities.Usuario.list();
+      // Filtrar para exibir apenas aqueles criados por esta tela (opcional)
+      // Por enquanto vamos listar todos, pois todos são enfermeiros/usuários
+      setEnfermeiros(data);
+    } catch (error) {
+      console.error("Erro ao carregar enfermeiros:", error);
+      toast.error("Falha ao carregar lista do banco de dados");
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!nome || !usuario || !senha) {
       toast.error("Preencha os campos obrigatórios");
       return;
     }
 
-    const novo = {
-      id: Date.now().toString(),
-      nome,
-      coren,
-      usuario,
-      senha,
-      role: 'enfermeiro'
-    };
+    try {
+      setLoading(true);
+      // Validar se usuário já existe
+      const existing = enfermeiros.find(u => u.login === usuario);
+      if (existing) {
+        toast.error("Este nome de usuário já está em uso!");
+        setLoading(false);
+        return;
+      }
 
-    const novosEnfermeiros = [...enfermeiros, novo];
-    setEnfermeiros(novosEnfermeiros);
-    localStorage.setItem('axion_enfermeiros', JSON.stringify(novosEnfermeiros));
-    
-    toast.success("Enfermeiro cadastrado com sucesso!");
-    setNome('');
-    setCoren('');
-    setUsuario('');
-    setSenha('');
+      const novo = {
+        nome,
+        coren,
+        login: usuario,
+        senha,
+        perfil: 'enfermeiro'
+      };
+
+      await db.entities.Usuario.create(novo);
+      
+      toast.success("Enfermeiro cadastrado com sucesso!");
+      setNome('');
+      setCoren('');
+      setUsuario('');
+      setSenha('');
+      carregarEnfermeiros();
+    } catch (error) {
+      console.error("Erro ao salvar enfermeiro:", error);
+      toast.error("Erro ao salvar no banco de dados.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    const novosEnfermeiros = enfermeiros.filter(e => e.id !== id);
-    setEnfermeiros(novosEnfermeiros);
-    localStorage.setItem('axion_enfermeiros', JSON.stringify(novosEnfermeiros));
-    toast.success("Cadastro removido");
+  const handleDelete = async (id) => {
+    if(!window.confirm("Deseja realmente excluir este usuário?")) return;
+    
+    try {
+      await db.entities.Usuario.delete(id);
+      toast.success("Cadastro removido");
+      carregarEnfermeiros();
+    } catch (error) {
+      console.error("Erro ao deletar:", error);
+      toast.error("Erro ao remover o usuário.");
+    }
   };
 
   return (
@@ -142,7 +170,7 @@ export default function Enfermeiros({ _isTab }) {
                     <tr key={enf.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30">
                       <td className="px-4 py-3">{enf.nome}</td>
                       <td className="px-4 py-3">{enf.coren || '-'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{enf.usuario}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{enf.login}</td>
                       <td className="px-4 py-3 text-right">
                         <Button 
                           variant="ghost" 

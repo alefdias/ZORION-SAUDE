@@ -39,8 +39,10 @@ import {
   Eye,
   FileText,
   LogOut,
-  Undo2
+  Undo2,
+  ShoppingCart
 } from "lucide-react";
+import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 
 const getLocalDateString = () => {
   const d = new Date();
@@ -153,9 +155,10 @@ export default function PacientesMedicao() {
     queryFn: () => db.entities.Medicamento.list(),
   });
 
-  // Apenas medicamentos com estoque positivo na farmácia/satélite podem ser cadastrados em prescrições
+  // Mostra todos os medicamentos, independente do estoque (Central ou Satélite), conforme solicitado.
+  // A cor no combobox indicará visualmente onde há estoque.
   const medicamentosComEstoque = useMemo(() => {
-    return (medicamentos || []).filter(m => (m.estoque_atual || 0) > 0 || (m.estoque_satelite || 0) > 0);
+    return medicamentos || [];
   }, [medicamentos]);
 
   const { data: lotes = [] } = useQuery({
@@ -167,6 +170,19 @@ export default function PacientesMedicao() {
     queryKey: ['alas'],
     queryFn: () => db.entities.Ala.list(),
   });
+
+  const { data: saidas = [] } = useQuery({
+    queryKey: ['saidas'],
+    queryFn: () => db.entities.Saida.list(),
+  });
+
+  const getSaidasAvulsasDoPaciente = (pacienteNome) => {
+    if (!pacienteNome) return [];
+    return saidas.filter(s => 
+      s.paciente_nome === pacienteNome && 
+      (!s.motivo || !s.motivo.startsWith("Baixa de medicação fixa"))
+    ).sort((a, b) => new Date(b.created_at || b.data_saida || 0) - new Date(a.created_at || a.data_saida || 0));
+  };
 
   // Patient Mutations
   const savePatientMutation = useMutation({
@@ -219,7 +235,7 @@ export default function PacientesMedicao() {
         medicamentoNome: med ? med.nome : "Medicamento não informado",
         medicamentoCodigo: med ? med.codigo : "",
         apresentacao: med ? med.apresentacao : "",
-        dosagem: med ? (med.dosagem || med.concentracao || "") : "",
+        concentracao: med ? (med.concentracao || "") : "",
         esquemaPosologico: esquema,
         totalDiario: totalDiario,
         horarios: JSON.stringify([
@@ -389,40 +405,15 @@ export default function PacientesMedicao() {
         });
       }
 
-      // Atualizar estoque_satelite, estoque_atual e lote de cada medicamento deduzido
+      // Atualizar estoque_satelite de cada medicamento deduzido (nunca deduz da central)
       for (const [medId, totalQtd] of Object.entries(medDeductions)) {
         const med = medicamentos.find(m => m.id === medId);
         if (med) {
-          let remQtd = totalQtd;
-          let newSatelite = med.estoque_satelite || 0;
-          let newGeral = med.estoque_atual || 0;
-
-          if (newSatelite > 0) {
-            if (newSatelite >= remQtd) {
-              newSatelite -= remQtd;
-              remQtd = 0;
-            } else {
-              remQtd -= newSatelite;
-              newSatelite = 0;
-            }
-          }
-          if (remQtd > 0) {
-            newGeral = Math.max(0, newGeral - remQtd);
-          }
-
           await db.entities.Medicamento.update(medId, {
-            estoque_satelite: newSatelite,
-            estoque_atual: newGeral
+            estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - totalQtd)
           });
-
-          const loteDoMed = lotes.find(l => (l.medicamento_id === medId || l.medicamentoId === medId));
-          if (loteDoMed) {
-            const novaQtdLote = Math.max(0, (loteDoMed.quantidade_atual || 0) - totalQtd);
-            await db.entities.Lote.update(loteDoMed.id, {
-              quantidade_atual: novaQtdLote,
-              status: novaQtdLote <= 0 ? "esgotado" : loteDoMed.status
-            });
-          }
+          // Nota: Não atualizamos lote.quantidade_atual aqui pois os itens na satélite
+          // já foram deduzidos do lote no momento da transferência da Central para a Satélite.
         }
       }
     },
@@ -506,13 +497,14 @@ export default function PacientesMedicao() {
 
       const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
       
-      // Cria Entrada para constar no Livro Portaria e relatórios
+      // Cria Entrada para constar no Livro Portaria e relatórios (Satélite)
       await db.entities.Entrada.create({
         medicamento_id: med.id,
         medicamento_nome: med.nome,
         fornecedor_nome: (pac ? `Devolução Paciente: ${pac.nome}` : "Devolução") + ` - ${tipo} ${motivo ? '('+motivo+')' : ''}`,
         lote_id: loteDoMed ? loteDoMed.id : null,
         numero_lote: loteDoMed ? loteDoMed.numero_lote : "DEVOLVIDO",
+        data_validade: loteDoMed ? loteDoMed.data_validade : null,
         quantidade: parseInt(qtd, 10),
         data_entrada: todayDateStr,
         created_at: nowStr
@@ -592,13 +584,14 @@ export default function PacientesMedicao() {
              });
              const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
              
-             // Criar Entrada no DB
+             // Criar Entrada no DB (Satélite)
              await db.entities.Entrada.create({
                 medicamento_id: med.id,
                 medicamento_nome: med.nome,
                 fornecedor_nome: `Devolução Alta Paciente: ${pac.nome} - ${tipo} ${devMotivo ? '('+devMotivo+')' : ''}`,
                 lote_id: loteDoMed ? loteDoMed.id : null,
                 numero_lote: loteDoMed ? loteDoMed.numero_lote : "DEVOLVIDO",
+                data_validade: loteDoMed ? loteDoMed.data_validade : null,
                 quantidade: devQtd,
                 data_entrada: todayDateStr,
                 created_at: nowStr
@@ -787,7 +780,7 @@ export default function PacientesMedicao() {
         nome: p.medicamentoNome || "Medicamento",
         codigo: p.medicamentoCodigo || "-",
         apresentacao: p.apresentacao || "-",
-        dosagem: p.dosagem || "-",
+        concentracao: p.concentracao || "-",
         estoque_atual: 0
       };
 
@@ -801,7 +794,7 @@ export default function PacientesMedicao() {
           nome: med.nome,
           codigo: med.codigo,
           apresentacao: med.apresentacao,
-          dosagem: med.dosagem || med.concentracao,
+          concentracao: med.concentracao,
           estoqueAtual: med.estoque_atual || 0,
           qtdDiaria: 0,
           qtdPeriodo: 0,
@@ -897,9 +890,9 @@ export default function PacientesMedicao() {
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Pacientes & Medicação Fixa</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Pacientes</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Controle de posologia (08-14-22-06h), requisições continuadas e relatórios de previsão para separação
+              Gestão de pacientes ativos, leitos e prescrições médicas fixas
             </p>
           </div>
         </div>
@@ -918,14 +911,10 @@ export default function PacientesMedicao() {
 
       {/* Main Tabs */}
       <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-[700px] mb-4">
+        <TabsList className="grid w-full grid-cols-2 max-w-[500px] mb-4">
           <TabsTrigger value="pacientes" className="flex items-center gap-2 font-bold">
             <Users className="w-4 h-4 text-blue-600" />
             Pacientes Ativos ({activePatients.length})
-          </TabsTrigger>
-          <TabsTrigger value="relatorio" className="flex items-center gap-2 font-bold">
-            <CalendarDays className="w-4 h-4 text-emerald-600" />
-            Relatório {periodoDias} Dias
           </TabsTrigger>
           <TabsTrigger value="altas" className="flex items-center gap-2 font-bold">
             <LogOut className="w-4 h-4 text-amber-600" />
@@ -1150,212 +1139,7 @@ export default function PacientesMedicao() {
           </Card>
         </TabsContent>
 
-        {/* ─── TAB 2: RELATÓRIO DE PREVISÃO (7 DIAS) ────────────────────────── */}
-        <TabsContent value="relatorio" className="space-y-6">
-          {/* Seletor de Período + Ações de Impressão e Baixa */}
-          <Card className="p-5 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-              <div className="flex items-center gap-3">
-                <CalendarDays className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">Período de Previsão de Consumo</h3>
-                  <p className="text-xs text-slate-500">Cálculo de suprimento para requisição e montagem de kits hospitalares</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap no-print">
-                <span className="text-xs font-semibold text-slate-600">Dias:</span>
-                {[1, 7, 14, 30].map(dias => (
-                  <Button
-                    key={dias}
-                    size="sm"
-                    variant={periodoDias === dias ? "default" : "outline"}
-                    onClick={() => setPeriodoDias(dias)}
-                    className={periodoDias === dias ? "bg-blue-600 text-white" : ""}
-                  >
-                    {dias} {dias === 1 ? "Dia" : "Dias"}
-                  </Button>
-                ))}
-                
-                <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
-
-                <Button onClick={() => window.print()} variant="outline" className="gap-2 border-slate-300">
-                  <Printer className="w-4 h-4" />
-                  Imprimir Relatório ({periodoDias}D)
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          {/* Sub-Tabs: Consolidado Compras vs Kits por Paciente */}
-          <Tabs value={reportSubTab} onValueChange={setReportSubTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 max-w-[450px] mb-4">
-              <TabsTrigger value="consolidado">Visão Consolidada (Pedido/Estoque)</TabsTrigger>
-              <TabsTrigger value="pacientes">Visão por Paciente (Kits de Separação)</TabsTrigger>
-            </TabsList>
-
-            {/* VISÃO 1: CONSOLIDADO MEDS */}
-            <TabsContent value="consolidado" className="space-y-4">
-              <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <div className="p-4 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">
-                    Consolidado Geral de Medicamentos para {periodoDias} Dias ({calculoPrevisao.consolidadoMeds.length} itens)
-                  </h3>
-                  <span className="text-xs text-slate-500 font-mono">
-                    Total de Pacientes com Prescrição: {calculoPrevisao.totalPacientesComMedicao}
-                  </span>
-                </div>
-
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Cód</TableHead>
-                      <TableHead>Medicamento / Concentração</TableHead>
-                      <TableHead className="text-center">Consumo Diário Total</TableHead>
-                      <TableHead className="text-center bg-blue-50/50 dark:bg-blue-950/20 font-bold text-blue-900 dark:text-blue-300">
-                        Necessário ({periodoDias} Dias)
-                      </TableHead>
-                      <TableHead className="text-center">Estoque Atual Farmácia</TableHead>
-                      <TableHead className="text-center">Status do Suprimento</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {calculoPrevisao.consolidadoMeds.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-12 text-slate-500">
-                          Nenhuma medicação fixa ativa para calcular no período.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      calculoPrevisao.consolidadoMeds.map(item => (
-                        <TableRow key={item.medicamentoId} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                          <TableCell className="font-mono text-xs text-slate-600">{item.codigo || "-"}</TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-bold text-slate-900 dark:text-slate-100">{item.nome}</p>
-                              <p className="text-xs text-slate-500">{item.dosagem} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
-                              <p className="text-[10px] text-blue-600">Utilizado por {item.totalPacientes} paciente(s)</p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center font-mono font-semibold">
-                            {item.qtdDiaria} un/dia
-                          </TableCell>
-                          <TableCell className="text-center font-mono font-black text-lg bg-blue-50/40 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300">
-                            {item.qtdPeriodo} un
-                          </TableCell>
-                          <TableCell className="text-center font-mono font-bold">
-                            {item.estoqueAtual} un
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {item.suficiente ? (
-                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 flex items-center justify-center gap-1 mx-auto w-fit">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                Estoque Ok
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive" className="flex items-center justify-center gap-1 mx-auto w-fit">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                Falta: {item.diferenca} un
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </Card>
-            </TabsContent>
-
-            {/* VISÃO 2: KITS POR PACIENTE */}
-            <TabsContent value="pacientes" className="space-y-4">
-              {calculoPrevisao.consolidadoPacientes.length === 0 ? (
-                <Card className="p-12 text-center text-slate-500">
-                  Nenhum paciente com prescrição ativa para montar kits.
-                </Card>
-              ) : (
-                <div className="space-y-8">
-                  {Object.entries(
-                    calculoPrevisao.consolidadoPacientes.reduce((acc, pac) => {
-                      const ala = pac.alaNome || 'Sem Ala Definida';
-                      if (!acc[ala]) acc[ala] = [];
-                      acc[ala].push(pac);
-                      return acc;
-                    }, {})
-                  ).sort(([alaA], [alaB]) => alaA.localeCompare(alaB)).map(([alaNome, pacientesDaAla]) => (
-                    <div key={alaNome} className="space-y-4 print:break-inside-avoid">
-                      <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center">
-                        <h3 className="font-black text-slate-800 dark:text-slate-100 text-lg uppercase flex items-center gap-2">
-                          <Users className="w-5 h-5 text-indigo-600" />
-                          Setor / Ala: {alaNome}
-                        </h3>
-                        <Badge variant="secondary" className="bg-slate-200 text-slate-700">
-                          {pacientesDaAla.length} Paciente(s)
-                        </Badge>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {pacientesDaAla.map(pac => (
-                          <Card key={pac.pacienteId} className="border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3 print:break-inside-avoid">
-                            <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3">
-                              <div>
-                                <h4 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                                  {pac.nome}
-                                </h4>
-                                <p className="text-xs text-slate-500 font-mono mt-1">
-                                  Prontuário: {pac.prontuario} • Leito: {pac.leito}
-                                </p>
-                              </div>
-                              <Badge variant="outline" className="bg-blue-50 text-blue-700 font-bold border-blue-200">
-                                Previsão {periodoDias}D
-                              </Badge>
-                            </div>
-
-                            <Table>
-                              <TableHeader>
-                                <TableRow className="text-[11px]">
-                                  <TableHead className="py-1">Medicamento</TableHead>
-                                  <TableHead className="py-1 text-center">Posologia (08-14-22-06h)</TableHead>
-                                  <TableHead className="py-1 text-right">Total {periodoDias}D</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {pac.prescricoes.map(pr => {
-                                  const d08 = getDoseForHora(pr.horarios, "08:00");
-                                  const d14 = getDoseForHora(pr.horarios, "14:00");
-                                  const d22 = getDoseForHora(pr.horarios, "22:00");
-                                  const d06 = getDoseForHora(pr.horarios, "06:00");
-
-                                  return (
-                                    <TableRow key={pr.id} className="text-xs">
-                                      <TableCell className="py-1.5 font-medium">
-                                        {pr.medNome}
-                                      </TableCell>
-                                      <TableCell className="py-1.5 text-center font-mono">
-                                        <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-bold text-[10px]">
-                                          {d08}-{d14}-{d22}-{d06}
-                                        </span>
-                                      </TableCell>
-                                      <TableCell className="py-1.5 text-right font-bold text-blue-700 dark:text-blue-400 font-mono">
-                                        {pr.qtdPeriodo} un
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
-                          </Card>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </TabsContent>
-
-        {/* ─── TAB 3: PACIENTES DE ALTA ────────────────────────────────────── */}
+        {/* ─── TAB 2: PACIENTES DE ALTA ────────────────────────────────────── */}
         <TabsContent value="altas" className="space-y-4">
           <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
             <div className="relative">
@@ -1723,13 +1507,25 @@ export default function PacientesMedicao() {
                               "inline-flex items-center gap-1.5 p-1.5 rounded-xl border font-mono shadow-inner text-xs",
                               isSuspensa ? "bg-slate-100 border-slate-200" : "bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700"
                             )}>
-                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d08 > 0 ? "bg-blue-500 text-white shadow-sm" : "text-slate-300")}>{d08 > 0 ? `${d08}x` : '-'}</span>
-                              <span className="text-slate-200">|</span>
-                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d14 > 0 ? "bg-amber-500 text-white shadow-sm" : "text-slate-300")}>{d14 > 0 ? `${d14}x` : '-'}</span>
-                              <span className="text-slate-200">|</span>
-                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d22 > 0 ? "bg-purple-500 text-white shadow-sm" : "text-slate-300")}>{d22 > 0 ? `${d22}x` : '-'}</span>
-                              <span className="text-slate-200">|</span>
-                              <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d06 > 0 ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300")}>{d06 > 0 ? `${d06}x` : '-'}</span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 leading-none">08h</span>
+                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d08 > 0 ? "bg-blue-500 text-white shadow-sm" : "text-slate-300")}>{d08 > 0 ? `${d08}x` : '-'}</span>
+                              </div>
+                              <span className="text-slate-200 mt-3">|</span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 leading-none">14h</span>
+                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d14 > 0 ? "bg-amber-500 text-white shadow-sm" : "text-slate-300")}>{d14 > 0 ? `${d14}x` : '-'}</span>
+                              </div>
+                              <span className="text-slate-200 mt-3">|</span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 leading-none">22h</span>
+                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d22 > 0 ? "bg-purple-500 text-white shadow-sm" : "text-slate-300")}>{d22 > 0 ? `${d22}x` : '-'}</span>
+                              </div>
+                              <span className="text-slate-200 mt-3">|</span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 leading-none">06h</span>
+                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d06 > 0 ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300")}>{d06 > 0 ? `${d06}x` : '-'}</span>
+                              </div>
                             </div>
                           </TableCell>
 
@@ -1811,6 +1607,58 @@ export default function PacientesMedicao() {
                 </Table>
               </div>
             )}
+
+            {/* HISTÓRICO DE SAÍDAS AVULSAS */}
+            {(() => {
+              const avulsas = getSaidasAvulsasDoPaciente(viewPatientDetails?.nome);
+              if (avulsas.length === 0) return null;
+              return (
+                <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-2 uppercase tracking-wide">
+                      <div className="w-1.5 h-4 bg-emerald-500 rounded-full"></div>
+                      Histórico de Saídas Avulsas / Extras
+                    </h4>
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                      {avulsas.length} registros
+                    </Badge>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+                    <Table>
+                      <TableHeader className="bg-slate-50 dark:bg-slate-800/80">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-32 text-xs font-bold text-slate-600 uppercase tracking-wider">Data</TableHead>
+                          <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Medicamento / Lote</TableHead>
+                          <TableHead className="text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Qtd</TableHead>
+                          <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Motivo / Observação</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {avulsas.map((s) => (
+                          <TableRow key={s.id} className="hover:bg-slate-50/50">
+                            <TableCell className="text-slate-500 font-medium text-xs">
+                              {safeFormatDate(s.data_saida || s.created_at)}
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{s.medicamento_nome}</p>
+                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">Lote: {s.numero_lote || "S/L"}</p>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge className="bg-red-100 text-red-700 hover:bg-red-200 font-bold">-{s.quantidade}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 max-w-[200px] truncate">
+                              <p className="font-medium">{s.motivo || "Saída Avulsa"}</p>
+                              {s.observacao && <p className="text-slate-400 mt-0.5">{s.observacao}</p>}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              );
+            })()}
+
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-4 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-b-2xl border-t border-slate-200 dark:border-slate-800">
@@ -2174,7 +2022,7 @@ export default function PacientesMedicao() {
       <div id="print-area" className="hidden print:block p-8 bg-white text-slate-900 font-sans">
         <div className="border-b-2 border-blue-900 pb-4 mb-6 flex justify-between items-end">
           <div>
-            <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">AXION SAÚDE — PREVISÃO E SEPARAÇÃO DE MEDICAÇÃO FIXA</h1>
+            <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">ZORION SAÚDE — PREVISÃO E SEPARAÇÃO DE MEDICAÇÃO FIXA</h1>
             <p className="text-xs text-slate-600 font-bold mt-1">RELATÓRIO DE DISPENSAÇÃO CONTINUADA • PREVISÃO PARA {periodoDias} DIAS</p>
           </div>
           <div className="text-right text-xs text-slate-600 font-mono">
@@ -2192,7 +2040,7 @@ export default function PacientesMedicao() {
             <thead>
               <tr className="bg-slate-200 text-slate-900 font-bold uppercase">
                 <th className="border border-slate-300 p-2">Código</th>
-                <th className="border border-slate-300 p-2">Medicamento / Dosagem</th>
+                <th className="border border-slate-300 p-2">Medicamento / Concentração</th>
                 <th className="border border-slate-300 p-2 text-center">Consumo Diário</th>
                 <th className="border border-slate-300 p-2 text-center">Total {periodoDias}D</th>
                 <th className="border border-slate-300 p-2 text-center">Estoque Atual</th>
@@ -2203,7 +2051,7 @@ export default function PacientesMedicao() {
               {calculoPrevisao.consolidadoMeds.map(item => (
                 <tr key={item.medicamentoId}>
                   <td className="border border-slate-300 p-2 font-mono">{item.codigo || "-"}</td>
-                  <td className="border border-slate-300 p-2 font-bold">{item.nome} {item.dosagem ? `(${item.dosagem})` : ""}</td>
+                  <td className="border border-slate-300 p-2 font-bold">{item.nome} {item.concentracao ? `(${item.concentracao})` : ""}</td>
                   <td className="border border-slate-300 p-2 text-center font-mono">{item.qtdDiaria}</td>
                   <td className="border border-slate-300 p-2 text-center font-mono font-bold text-blue-900">{item.qtdPeriodo}</td>
                   <td className="border border-slate-300 p-2 text-center font-mono">{item.estoqueAtual}</td>

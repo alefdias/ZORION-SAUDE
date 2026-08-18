@@ -15,7 +15,7 @@ const ENTITY_LABELS = {
   Fornecedor: "Fornecedores",
   Ala: "Alas",
   Emprestimo: "Empréstimos",
-  Categoria: "Categorias",
+  GrupoTerapeutico: "GrupoTerapeutico",
   Inventario: "Inventários",
   InventarioItem: "Itens de Inventário",
   Config: "Configurações",

@@ -35,8 +35,8 @@ function LoadingScreen({ message, progress, mode }) {
         <img src={logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain", transform: "scale(1.5)" }} />
       </div>
 
-      <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 8px", letterSpacing: 0.5 }}>
-        Axion Saúde
+      <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 8px", letterSpacing: 0.5, textTransform: "uppercase" }}>
+        ZORION SAÚDE
       </h1>
 
       <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 32 }}>

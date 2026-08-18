@@ -32,6 +32,23 @@ export async function initializeApp() {
                     "data_aceite" TEXT,
                     "deleted_at" TEXT
                 );
+                CREATE TABLE IF NOT EXISTS "PedidoSatelite" (
+                    "id" TEXT PRIMARY KEY,
+                    "codigo" TEXT,
+                    "ala_id" TEXT,
+                    "ala_nome" TEXT,
+                    "dias_calculados" INTEGER,
+                    "solicitante" TEXT,
+                    "data_solicitacao" TEXT,
+                    "status" TEXT,
+                    "data_separacao" TEXT,
+                    "data_entrega" TEXT,
+                    "data_recebimento" TEXT,
+                    "itens_json" TEXT,
+                    "observacao" TEXT,
+                    "created_at" TEXT,
+                    "deleted_at" TEXT
+                );
             `;
             await invoke("execute_postgres", { ip, dbName, password, query });
 

@@ -178,11 +178,11 @@ export default function SatelitePortaria() {
                 </SelectTrigger>
                 <SelectContent className="max-w-[90vw] sm:max-w-none">
                   {medicamentos
-                    .filter(m => isPsicotropico(m.categoria) && getPortaria344List(m.nome) === selectedLista)
+                    .filter(m => isPsicotropico(m.grupo_terapeutico) && getPortaria344List(m.nome) === selectedLista)
                     .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
                     .map(med => (
                       <SelectItem key={med.id} value={med.id}>
-                        {med.nome} {med.dosagem ? `- ${med.dosagem}` : ""} {med.unidade_medida && med.unidade_medida.toLowerCase() !== 'un' ? `- ${med.unidade_medida}` : ""} {med.apresentacao ? `- ${med.apresentacao}` : ""}
+                        {med.nome} {med.concentracao ? `- ${med.concentracao}` : ""} {med.unidade_medida && med.unidade_medida.toLowerCase() !== 'un' ? `- ${med.unidade_medida}` : ""} {med.apresentacao ? `- ${med.apresentacao}` : ""}
                       </SelectItem>
                     ))}
                 </SelectContent>

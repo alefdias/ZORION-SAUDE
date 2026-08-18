@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import Saidas from "./Saidas";
-import { getApresentacaoEDosagem } from "./Medicamentos";
+import { getApresentacaoEConcentracao } from "./Medicamentos";
 import { Badge } from "@/components/ui/badge";
 import { Package, ArrowUpFromLine, LayoutDashboard, Building2, Stethoscope, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";

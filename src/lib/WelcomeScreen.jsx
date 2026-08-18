@@ -9,6 +9,8 @@ import logo from "../assets/logo-tr.png";
 import { Toaster, toast } from "sonner";
 import { addLog } from "./logger";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
+import { Palette } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ─── Ícones SVG ───────────────────────────────────────────────────────────────
 
@@ -235,6 +237,22 @@ export function WelcomeScreen({ onEnter }) {
   // Mouse hover effect state
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
+  // Theme state
+  const [themeColor, setThemeColorState] = useState(() => {
+    return localStorage.getItem("zorion_theme") || "theme-ocean";
+  });
+
+  const setThemeColor = (newTheme) => {
+    document.documentElement.classList.remove(themeColor);
+    document.documentElement.classList.add(newTheme);
+    localStorage.setItem("zorion_theme", newTheme);
+    setThemeColorState(newTheme);
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.add(themeColor);
+  }, []);
+
   const handleMouseMove = (e) => {
     setMousePos({ x: e.clientX, y: e.clientY });
   };
@@ -432,7 +450,7 @@ export function WelcomeScreen({ onEnter }) {
             alignItems: "center",
             justifyContent: "center"
           }}>
-            <span style={{ color: "#3b82f6" }}>AX</span>
+            <span style={{ color: "#3b82f6" }}>ZOR</span>
             <span style={{ color: "#ffffff" }}>ION</span>
           </h1>
         </div>
@@ -499,8 +517,42 @@ export function WelcomeScreen({ onEnter }) {
           padding: "0 32px",
         }}
       >
-        <div style={{ fontSize: 11, color: "#334155", letterSpacing: 0.5 }}>
-          AXION SAÚDE © 2025 — V1.0
+        <div style={{ pointerEvents: "auto", display: "flex", gap: "8px" }} className="group relative">
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/40 border border-slate-700/50 hover:bg-slate-700/50 transition-colors text-slate-300">
+            <Palette className="w-4 h-4" />
+            <span className="text-xs font-medium">Tema: {themeColor.replace("theme-", "").replace("padrao", "oceano").toUpperCase()}</span>
+          </button>
+          
+          <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#0f172a] border border-slate-700 rounded-xl p-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-2xl">
+            <div className="grid grid-cols-1 gap-1.5">
+              {[
+                { id: "theme-ocean", name: "Oceano", colors: ["bg-blue-600", "bg-blue-900", "bg-slate-100", "bg-white"] },
+                { id: "theme-emerald", name: "Esmeralda", colors: ["bg-emerald-600", "bg-[#064e3b]", "bg-[#f0fdf4]", "bg-white"] },
+                { id: "theme-midnight", name: "Meia-noite", colors: ["bg-slate-500", "bg-slate-900", "bg-[#020617]", "bg-slate-800"] },
+                { id: "theme-sunset", name: "Pôr do Sol", colors: ["bg-orange-500", "bg-[#431407]", "bg-orange-50", "bg-white"] },
+                { id: "theme-amethyst", name: "Ametista", colors: ["bg-purple-500", "bg-[#3b0764]", "bg-purple-50", "bg-white"] },
+                { id: "theme-rose", name: "Rosa Elegance", colors: ["bg-rose-500", "bg-[#881337]", "bg-rose-50", "bg-white"] },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setThemeColor(t.id)}
+                  className={cn(
+                    "flex items-center gap-3 p-2 rounded-lg transition-colors border text-left",
+                    themeColor === t.id ? "bg-slate-800 border-slate-600" : "hover:bg-slate-800/60 border-transparent"
+                  )}
+                >
+                  <div className="flex -space-x-1 shrink-0">
+                    {t.colors.map((c, i) => <div key={i} className={cn("w-3.5 h-3.5 rounded-full ring-2 ring-[#0f172a]", c)} />)}
+                  </div>
+                  <span className={cn("text-[11px] font-medium transition-colors", themeColor === t.id ? "text-white" : "text-slate-400")}>{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] text-slate-500 font-medium tracking-[0.2em]">
+          ZORION SAÚDE © 2026 — V1.0
         </div>
         
         <div style={{ pointerEvents: "auto" }}>

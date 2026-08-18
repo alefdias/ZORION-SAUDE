@@ -442,7 +442,7 @@ export default function CarrinhoParada() {
     const medSelecionado = medicamentos.find(m => m.id === novoItemMedicamentoId);
     if (!medSelecionado) return;
 
-    const dose = (medSelecionado.dosagem || medSelecionado.concentracao || (medSelecionado.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(medSelecionado.unidade_medida.toLowerCase()) ? medSelecionado.unidade_medida : "")).trim();
+    const dose = (medSelecionado.concentracao || (medSelecionado.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(medSelecionado.unidade_medida.toLowerCase()) ? medSelecionado.unidade_medida : "")).trim();
     const apres = medSelecionado.apresentacao ? ` [${medSelecionado.apresentacao}]` : "";
     const doseStr = dose ? ` - ${dose}` : "";
     const nomeCompleto = `${medSelecionado.nome}${apres}${doseStr}`;
@@ -2392,7 +2392,7 @@ export default function CarrinhoParada() {
   const renderNursingForm = () => {
     const filteredItems = itemsCheckState.filter(item => 
       (item.nome && typeof item.nome === 'string' && item.nome.toLowerCase().includes(filterText.toLowerCase())) ||
-      (item.categoria && typeof item.categoria === 'string' && item.categoria.toLowerCase().includes(filterText.toLowerCase()))
+      (item.grupo_terapeutico && typeof item.grupo_terapeutico === 'string' && item.grupo_terapeutico.toLowerCase().includes(filterText.toLowerCase()))
     );
 
     return (
@@ -2594,7 +2594,7 @@ export default function CarrinhoParada() {
                         {Boolean(item.isMav) && <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5 text-red-600" title="Medicamento de Alta Vigilância" />}
                         {item.nome}
                       </span>
-                      <span className="text-xs text-slate-400">{item.categoria} {Boolean(item.isMav) && '• MAV'}</span>
+                      <span className="text-xs text-slate-400">{item.grupo_terapeutico} {Boolean(item.isMav) && '• MAV'}</span>
                     </td>
                     <td className="px-4 py-3 text-center font-bold text-slate-600 dark:text-slate-400">
                       {item.qtdPadrao}
@@ -2681,7 +2681,7 @@ export default function CarrinhoParada() {
         <div className="bg-white text-slate-900 p-8 rounded-xl shadow-xl max-w-4xl mx-auto border border-slate-300 print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:max-w-none">
           <div className="flex justify-between items-center border-b-2 border-slate-800 pb-4 mb-6">
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">Axion Saúde</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">Zorion Saúde</h1>
               <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">Sistema de Gestão Hospitalar</p>
               <p className="text-sm font-semibold text-slate-800 mt-1">FOLHA DE CHECAGEM MENSAL — CARRINHO DE PARADA</p>
             </div>

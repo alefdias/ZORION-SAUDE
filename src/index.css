@@ -52,35 +52,30 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
-  .theme-verde {
+  .theme-ocean {
+    /* Same as default */
+  }
+
+  .theme-emerald {
     --theme-50: #f0fdf4;
     --theme-100: #dcfce7;
     --theme-200: #bbf7d0;
     --theme-300: #86efac;
     --theme-400: #4ade80;
-    --theme-500: #22c55e;
-    --theme-600: #16a34a;
-    --theme-700: #15803d;
-    --theme-800: #166534;
-    --theme-900: #14532d;
-    --theme-950: #052e16;
+    --theme-500: #10b981;
+    /* Emerald 500 */
+    --theme-600: #059669;
+    --theme-700: #047857;
+    --theme-800: #065f46;
+    --theme-900: #064e3b;
+    --theme-950: #022c22;
+    --sidebar-primary: 152 76% 12%;
+    /* #064e3b equivalent */
+    --sidebar-primary-foreground: 152 76% 98%;
+    --ring: 152 76% 40%;
   }
 
-  .theme-roxo {
-    --theme-50: #faf5ff;
-    --theme-100: #f3e8ff;
-    --theme-200: #e9d5ff;
-    --theme-300: #d8b4fe;
-    --theme-400: #c084fc;
-    --theme-500: #a855f7;
-    --theme-600: #9333ea;
-    --theme-700: #7e22ce;
-    --theme-800: #6b21a8;
-    --theme-900: #581c87;
-    --theme-950: #3b0764;
-  }
-
-  .theme-ardosia {
+  .theme-midnight {
     --theme-50: #f8fafc;
     --theme-100: #f1f5f9;
     --theme-200: #e2e8f0;
@@ -92,56 +87,107 @@
     --theme-800: #1e293b;
     --theme-900: #0f172a;
     --theme-950: #020617;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 217.2 32.6% 17.5%;
   }
 
-  .theme-rosa {
-    --theme-50: #fdf2f8;
-    --theme-100: #fce7f3;
-    --theme-200: #fbcfe8;
-    --theme-300: #f9a8d4;
-    --theme-400: #f472b6;
-    --theme-500: #ec4899;
-    --theme-600: #db2777;
-    --theme-700: #be185d;
-    --theme-800: #9d174d;
-    --theme-900: #831843;
-    --theme-950: #500724;
+  .theme-sunset {
+    --theme-50: #fff7ed;
+    --theme-100: #ffedd5;
+    --theme-200: #fed7aa;
+    --theme-300: #fdba74;
+    --theme-400: #fb923c;
+    --theme-500: #f97316;
+    --theme-600: #ea580c;
+    --theme-700: #c2410c;
+    --theme-800: #9a3412;
+    --theme-900: #7c2d12;
+    --theme-950: #431407;
+    --sidebar-primary: 25 95% 20%;
+    --sidebar-primary-foreground: 25 95% 98%;
+    --ring: 25 95% 53%;
   }
 
-  .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+  .theme-amethyst {
+    --theme-50: #faf5ff;
+    --theme-100: #f3e8ff;
+    --theme-200: #e9d5ff;
+    --theme-300: #d8b4fe;
+    --theme-400: #c084fc;
+    --theme-500: #a855f7;
+    --theme-600: #9333ea;
+    --theme-700: #7e22ce;
+    --theme-800: #6b21a8;
+    --theme-900: #581c87;
+    --theme-950: #3b0764;
+    --sidebar-primary: 270 90% 18%;
+    --sidebar-primary-foreground: 270 90% 98%;
+    --ring: 270 90% 55%;
   }
+  .theme-rose {
+    --theme-50: #fff1f2;
+    --theme-100: #ffe4e6;
+    --theme-200: #fecdd3;
+    --theme-300: #fda4af;
+    --theme-400: #fb7185;
+    --theme-500: #f43f5e;
+    --theme-600: #e11d48;
+    --theme-700: #be123c;
+    --theme-800: #9f1239;
+    --theme-900: #881337;
+    --theme-950: #4c0519;
+    --sidebar-primary: 343 85% 25%;
+    --sidebar-primary-foreground: 343 85% 98%;
+    --ring: 343 85% 55%;
+  }
+
+.dark {
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+  --sidebar-background: 240 5.9% 10%;
+  --sidebar-foreground: 240 4.8% 95.9%;
+  --sidebar-primary: 224.3 76.3% 48%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 3.7% 15.9%;
+  --sidebar-accent-foreground: 240 4.8% 95.9%;
+  --sidebar-border: 240 3.7% 15.9%;
+  --sidebar-ring: 217.2 91.2% 59.8%;
+}
 }
 
 
@@ -163,13 +209,43 @@
     margin: 10mm;
     size: auto;
   }
+
   body {
     background: #ffffff !important;
     color: #000000 !important;
   }
-  aside, nav, header, .print\:hidden {
+
+  aside,
+  nav,
+  header,
+  .print\:hidden {
     display: none !important;
   }
+
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: auto;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  aside,
+  nav,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
   main {
     margin: 0 !important;
     padding: 0 !important;

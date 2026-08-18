@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
-import { AlertTriangle, Calendar } from "lucide-react";
-import {  differenceInDays , parseISO } from "date-fns";
+import { DatePickerField } from "@/components/ui/date-picker-field";
+import { AlertTriangle } from "lucide-react";
+import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
 
 const getLocalDateString = () => {
@@ -144,21 +145,17 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
 
                         {/* Data de Validade */}
                         <div>
-                            <Label htmlFor="data-validade" className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                                Data de Validade <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
+                            <DatePickerField
                                 id="data-validade"
-                                type="date"
-                                value={form.data_validade}
-                                onChange={handleChange("data_validade")}
+                                label="Data de Validade"
                                 required
-                                className={
+                                value={form.data_validade}
+                                onChange={(v) => setForm(prev => ({ ...prev, data_validade: v }))}
+                                errorClass={
                                     validadeWarning?.type === "error"
-                                        ? "border-red-500 focus-visible:ring-red-400"
+                                        ? "border-red-500"
                                         : validadeWarning?.type === "warn"
-                                            ? "border-amber-400 focus-visible:ring-amber-300"
+                                            ? "border-amber-400"
                                             : ""
                                 }
                             />
@@ -173,16 +170,12 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
 
                     <div className="grid grid-cols-2 gap-4">
                         {/* Data de Entrada */}
-                        <div>
-                            <Label htmlFor="data-entrada">Data de Entrada</Label>
-                            <Input
-                                id="data-entrada"
-                                type="date"
-                                value={form.data_entrada}
-                                onChange={handleChange("data_entrada")}
-                                required
-                            />
-                        </div>
+                        <DatePickerField
+                            id="data-entrada"
+                            label="Data de Entrada"
+                            value={form.data_entrada}
+                            onChange={(v) => setForm(prev => ({ ...prev, data_entrada: v }))}
+                        />
 
                         {/* Quantidade */}
                         <div>

@@ -11,6 +11,125 @@ function getPgConfig() {
   return { ip, dbName, password };
 }
 
+const ensureTableQuery = {
+  Medicamento: `
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "estoque_satelite" INTEGER DEFAULT 0;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "origem" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "grupo_terapeutico" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "forma_farmaceutica" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "via_administracao" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "portaria_344" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "antimicrobiano" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "alto_risco_mav" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "ccih" BOOLEAN DEFAULT false;
+  `,
+  Entrada: `
+    CREATE TABLE IF NOT EXISTS "Entrada" (
+        "id" TEXT PRIMARY KEY,
+        "medicamento_id" TEXT,
+        "medicamento_nome" TEXT,
+        "lote_id" TEXT,
+        "numero_lote" TEXT,
+        "data_validade" TEXT,
+        "quantidade" INTEGER,
+        "fornecedor_id" TEXT,
+        "fornecedor_nome" TEXT,
+        "nota_fiscal" TEXT,
+        "numero_nota_fiscal" TEXT,
+        "tipo" TEXT,
+        "data_entrada" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "data_validade" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "fornecedor_nome" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "numero_nota_fiscal" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "tipo" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "medicamento_nome" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "data_entrada" TEXT;
+    ALTER TABLE "Entrada" ALTER COLUMN "lote_id" DROP NOT NULL;
+    ALTER TABLE "Entrada" ALTER COLUMN "fornecedor_id" DROP NOT NULL;
+    ALTER TABLE "Entrada" ALTER COLUMN "nota_fiscal" DROP NOT NULL;
+  `,
+  PedidoSatelite: `
+    CREATE TABLE IF NOT EXISTS "PedidoSatelite" (
+        "id" TEXT PRIMARY KEY,
+        "codigo" TEXT,
+        "ala_id" TEXT,
+        "ala_nome" TEXT,
+        "dias_calculados" INTEGER,
+        "solicitante" TEXT,
+        "data_solicitacao" TEXT,
+        "status" TEXT,
+        "data_separacao" TEXT,
+        "data_entrega" TEXT,
+        "data_recebimento" TEXT,
+        "itens_json" TEXT,
+        "observacao" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_separacao" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_entrega" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_recebimento" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+  `,
+  TransferenciaPendente: `
+    CREATE TABLE IF NOT EXISTS "TransferenciaPendente" (
+        "id" TEXT PRIMARY KEY,
+        "medicamento_id" TEXT,
+        "medicamento_nome" TEXT,
+        "lote_id" TEXT,
+        "numero_lote" TEXT,
+        "quantidade" INTEGER,
+        "direcao" TEXT,
+        "status" TEXT,
+        "data_solicitacao" TEXT,
+        "data_aceite" TEXT,
+        "deleted_at" TEXT
+    );
+  `,
+  Usuario: `
+    CREATE TABLE IF NOT EXISTS "Usuario" (
+        "id" TEXT PRIMARY KEY,
+        "nome" TEXT,
+        "login" TEXT UNIQUE,
+        "senha" TEXT,
+        "coren" TEXT,
+        "crf" TEXT,
+        "perfil" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "coren" TEXT;
+    ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "crf" TEXT;
+    INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil") 
+    VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin')
+    ON CONFLICT DO NOTHING;
+  `
+};
+
+async function autoEnsureTable(entityName) {
+  const query = ensureTableQuery[entityName];
+  if (!query) return;
+  const { ip, dbName, password } = getPgConfig();
+  if (ip && dbName) {
+    try {
+      const statements = query.split(';').map(s => s.trim()).filter(s => s.length > 0);
+      for (const stmt of statements) {
+        try {
+          await invoke("execute_postgres", { ip, dbName, password, query: stmt });
+        } catch (e) {
+          console.warn(`[db.js] stmt falhou para ${entityName}: ${stmt}`, e);
+        }
+      }
+    } catch(e) {
+      console.warn(`[db.js] autoEnsureTable falhou para ${entityName}:`, e);
+    }
+  }
+}
+
 // ─── Proxy de entidade - 100% Postgres ───────────────────────────────────
 
 const createEntityProxy = (entityName) => ({
@@ -18,19 +137,13 @@ const createEntityProxy = (entityName) => ({
     const { ip, dbName, password } = getPgConfig();
     let query = `SELECT * FROM "${entityName}"`;
     
-    // Adiciona restrição de soft delete apenas para tabelas que suportam
-    // Mas para simplificar e não dar erro se a coluna não existir, pegamos tudo no frontend
-    // Ou podemos assumir que deletados são removidos no DB
-    // Na verdade o delete_entity no Rust fazia soft delete. No Postgres, fazemos um `DELETE` real ou filtramos.
-    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem"];
+    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario"];
     if (deletedColTables.includes(entityName)) {
         query += ` WHERE deleted_at IS NULL`;
     }
 
     if (orderBy) {
-      // Evita injeção simples
       let orderClean = orderBy.replace(/[^a-zA-Z0-9_-]/g, "");
-      // Ajuste para postgres que usa created_at
       if (orderClean === "-created_date" || orderClean === "created_date") {
           orderClean = orderClean.replace("created_date", "created_at");
       }
@@ -44,21 +157,34 @@ const createEntityProxy = (entityName) => ({
       const data = await invoke("query_postgres", { ip, dbName, password, query });
       return data;
     } catch (e) {
-      console.error(`Erro ao listar ${entityName} do Postgres:`, e, "Query:", query);
-      throw e;
+      await autoEnsureTable(entityName);
+      try {
+        const retryData = await invoke("query_postgres", { ip, dbName, password, query });
+        return retryData;
+      } catch (retryErr) {
+        console.error(`Erro ao listar ${entityName} do Postgres:`, retryErr, "Query:", query);
+        throw retryErr;
+      }
     }
   },
 
   get: async (id) => {
     const { ip, dbName, password } = getPgConfig();
     const query = `SELECT * FROM "${entityName}" WHERE "id" = '${id}'`;
-    const data = await invoke("query_postgres", { ip, dbName, password, query });
-    return data.length > 0 ? data[0] : null;
+    try {
+      const data = await invoke("query_postgres", { ip, dbName, password, query });
+      return data.length > 0 ? data[0] : null;
+    } catch (e) {
+      await autoEnsureTable(entityName);
+      const data = await invoke("query_postgres", { ip, dbName, password, query });
+      return data.length > 0 ? data[0] : null;
+    }
   },
 
   create: async (data) => {
     const { ip, dbName, password } = getPgConfig();
     if (!data.id) data.id = crypto.randomUUID();
+    if (!data.created_at) data.created_at = new Date().toISOString();
 
     const cols = Object.keys(data).map(k => `"${k}"`).join(", ");
     const vals = Object.values(data).map(v => {
@@ -69,8 +195,18 @@ const createEntityProxy = (entityName) => ({
     }).join(", ");
     
     const query = `INSERT INTO "${entityName}" (${cols}) VALUES (${vals})`;
-    await invoke("execute_postgres", { ip, dbName, password, query });
-    return data;
+    try {
+      await invoke("execute_postgres", { ip, dbName, password, query });
+      return data;
+    } catch (e) {
+      await autoEnsureTable(entityName);
+      try {
+        await invoke("execute_postgres", { ip, dbName, password, query });
+        return data;
+      } catch (finalErr) {
+        throw new Error(`${finalErr} | QUERY: ${query}`);
+      }
+    }
   },
 
   update: async (id, data) => {
@@ -89,14 +225,24 @@ const createEntityProxy = (entityName) => ({
     if (!updates) return data;
 
     const query = `UPDATE "${entityName}" SET ${updates} WHERE "id" = '${id}'`;
-    await invoke("execute_postgres", { ip, dbName, password, query });
-    return data;
+    try {
+      await invoke("execute_postgres", { ip, dbName, password, query });
+      return data;
+    } catch (e) {
+      await autoEnsureTable(entityName);
+      try {
+        await invoke("execute_postgres", { ip, dbName, password, query });
+        return data;
+      } catch (finalErr) {
+        throw new Error(`${finalErr} | QUERY: ${query}`);
+      }
+    }
   },
 
   delete: async (id) => {
     const { ip, dbName, password } = getPgConfig();
     
-    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem"];
+    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario"];
     
     let query;
     if (deletedColTables.includes(entityName)) {
@@ -160,6 +306,8 @@ export const db = {
     Paciente: createEntityProxy("Paciente"),
     PrescricaoPaciente: createEntityProxy("PrescricaoPaciente"),
     Auditoria: createEntityProxy("Auditoria"),
-    TransferenciaPendente: createEntityProxy("TransferenciaPendente")
+    TransferenciaPendente: createEntityProxy("TransferenciaPendente"),
+    PedidoSatelite: createEntityProxy("PedidoSatelite"),
+    Usuario: createEntityProxy("Usuario")
   }
 };

@@ -30,6 +30,8 @@ export default function ResponsavelTecnico() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [cargo, setCargo] = useState("farmaceutico");
+  const [coren, setCoren] = useState("");
+  const [crf, setCrf] = useState("");
   const [selectedUserModules, setSelectedUserModules] = useState(["estoque_farmacia", "farmacia_satelite", "carrinho_parada"]);
 
   const AVAILABLE_MODULES = [
@@ -39,37 +41,42 @@ export default function ResponsavelTecnico() {
     { id: "responsavel_tecnico", name: "Responsável Técnico" }
   ];
 
-  useEffect(() => {
-    const saved = localStorage.getItem("axion_users");
-    if (saved) {
-      setUsers(JSON.parse(saved));
-    } else {
-      // Default RT user
-      const defaultUsers = [{
-        id: "1",
-        nome: "Admin RT",
-        username: "admin",
-        password: "123",
-        cargo: "administrador",
-        modules: ["estoque_farmacia", "farmacia_satelite", "responsavel_tecnico"],
-        first_login: false
-      }];
-      localStorage.setItem("axion_users", JSON.stringify(defaultUsers));
-      setUsers(defaultUsers);
+  const carregarUsuarios = async () => {
+    try {
+      const data = await db.entities.Usuario.list();
+      setUsers(data);
+      // Mapear também para o localStorage por retrocompatibilidade com telas que ainda não migraram
+      const localUsers = data.map(u => ({
+          id: u.id,
+          nome: u.nome,
+          username: u.login,
+          password: u.senha,
+          cargo: u.perfil,
+          coren: u.coren,
+          crf: u.crf,
+          // Convertendo módulos de volta para array que o WelcomeScreen usa. 
+          // O DB não armazena array diretamente, poderíamos salvar na tabela Usuario uma coluna módulos.
+          // Mas como adaptamos a tabela Usuario agora, os perfis já definem o que eles podem fazer.
+          // Para não quebrar o WelcomeScreen:
+          modules: u.perfil === "administrador" ? AVAILABLE_MODULES.map(m => m.id) : 
+                   u.perfil === "farmaceutico" ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada"] : 
+                   ["carrinho_parada", "carrinho_enfermagem"],
+          first_login: false
+      }));
+      localStorage.setItem("axion_users", JSON.stringify(localUsers));
+    } catch (e) {
+      console.error("Erro ao carregar usuários do PG", e);
     }
+  };
+
+  useEffect(() => {
+    carregarUsuarios();
     
     // Load logs
     setLogs(getLogs());
   }, []);
 
-  const saveUsers = (newUsers) => {
-    setUsers(newUsers);
-    localStorage.setItem("axion_users", JSON.stringify(newUsers));
-  };
-
-
-
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!username || !password || !nome) {
       toast.error("Preencha todos os campos obrigatórios");
@@ -79,54 +86,57 @@ export default function ResponsavelTecnico() {
       toast.error("Selecione um cargo para o usuário");
       return;
     }
+    if (cargo === 'farmaceutico' && !crf) {
+      toast.error("CRF é obrigatório para Farmacêuticos");
+      return;
+    }
+    if (cargo === 'enfermeiro' && !coren) {
+      toast.error("COREN é obrigatório para Enfermeiros");
+      return;
+    }
 
     if (selectedUserModules.length === 0) {
       toast.error("Selecione pelo menos um módulo de acesso para este usuário.");
       return;
     }
 
-    const finalModules = [...selectedUserModules];
-    // Se for administrador, forçar acesso ao RT caso não esteja marcado (opcional, mas seguro)
-    if (cargo === "administrador" && !finalModules.includes("responsavel_tecnico")) {
-      finalModules.push("responsavel_tecnico");
-    }
-
-    if (editingId) {
-      // update
-      const updated = users.map(u => {
-        if (u.id === editingId) {
-          const passChanged = u.password !== password;
-          return {
-            ...u, nome, username, password, cargo, modules: finalModules,
-            first_login: passChanged ? true : u.first_login
-          };
+    try {
+      if (editingId) {
+        // update
+        await db.entities.Usuario.update(editingId, {
+           nome,
+           login: username,
+           senha: password,
+           perfil: cargo,
+           coren: cargo === 'enfermeiro' ? coren : "",
+           crf: cargo !== 'enfermeiro' ? crf : ""
+        });
+        toast.success("Usuário atualizado com sucesso no banco de dados!");
+      } else {
+        // create
+        const data = await db.entities.Usuario.list();
+        const exists = data.find(u => u.login === username);
+        if (exists) {
+          toast.error("Nome de usuário (login) já existe no banco!");
+          return;
         }
-        return u;
-      });
-      saveUsers(updated);
-      toast.success("Usuário atualizado com sucesso!");
-    } else {
-      // create
-      const exists = users.find(u => u.username === username);
-      if (exists) {
-        toast.error("Nome de usuário já existe!");
-        return;
+        await db.entities.Usuario.create({
+           nome,
+           login: username,
+           senha: password,
+           perfil: cargo,
+           coren: cargo === 'enfermeiro' ? coren : "",
+           crf: cargo !== 'enfermeiro' ? crf : ""
+        });
+        toast.success("Usuário cadastrado no Postgres com sucesso!");
       }
-      const newUser = {
-        id: Date.now().toString(),
-        nome,
-        username,
-        password,
-        cargo,
-        modules: finalModules,
-        first_login: true
-      };
-      saveUsers([...users, newUser]);
-      toast.success("Usuário cadastrado com sucesso! No primeiro acesso ele precisará mudar a senha.");
+      
+      resetForm();
+      setShowForm(false);
+      carregarUsuarios();
+    } catch (error) {
+      toast.error("Falha ao salvar no Postgres: " + error.message);
     }
-    
-    resetForm();
-    setShowForm(false);
   };
 
   const resetForm = () => {
@@ -134,6 +144,8 @@ export default function ResponsavelTecnico() {
     setNome("");
     setUsername("");
     setPassword("");
+    setCoren("");
+    setCrf("");
     setCargo("farmaceutico");
     setSelectedUserModules(["estoque_farmacia", "farmacia_satelite", "carrinho_parada"]);
   };
@@ -141,17 +153,28 @@ export default function ResponsavelTecnico() {
   const handleEdit = (u) => {
     setEditingId(u.id);
     setNome(u.nome);
-    setUsername(u.username);
-    setPassword(u.password);
-    setCargo(u.cargo || (u.modules.includes("responsavel_tecnico") ? "administrador" : "farmaceutico"));
-    setSelectedUserModules(u.modules || []);
+    setUsername(u.login || u.username);
+    setPassword(u.senha || u.password);
+    setCoren(u.coren || "");
+    setCrf(u.crf || "");
+    setCargo(u.perfil || u.cargo || "farmaceutico");
+    // Simulando modulos selecionados baseados no perfil
+    const defaultModules = u.perfil === "administrador" ? AVAILABLE_MODULES.map(m => m.id) : 
+             u.perfil === "farmaceutico" ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada"] : 
+             ["carrinho_parada"];
+    setSelectedUserModules(defaultModules);
     setShowForm(true);
   };
 
-  const handleDelete = (id) => {
-    if (confirm("Tem certeza que deseja remover este usuário?")) {
-      saveUsers(users.filter(u => u.id !== id));
-      toast.success("Usuário removido");
+  const handleDelete = async (id) => {
+    if (confirm("Tem certeza que deseja remover este usuário do banco de dados?")) {
+      try {
+        await db.entities.Usuario.delete(id);
+        toast.success("Usuário removido do Postgres");
+        carregarUsuarios();
+      } catch (error) {
+         toast.error("Erro ao deletar: " + error.message);
+      }
     }
   };
 
@@ -413,6 +436,22 @@ export default function ResponsavelTecnico() {
               </div>
             </div>
 
+            {/* Inputs Condicionais de CRF ou COREN */}
+            <div className="grid grid-cols-2 gap-5 pt-2">
+              {(cargo === 'farmaceutico' || cargo === 'administrador') && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">CRF {cargo === 'farmaceutico' && '*'}</label>
+                  <input value={crf} onChange={e=>setCrf(e.target.value)} type="text" className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-sm outline-none focus:border-blue-500 transition-colors" placeholder="Ex: 12345/SP" required={cargo === 'farmaceutico'} />
+                </div>
+              )}
+              {cargo === 'enfermeiro' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">COREN *</label>
+                  <input value={coren} onChange={e=>setCoren(e.target.value)} type="text" className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-sm outline-none focus:border-blue-500 transition-colors" placeholder="Ex: 123456-SP" required />
+                </div>
+              )}
+            </div>
+
             <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Módulos de Acesso Permitidos</label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -459,6 +498,7 @@ export default function ResponsavelTecnico() {
                 <tr>
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">Usuário</th>
+                  <th className="px-4 py-3 font-medium">Registro (CRF/COREN)</th>
                   <th className="px-4 py-3 font-medium">Cargo</th>
                   <th className="px-4 py-3 font-medium text-center">Ações</th>
                 </tr>
@@ -467,22 +507,24 @@ export default function ResponsavelTecnico() {
                 {users.map(u => (
                   <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{u.nome}</td>
-                    <td className="px-4 py-3">{u.username}</td>
+                    <td className="px-4 py-3">{u.login || u.username}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{u.crf || u.coren || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        (u.cargo === 'administrador' || u.modules.includes('responsavel_tecnico')) 
+                        (u.perfil === 'administrador' || u.cargo === 'administrador') 
                           ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' 
-                          : u.cargo === 'enfermeiro'
+                          : (u.perfil === 'enfermeiro' || u.cargo === 'enfermeiro')
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                             : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
                       }`}>
-                        {(u.cargo === 'administrador' || u.modules.includes('responsavel_tecnico')) 
+                        {(u.perfil === 'administrador' || u.cargo === 'administrador') 
                           ? 'Administrador (RT)' 
-                          : u.cargo === 'enfermeiro' 
+                          : (u.perfil === 'enfermeiro' || u.cargo === 'enfermeiro') 
                             ? 'Enfermeiro' 
                             : 'Farmacêutico'}
                       </span>
                     </td>
+
                     <td className="px-4 py-3 flex justify-center gap-2">
                       <button onClick={() => handleEdit(u)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Editar / Resetar Senha">
                         <Edit className="w-4 h-4" />
@@ -503,6 +545,50 @@ export default function ResponsavelTecnico() {
           </div>
         </div>
       )}
+
+      {/* ZONA DE PERIGO */}
+      <div className="pt-8 mt-12 border-t border-red-200 dark:border-red-900/50">
+        <div className="bg-red-50 dark:bg-red-900/10 rounded-2xl p-6 border border-red-200 dark:border-red-900/50">
+          <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+            <div>
+              <h3 className="text-red-700 dark:text-red-400 font-bold text-lg flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                Zona de Perigo (Hard Reset)
+              </h3>
+              <p className="text-red-600/80 dark:text-red-400/80 text-sm mt-1">
+                Zerar completamente o banco de dados. Apaga todos os Medicamentos, Lotes, Entradas, Saídas, Movimentações e Pedidos.
+                (Usuários e Configurações não são apagados).
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                if (window.prompt("TEM CERTEZA ABSOLUTA? ISSO APAGARÁ TODOS OS MEDICAMENTOS E ESTOQUES!\n\nESCREVA 'SIM' PARA CONTINUAR:") !== "SIM") {
+                  return;
+                }
+                try {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const ip = localStorage.getItem("pg_ip") || "localhost";
+                  const dbName = localStorage.getItem("pg_db");
+                  const password = localStorage.getItem("pg_pass");
+                  if (!ip || !dbName) {
+                    toast.error("Banco não configurado.");
+                    return;
+                  }
+                  const query = `TRUNCATE TABLE "Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "InventarioItem", "TransferenciaPendente", "PedidoSatelite", "CarrinhoPadronizacao", "CarrinhoEstoqueCentral", "CarrinhoEstoqueFisico", "CarrinhoMovimentacao", "PrescricaoPaciente" CASCADE;`;
+                  await invoke("execute_postgres", { ip, dbName, password, query });
+                  toast.success("BANCO DE DADOS FOI ZERADO COM SUCESSO!");
+                  setTimeout(() => window.location.reload(), 2000);
+                } catch (e) {
+                  toast.error("Erro ao zerar: " + e);
+                }
+              }}
+              className="whitespace-nowrap bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-red-600/20 transition-all"
+            >
+              Zerar Banco de Dados de Medicamentos
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

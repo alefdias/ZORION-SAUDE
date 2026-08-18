@@ -15,7 +15,14 @@ pub async fn test_postgres_connection(
                 if let Err(e) = client.query("SELECT 1", &[]) {
                     return Err(format!("Conectado, mas falhou ao executar query: {}", e));
                 }
-                Ok("Conexão bem-sucedida ao Servidor Postgres!".to_string())
+                
+                // Cria as tabelas necessárias automaticamente
+                let schema = include_str!("../../database/001_initial_schema.sql");
+                if let Err(e) = client.batch_execute(schema) {
+                    return Err(format!("Conectado, mas falhou ao inicializar tabelas: {}", e));
+                }
+
+                Ok("Conexão bem-sucedida e banco de dados inicializado!".to_string())
             },
             Err(e) => {
                 Err(format!("Falha na conexão: {}", e))
@@ -93,9 +100,9 @@ pub async fn execute_postgres(
     let conn_str = format!("host={} user=postgres password={} dbname={} connect_timeout=3", ip, password, db_name);
     
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut client = Client::connect(&conn_str, NoTls).map_err(|e| format!("Conexão falhou: {}", e))?;
-        let affected = client.execute(&query, &[]).map_err(|e| format!("Execute falhou: {}", e))?;
-        Ok(affected)
+        let mut client = Client::connect(&conn_str, NoTls).map_err(|e| format!("Conexão falhou: {:?}", e))?;
+        client.batch_execute(&query).map_err(|e| format!("Execute falhou: {:?}", e))?;
+        Ok(1)
     }).await.map_err(|e| e.to_string())?;
 
     result

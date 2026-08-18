@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Boxes, AlertTriangle, Clock, ArrowRightLeft, Package, Book, User } from "lucide-react";
+import { Search, Boxes, AlertTriangle, Clock, ArrowRightLeft, Package, Book, User, Bell, PackageCheck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays, parseISO, isValid, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -17,7 +18,8 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Button } from "@/components/ui/button";
-import { Download, Printer, Trash2, Pencil, CalendarDays } from "lucide-react";
+import { Download, Printer, Trash2, Pencil, CalendarDays, ShoppingCart, ShieldCheck, ShieldAlert } from "lucide-react";
+import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import {
   Dialog,
   DialogContent,
@@ -121,6 +123,29 @@ function EstoqueCarrinhoParadaTab() {
 }
 
 export default function Estoque() {
+
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+
+  const [activeTab, setActiveTab] = useState(tabParam || "padronizados");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  const { data: pedidosSatelite = [] } = useQuery({
+    queryKey: ['pedidos_satelite'],
+    queryFn: async () => {
+      const all = await db.entities.PedidoSatelite.list('-created_at');
+      return all || [];
+    },
+    refetchInterval: 4000
+  });
+
+  const pendingPedidosCount = pedidosSatelite.filter(p => p.status === "Pendente" || p.status === "Em Separação").length;
 
   const queryClient = useQueryClient();
   const printRef = useRef();
@@ -242,7 +267,7 @@ export default function Estoque() {
 
   const handleExportCSV = () => {
     try {
-      const headers = ["Medicamento", "Dosagem", "Lote", "Validade", "Quantidade", "Status"];
+      const headers = ["Medicamento", "Concentração", "Lote", "Validade", "Quantidade", "Status"];
       const rows = [];
 
       filteredEstoque.forEach(med => {
@@ -322,6 +347,21 @@ export default function Estoque() {
       toast.error(`Erro: ${error}`);
     } finally {
       setDeleteMedId(null);
+    }
+  };
+
+  const handleTogglePadronizacao = async (med) => {
+    try {
+      toast.loading("Atualizando status...");
+      await db.entities.Medicamento.update(med.id, {
+        padronizado: !med.padronizado
+      });
+      queryClient.invalidateQueries();
+      toast.dismiss();
+      toast.success(med.padronizado ? "Removido da padronização." : "Medicamento padronizado com sucesso!");
+    } catch (error) {
+      toast.dismiss();
+      toast.error(`Erro: ${error}`);
     }
   };
 
@@ -558,12 +598,47 @@ export default function Estoque() {
         </DialogContent>
       </Dialog>
 
-      <Tabs defaultValue="padronizados">
+      {/* Banner de notificação para a Central de solicitações pendentes da Satélite */}
+      {pendingPedidosCount > 0 && (
+        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-orange-500/20 to-amber-500/15 border-2 border-amber-500/50 text-amber-950 dark:text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-amber-500 text-white rounded-xl shadow-md shrink-0">
+              <Bell className="w-6 h-6 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-base flex items-center gap-2">
+                🔔 NOTIFICAÇÃO DA CENTRAL: {pendingPedidosCount} Pedido(s) da Farmácia Satélite Aguardando Separação!
+              </h4>
+              <p className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-0.5">
+                Existem solicitações de medicamentos enviadas pela Satélite prontas para serem separadas e atendidas.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => setActiveTab("pedidos_satelite")}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2 shadow-lg shrink-0"
+          >
+            <PackageCheck className="w-4 h-4" />
+            Começar Separação Agora
+          </Button>
+        </div>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="padronizados" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Padronizados</TabsTrigger>
           <TabsTrigger value="nao_padronizados" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Não Padronizados</TabsTrigger>
           <TabsTrigger value="satelite" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Estoque Satélite</TabsTrigger>
           <TabsTrigger value="carrinho_parada" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Estoque Carrinho de Parada</TabsTrigger>
+          <TabsTrigger value="pedidos_satelite" className="data-[state=active]:bg-white data-[state=active]:shadow-sm font-bold text-indigo-700 flex items-center gap-1.5 relative">
+            <ShoppingCart className="w-4 h-4 text-indigo-600" />
+            Pedidos Satélite (Separação)
+            {pendingPedidosCount > 0 && (
+              <Badge className="ml-1.5 bg-red-600 text-white px-1.5 py-0.5 text-[10px] animate-pulse">
+                {pendingPedidosCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="transferencia" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Transferência</TabsTrigger>
         </TabsList>
 
@@ -591,11 +666,11 @@ export default function Estoque() {
                             <p className={cn("font-semibold text-slate-800", isMav(med) && "text-red-600 font-bold flex items-center gap-1.5")}>
                               {med.nome}
                               {isMav(med) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
-                              {isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
+                              {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
                             </p>
                             <div className="flex gap-2 items-center text-xs mt-1">
                               <span className="text-slate-500 font-medium">
-                                {med.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                                {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                               </span>
                               {med.apresentacao && (
                                 <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -617,6 +692,18 @@ export default function Estoque() {
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-4 pb-2">
+                      <div className="flex justify-between items-center mb-4 px-1">
+                        <h4 className="font-semibold text-slate-700">Lotes Registrados</h4>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={(e) => { e.stopPropagation(); handleTogglePadronizacao(med); }}
+                          className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-200"
+                        >
+                          <ShieldAlert className="w-4 h-4 mr-2" />
+                          Remover Padronização
+                        </Button>
+                      </div>
                       {(!med.lotes || med.lotes.length === 0) ? (
                         <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                           <p className="text-sm text-slate-500">Nenhum lote registrado no momento.</p>
@@ -722,11 +809,11 @@ export default function Estoque() {
                           <div className="text-left">
                             <p className={cn("font-semibold text-slate-800", isMav(med) && "text-red-900 font-bold")}>
                               {med.nome} {isMav(med) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
-                              {isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
+                              {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
                             </p>
                             <div className="flex gap-2 items-center text-xs mt-1">
                               <span className="text-slate-500 font-medium">
-                                {med.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                                {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                               </span>
                               {med.apresentacao && (
                                 <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -748,6 +835,18 @@ export default function Estoque() {
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-4 pb-2">
+                      <div className="flex justify-between items-center mb-4 px-1">
+                        <h4 className="font-semibold text-slate-700">Lotes Registrados</h4>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={(e) => { e.stopPropagation(); handleTogglePadronizacao(med); }}
+                          className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200"
+                        >
+                          <ShieldCheck className="w-4 h-4 mr-2" />
+                          Tornar Padronizado
+                        </Button>
+                      </div>
                       {(!med.lotes || med.lotes.length === 0) ? (
                         <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                           <p className="text-sm text-slate-500">Nenhum lote registrado no momento.</p>
@@ -865,10 +964,10 @@ export default function Estoque() {
                       <TableCell className={cn("font-medium text-slate-800", isMav(med) && "text-red-600 font-bold flex items-center gap-1.5")}>
                         {med.nome}
                         {isMav(med) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
-                        {isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
+                        {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
-                            {med.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                            {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                           </span>
                           {med.apresentacao && (
                             <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -891,6 +990,10 @@ export default function Estoque() {
 
       <TabsContent value="carrinho_parada" className="space-y-6">
         <EstoqueCarrinhoParadaTab />
+      </TabsContent>
+
+      <TabsContent value="pedidos_satelite" className="space-y-6">
+        <PedidosSateliteManager mode="central" />
       </TabsContent>
 
       <TabsContent value="transferencia">

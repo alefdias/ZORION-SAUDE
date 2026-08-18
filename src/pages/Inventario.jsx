@@ -645,7 +645,7 @@ export default function Inventario() {
                             <img src={logo} alt="Logo" className="h-16 w-auto object-contain" />
                             <div className="w-px h-12 bg-slate-300 mx-2 hidden sm:block"></div>
                             <div>
-                                <h1 className="text-xl font-bold text-slate-900 leading-tight tracking-tight">AXION SAÚDE</h1>
+                                <h1 className="text-xl font-bold text-slate-900 leading-tight tracking-tight">ZORION SAÚDE</h1>
                                 <p className="text-sm font-semibold text-slate-600 uppercase tracking-widest">Farmácia Central</p>
                             </div>
                         </div>
@@ -829,7 +829,7 @@ export default function Inventario() {
 
                     <div className="mt-auto pt-16 flex justify-between items-end border-t border-slate-200 pb-4">
                         <div>
-                            <p className="text-[9px] font-bold text-slate-800 uppercase leading-none mb-1">Axion Saúde - Gestão Hospitalar</p>
+                            <p className="text-[9px] font-bold text-slate-800 uppercase leading-none mb-1">Zorion Saúde - Gestão Hospitalar</p>
                             <p className="text-[8px] text-slate-400 uppercase tracking-widest">Sistema de Gerenciamento de Farmácia v2.4.0</p>
                         </div>
                         <div className="text-right">

@@ -9,7 +9,7 @@ import { ptBR } from "date-fns/locale";
 import StatsCard from "@/components/dashboard/StatsCard";
 import AlertCard from "@/components/dashboard/AlertCard";
 import MovimentacaoChart from "@/components/dashboard/MovimentacaoChart";
-import CategoriaChart from "@/components/dashboard/CategoriaChart";
+import GrupoChart from "@/components/dashboard/GrupoChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -114,16 +114,16 @@ export default function Dashboard() {
   }
 
   // Dados para gráfico de categorias
-  const categoriaData = [];
-  const categoriasContadas = {};
+  const grupoData = [];
+  const gruposContados = {};
   medicamentos.forEach(m => {
-    if (m.categoria) {
-      categoriasContadas[m.categoria] = (categoriasContadas[m.categoria] || 0) + (m.estoque_atual || 0);
+    if (m.grupo_terapeutico) {
+      gruposContados[m.grupo_terapeutico] = (gruposContados[m.grupo_terapeutico] || 0) + (m.estoque_atual || 0);
     }
   });
-  Object.entries(categoriasContadas).forEach(([categoria, value]) => {
+  Object.entries(gruposContados).forEach(([categoria, value]) => {
     if (value > 0) {
-      categoriaData.push({ categoria, value });
+      grupoData.push({ categoria, value });
     }
   });
 
@@ -146,27 +146,7 @@ export default function Dashboard() {
     })
     .reduce((sum, s) => sum + (s.quantidade || 0), 0);
 
-  const { data: config = [] } = useQuery({
-    queryKey: ["config"],
-    queryFn: () => db.entities.Config.list(),
-  });
 
-  useEffect(() => {
-    const lastBackup = config.find(c => c.key === "last_backup_date")?.value;
-    if (lastBackup) {
-      const parsedLastBackup = new Date(lastBackup);
-      if (isValid(parsedLastBackup)) {
-        const diff = differenceInDays(new Date(), parsedLastBackup);
-        if (diff >= 15) {
-          toast.warning(`Você não realiza um backup há ${diff} dias. Recomenda-se fazer um agora!`, {
-            duration: 10000
-          });
-        }
-      }
-    } else if (!isLoading) {
-      toast.info("Nenhum backup realizado ainda. Proteja seus dados!");
-    }
-  }, [config, isLoading]);
 
   // Alerta de medicamentos próximos ao vencimento (até 4 meses)
   useEffect(() => {
@@ -264,7 +244,7 @@ export default function Dashboard() {
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <MovimentacaoChart data={chartData} />
-        <CategoriaChart data={categoriaData} />
+        <GrupoChart data={grupoData} />
       </div>
 
       {/* Footer */}

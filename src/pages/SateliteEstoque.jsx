@@ -91,7 +91,7 @@ export default function SateliteEstoque() {
 
   const handleExportCSV = () => {
     try {
-      const headers = ["Código", "Medicamento", "Dosagem", "Apresentação", "Estoque Satélite", "Estoque Central", "Padronizado"];
+      const headers = ["Código", "Medicamento", "Concentração", "Apresentação", "Estoque Satélite", "Estoque Central", "Padronizado"];
       const rows = filteredEstoque.map(med => [
         med.codigo || "S/C",
         med.nome,
@@ -160,11 +160,11 @@ export default function SateliteEstoque() {
                     <p className={cn("font-semibold text-slate-800 dark:text-slate-100", isMav(med) && "text-red-600 font-bold flex items-center gap-1.5")}>
                       {med.nome}
                       {isMav(med) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
-                      {isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
+                      {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
                     </p>
                     <div className="flex gap-2 items-center text-xs mt-1">
                       <span className="text-slate-500 dark:text-slate-400 font-medium">
-                        {med.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                        {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                       </span>
                       {med.apresentacao && (
                         <span className="text-slate-500 dark:text-slate-400 font-medium px-2 border-l border-slate-200 dark:border-slate-700">

@@ -19,7 +19,6 @@ import { Calendar as CalendarIcon, CalendarX, ChevronLeft, ChevronRight } from "
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import EntradaForm from "@/components/forms/EntradaForm";
-import ImportacaoEntradas from "@/components/forms/ImportacaoEntradas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
@@ -37,8 +36,6 @@ export default function Entradas({ isTab = false }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [editingEntrada, setEditingEntrada] = useState(null);
@@ -153,6 +150,7 @@ export default function Entradas({ isTab = false }) {
             medicamento_id: data.medicamento_id,
             numero_lote: data.numero_lote,
             data_validade: data.data_validade,
+            quantidade_inicial: data.quantidade,
             quantidade_atual: data.quantidade,
             status: "disponivel",
           });
@@ -360,7 +358,7 @@ export default function Entradas({ isTab = false }) {
       <div className="text-center mb-8 pb-6 border-b-2 border-emerald-600">
         <div className="flex justify-between items-center mb-4">
           <div className="text-left">
-            <p className="text-emerald-600 font-bold text-xl uppercase tracking-tight">AXION SAÚDE</p>
+            <p className="text-emerald-600 font-bold text-xl uppercase tracking-tight">ZORION SAÚDE</p>
             <p className="text-slate-500 text-xs">Sistema de Controle Farmacêutico</p>
           </div>
           <div className="text-right text-[10px] text-slate-400 font-mono">
@@ -597,10 +595,10 @@ export default function Entradas({ isTab = false }) {
                     return (
                       <TableCell className={cn("font-medium text-slate-800", isMav(entrada.medicamento_nome) && "text-red-900 font-bold")}>
                         {entrada.medicamento_nome} {isMav(entrada.medicamento_nome) && "(MAV)"}
-                        {med && isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
+                        {med && isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
-                            {med?.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                            {med?.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                           </span>
                           {med?.apresentacao && (
                             <span className="text-slate-500 font-medium px-2 border-l border-slate-200">

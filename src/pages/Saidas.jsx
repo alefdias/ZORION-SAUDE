@@ -95,28 +95,42 @@ export default function Saidas({ isTab = false }) {
 
   const createSaidaMutation = useMutation({
     mutationFn: async (data) => {
-      // 1. Criar a saída
-      const saida = await db.entities.Saida.create(data);
+      const { itens, ...commonData } = data;
+      const createdSaidas = [];
+      
+      for (const item of itens) {
+        const saidaData = {
+          ...commonData,
+          medicamento_id: item.medicamento_id,
+          medicamento_nome: item.medicamento_nome,
+          lote_id: item.lote_id,
+          numero_lote: item.numero_lote,
+          quantidade: item.quantidade
+        };
+        
+        // 1. Criar a saída
+        const saida = await db.entities.Saida.create(saidaData);
+        createdSaidas.push(saida);
 
-      // 2. Atualizar quantidade do lote (Removido: itens na satélite já foram deduzidos do lote no momento da transferência)
-
-
-      // 3. Atualizar estoque do medicamento (Apenas Satélite)
-      const medicamento = medicamentos.find(m => m.id === data.medicamento_id);
-      if (medicamento) {
-        await db.entities.Medicamento.update(medicamento.id, {
-          estoque_satelite: Math.max(0, (medicamento.estoque_satelite || 0) - data.quantidade),
-        });
+        // 3. Atualizar estoque do medicamento (Apenas Satélite)
+        const medicamento = medicamentos.find(m => m.id === saidaData.medicamento_id);
+        if (medicamento) {
+          // A saída por padrão agora subtrai do estoque da satélite, MAS se for só central... 
+          // O usuário não especificou se a saída deveria deduzir da central caso não haja na satélite.
+          // Vou continuar deduzindo da satélite conforme lógica original, com Math.max para não ficar negativo
+          await db.entities.Medicamento.update(medicamento.id, {
+            estoque_satelite: Math.max(0, (medicamento.estoque_satelite || 0) - saidaData.quantidade),
+          });
+        }
       }
-
-      return saida;
+      return createdSaidas;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
       setFormOpen(false);
-      toast.success("Saída registrada com sucesso!");
+      toast.success("Saída(s) registrada(s) com sucesso!");
     },
     onError: (error) => {
       console.error("Erro ao registrar saída:", error);
@@ -133,8 +147,6 @@ export default function Saidas({ isTab = false }) {
           estoque_satelite: (medicamento.estoque_satelite || 0) + saida.quantidade,
         });
       }
-
-      // 2. Reverter quantidade do lote (Removido: lote não é mais atualizado nas saídas)
 
       // 3. Deletar a saída
       await db.entities.Saida.delete(saida.id);
@@ -154,12 +166,22 @@ export default function Saidas({ isTab = false }) {
 
   const updateSaidaMutation = useMutation({
     mutationFn: async (data) => {
-      const oldSaida = saidas.find(s => s.id === data.id);
+      // Na edição de Saída, sempre editamos 1 item de cada vez
+      const editedItem = data.itens[0]; // Em modo edição o array sempre tem 1 elemento
+      const updateData = {
+          ...data,
+          medicamento_id: editedItem.medicamento_id,
+          medicamento_nome: editedItem.medicamento_nome,
+          lote_id: editedItem.lote_id,
+          numero_lote: editedItem.numero_lote,
+          quantidade: editedItem.quantidade
+      };
+      delete updateData.itens; // limpa o array pra não ir pro banco
+
+      const oldSaida = saidas.find(s => s.id === updateData.id);
       if (!oldSaida) throw new Error("Saída não encontrada");
 
-      // Se mudou o medicamento ou o lote, revertemos a saída inteira e aplicamos a nova
-      if (oldSaida.medicamento_id !== data.medicamento_id || oldSaida.lote_id !== data.lote_id) {
-        // 1. Reverter antiga da satélite
+      if (oldSaida.medicamento_id !== updateData.medicamento_id || oldSaida.lote_id !== updateData.lote_id) {
         const oldMed = medicamentos.find(m => m.id === oldSaida.medicamento_id);
         if (oldMed) {
           await db.entities.Medicamento.update(oldMed.id, {
@@ -167,18 +189,16 @@ export default function Saidas({ isTab = false }) {
           });
         }
 
-        // 3. Aplicar nova na satélite
-        const newMed = medicamentos.find(m => m.id === data.medicamento_id);
+        const newMed = medicamentos.find(m => m.id === updateData.medicamento_id);
         if (newMed) {
           await db.entities.Medicamento.update(newMed.id, {
-            estoque_satelite: Math.max(0, (newMed.estoque_satelite || 0) + oldSaida.quantidade - data.quantidade), 
+            estoque_satelite: Math.max(0, (newMed.estoque_satelite || 0) - updateData.quantidade), 
           });
         }
       } else {
-        // Mesmo lote e mesmo medicamento: apenas diferença algébrica
-        const diff = data.quantidade - oldSaida.quantidade; 
+        const diff = updateData.quantidade - oldSaida.quantidade; 
         if (diff !== 0) {
-          const med = medicamentos.find(m => m.id === data.medicamento_id);
+          const med = medicamentos.find(m => m.id === updateData.medicamento_id);
           if (med) {
             await db.entities.Medicamento.update(med.id, {
               estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - diff)
@@ -187,8 +207,7 @@ export default function Saidas({ isTab = false }) {
         }
       }
 
-      // Por fim, atualizar o registro
-      return db.entities.Saida.update(data.id, data);
+      return db.entities.Saida.update(updateData.id, updateData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
@@ -364,7 +383,7 @@ export default function Saidas({ isTab = false }) {
       <div className="text-center mb-8 pb-6 border-b-2 border-blue-600">
         <div className="flex justify-between items-center mb-4">
           <div className="text-left">
-            <p className="text-blue-600 font-bold text-xl uppercase tracking-tight">AXION SAÚDE</p>
+            <p className="text-blue-600 font-bold text-xl uppercase tracking-tight">ZORION SAÚDE</p>
             <p className="text-slate-500 text-xs">Sistema de Controle Farmacêutico</p>
           </div>
           <div className="text-right text-[10px] text-slate-400 font-mono">
@@ -657,10 +676,10 @@ export default function Saidas({ isTab = false }) {
                     return (
                       <TableCell className={cn("font-medium text-slate-800", isMav(saida.medicamento_nome) && "text-red-900 font-bold")}>
                         {saida.medicamento_nome} {isMav(saida.medicamento_nome) && "(MAV)"}
-                        {med && isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
+                        {med && isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
-                            {med?.unidade_medida ? `Dosagem: ${med.unidade_medida}` : "Dosagem não definida"}
+                            {med?.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                           </span>
                           {med?.apresentacao && (
                             <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -797,7 +816,6 @@ export default function Saidas({ isTab = false }) {
       <div id="print-area" className="hidden print:block print-only bg-white p-8">
         {reportContent}
       </div>
-
       <style>{`
         @media print {
           @page {

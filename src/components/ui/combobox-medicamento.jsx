@@ -44,51 +44,59 @@ export function ComboboxMedicamento({
 
     const formatMedLabel = (m) => {
         if (!m) return "";
-        const dose = (m.dosagem || m.concentracao || (m.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(m.unidade_medida.toLowerCase()) ? m.unidade_medida : "")).trim();
+        const dose = (m.concentracao || (m.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(m.unidade_medida.toLowerCase()) ? m.unidade_medida : "")).trim();
         const apres = m.apresentacao ? ` [${m.apresentacao}]` : "";
         const doseStr = dose ? ` - ${dose}` : "";
         return `${m.nome}${apres}${doseStr}`;
     };
 
-    const renderItem = (m) => (
-        <CommandItem
-            key={m.id}
-            value={m.id} // value passes through filter
-            onSelect={(selectedVal) => {
-                // Cmdk returns the internal lowercase value representing the id if there are uppercase on id (ex utils.uuid)
-                // We must match it back to the original case if our ids have case sensitivity
-                const correctMed = medicamentos.find(med => med.id.toLowerCase() === selectedVal || med.id === selectedVal);
-                if (correctMed) {
-                    onChange(correctMed.id === value ? "" : correctMed.id)
-                } else {
-                    onChange(selectedVal === value ? "" : selectedVal)
-                }
-                setOpen(false)
-            }}
-            className={cn(
-                "flex flex-col items-start px-3 py-2 text-sm cursor-pointer rounded-sm w-full my-0.5 relative",
-                value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : "data-[selected=true]:bg-slate-100"
-            )}
-        >
-            <div className="flex items-center gap-2 w-full pr-6">
-                {m.codigo && (
-                    <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 uppercase shrink-0 text-slate-600">
-                        {m.codigo}
+    const renderItem = (m) => {
+        const hasSatelite = Number(m.estoque_satelite || 0) > 0;
+        
+        return (
+            <CommandItem
+                key={m.id}
+                value={m.id} // value passes through filter
+                onSelect={(selectedVal) => {
+                    // Cmdk returns the internal lowercase value representing the id if there are uppercase on id (ex utils.uuid)
+                    // We must match it back to the original case if our ids have case sensitivity
+                    const correctMed = medicamentos.find(med => med.id.toLowerCase() === selectedVal || med.id === selectedVal);
+                    if (correctMed) {
+                        onChange(correctMed.id === value ? "" : correctMed.id)
+                    } else {
+                        onChange(selectedVal === value ? "" : selectedVal)
+                    }
+                    setOpen(false)
+                }}
+                className={cn(
+                    "flex flex-col items-start px-3 py-2 text-sm cursor-pointer rounded-sm w-full my-0.5 relative",
+                    value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : "data-[selected=true]:bg-slate-100"
+                )}
+            >
+                <div className="flex items-center gap-2 w-full pr-6">
+                    {m.codigo && (
+                        <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 uppercase shrink-0 text-slate-600">
+                            {m.codigo}
+                        </span>
+                    )}
+                    {isPsicotropico(m.grupo_terapeutico) && (
+                        <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
+                    )}
+                    <span className={cn(
+                        "truncate flex-1 text-left",
+                        isMav(m) && "text-red-900 font-bold",
+                        !isMav(m) && hasSatelite ? "text-emerald-700 font-bold" : "text-slate-800"
+                    )}>
+                        {formatMedLabel(m)}
+                        {isMav(m) && " (MAV)"}
                     </span>
+                </div>
+                {value === m.id && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
                 )}
-                {isPsicotropico(m.categoria) && (
-                    <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
-                )}
-                <span className={cn("truncate flex-1 text-left", isMav(m) && "text-red-900 font-bold")}>
-                    {formatMedLabel(m)}
-                    {isMav(m) && " (MAV)"}
-                </span>
-            </div>
-            {value === m.id && (
-                <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
-            )}
-        </CommandItem>
-    );
+            </CommandItem>
+        );
+    };
 
     return (
         <Popover open={open} onOpenChange={setOpen} modal={true}>

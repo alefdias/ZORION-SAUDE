@@ -43,12 +43,12 @@ export function isMav(medOrName) {
 /**
  * Verifica se a categoria do medicamento indica que ele é Psicotrópico/Controlado
  * (Portaria 344/98) que exige dados do paciente.
- * @param {string} categoria - Categoria do medicamento
+ * @param {string} grupo_terapeutico - Categoria do medicamento
  * @returns {boolean} - Retorna true se for Psicotrópico
  */
-export function isPsicotropico(categoria) {
-    if (!categoria) return false;
-    return categoria.toUpperCase().startsWith("PSICOTRÓPICO");
+export function isPsicotropico(grupo_terapeutico) {
+    if (!grupo_terapeutico) return false;
+    return grupo_terapeutico.toUpperCase().startsWith("PSICOTRÓPICO");
 }
 
 /**

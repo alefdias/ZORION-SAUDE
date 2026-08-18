@@ -48,7 +48,7 @@ const CATEGORIA_COLORS = [
 // Mapeamento estável de categoria → cor
 let _catMap = {};
 let _catCounter = 0;
-function getCategoriaColor(categoria) {
+function getGrupoColor(categoria) {
   const key = (categoria || "Sem categoria").toLowerCase().trim();
   if (!_catMap[key]) {
     _catMap[key] = CATEGORIA_COLORS[_catCounter % CATEGORIA_COLORS.length];
@@ -184,7 +184,7 @@ export default function Vencimentos() {
   const queryClient = useQueryClient();
   const [abaAtiva, setAbaAtiva] = useState("vencidos");
   const [search, setSearch] = useState("");
-  const [filterCategoria, setFilterCategoria] = useState("all");
+  const [filterGrupo, setFilterGrupo] = useState("all");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deletingLoteId, setDeletingLoteId] = useState(null);
 
@@ -261,7 +261,7 @@ export default function Vencimentos() {
 
   // Categorias disponíveis
   const categorias = useMemo(() => {
-    const s = new Set(lotesEnriquecidos.map((l) => l.categoria));
+    const s = new Set(lotesEnriquecidos.map((l) => l.grupo_terapeutico));
     return Array.from(s).sort();
   }, [lotesEnriquecidos]);
 
@@ -273,18 +273,18 @@ export default function Vencimentos() {
     return lotesEnriquecidos
       .filter((l) => tabAtual?.filter(l.dias))
       .filter((l) => {
-        if (filterCategoria !== "all" && l.categoria !== filterCategoria) return false;
+        if (filterGrupo !== "all" && l.grupo_terapeutico !== filterGrupo) return false;
         if (search) {
           const s = search.toLowerCase();
           return (
             l.medicamento_nome_display?.toLowerCase().includes(s) ||
             l.numero_lote?.toLowerCase().includes(s) ||
-            l.categoria?.toLowerCase().includes(s)
+            l.grupo_terapeutico?.toLowerCase().includes(s)
           );
         }
         return true;
       });
-  }, [lotesEnriquecidos, tabAtual, search, filterCategoria]);
+  }, [lotesEnriquecidos, tabAtual, search, filterGrupo]);
 
   const handlePrint = () => {
     window.print();
@@ -486,14 +486,14 @@ export default function Vencimentos() {
           </p>
           <div className="flex flex-wrap gap-2">
             {categorias.map((cat) => {
-              const c = getCategoriaColor(cat);
+              const c = getGrupoColor(cat);
               return (
                 <button
                   key={cat}
-                  onClick={() => setFilterCategoria(filterCategoria === cat ? "all" : cat)}
+                  onClick={() => setFilterGrupo(filterGrupo === cat ? "all" : cat)}
                   className={`
                     flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all
-                    ${filterCategoria === cat ? `${c.bg} ${c.text} ${c.border} shadow-sm scale-105` : `bg-white ${c.border} ${c.text} hover:${c.bg}`}
+                    ${filterGrupo === cat ? `${c.bg} ${c.text} ${c.border} shadow-sm scale-105` : `bg-white ${c.border} ${c.text} hover:${c.bg}`}
                   `}
                 >
                   <span className={`w-2 h-2 rounded-full ${c.dot}`} />
@@ -501,9 +501,9 @@ export default function Vencimentos() {
                 </button>
               );
             })}
-            {filterCategoria !== "all" && (
+            {filterGrupo !== "all" && (
               <button
-                onClick={() => setFilterCategoria("all")}
+                onClick={() => setFilterGrupo("all")}
                 className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-medium text-slate-500 hover:bg-slate-50"
               >
                 × Limpar filtro
@@ -610,7 +610,7 @@ export default function Vencimentos() {
                           <p className={cn("font-semibold text-slate-800 text-sm leading-tight", isMav(lote.medicamento_nome_display) && "text-red-900 font-bold")}>
                             {lote.medicamento_nome_display} {isMav(lote.medicamento_nome_display) && "(MAV)"}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{lote.categoria}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{lote.grupo_terapeutico}</p>
                         </td>
                         <td className="py-3 px-4 text-xs font-mono text-slate-600">{lote.numero_lote}</td>
                         <td className="py-3 px-4 text-center text-sm text-slate-700">{lote.validadeFormatada}</td>
@@ -700,7 +700,7 @@ export default function Vencimentos() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {itensFiltrados.map((lote, idx) => {
-                  const catColor = getCategoriaColor(lote.categoria);
+                  const catColor = getGrupoColor(lote.grupo_terapeutico);
                   const isVencido = lote.dias < 0;
 
                   return (
@@ -719,7 +719,7 @@ export default function Vencimentos() {
                       <td className="py-3 px-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${catColor.bg} ${catColor.text} ${catColor.border}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${catColor.dot}`} />
-                          {lote.categoria}
+                          {lote.grupo_terapeutico}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-xs font-mono text-slate-600">

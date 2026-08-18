@@ -254,7 +254,7 @@ export default function Relatorios() {
     .map(m => ({
       codigo: m.codigo || "S/C",
       nome: m.nome,
-      categoria: m.categoria || "N/A",
+      grupo_terapeutico: m.grupo_terapeutico || "N/A",
       estoque_atual: m.estoque_atual || 0,
       estoque_minimo: m.estoque_minimo || 0,
     }))
@@ -577,7 +577,7 @@ export default function Relatorios() {
         <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
           <div className="flex justify-between items-center mb-4">
             <div className="text-left">
-              <p className="text-indigo-600 font-bold text-xl">AXION SAÚDE</p>
+              <p className="text-indigo-600 font-bold text-xl">ZORION SAÚDE</p>
               <p className="text-slate-500 text-xs">Sistema de Controle Farmacêutico</p>
             </div>
             <div className="text-right text-[10px] text-slate-400">
@@ -943,7 +943,7 @@ export default function Relatorios() {
                     <tr key={idx} className={idx % 2 === 0 ? "bg-red-50" : "bg-white"}>
                       <td className="py-2 px-3 border border-slate-300 text-[10px] font-medium">{item.codigo}</td>
                       <td className="py-2 px-3 border border-slate-300 font-medium text-sm">{item.nome}</td>
-                      <td className="py-2 px-3 border border-slate-300 text-sm">{item.categoria}</td>
+                      <td className="py-2 px-3 border border-slate-300 text-sm">{item.grupo_terapeutico}</td>
                       <td className="py-2 px-3 border border-slate-300 text-center font-bold text-red-700 text-sm">
                         {item.estoque_atual.toLocaleString('pt-BR')}
                       </td>

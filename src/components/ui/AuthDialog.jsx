@@ -6,25 +6,45 @@ import { Label } from "@/components/ui/label";
 import { Lock } from "lucide-react";
 import { toast } from "sonner";
 
+import { db } from "@/api/db";
+
 export default function AuthDialog({ open, onSuccess }) {
     const [usuario, setUsuario] = useState("");
     const [senha, setSenha] = useState("");
     const [loading, setLoading] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
 
-        if (usuario === "clemente" && senha === "lins2026") {
-            const timestamp = new Date().getTime();
-            localStorage.setItem("pharma_auth_time", timestamp.toString());
-            localStorage.setItem("pharma_auth_user", "clemente");
-            toast.success("Autenticação realizada com sucesso!");
-            setUsuario("");
-            setSenha("");
-            onSuccess();
-        } else {
-            toast.error("Usuário ou senha incorretos!");
+        try {
+            const users = await db.entities.Usuario.list();
+            const validUser = users.find(u => u.login === usuario && u.senha === senha);
+            
+            if (validUser) {
+                const timestamp = new Date().getTime();
+                localStorage.setItem("pharma_auth_time", timestamp.toString());
+                localStorage.setItem("pharma_auth_user", validUser.login);
+                localStorage.setItem("pharma_auth_perfil", validUser.perfil || "user");
+                toast.success(`Bem-vindo, ${validUser.nome || validUser.login}!`);
+                setUsuario("");
+                setSenha("");
+                onSuccess();
+            } else if (usuario === "admin" && senha === "admin123" && users.length === 0) {
+                 // Fallback temporário se tabela estiver vazia mas não inseriu o seed
+                const timestamp = new Date().getTime();
+                localStorage.setItem("pharma_auth_time", timestamp.toString());
+                localStorage.setItem("pharma_auth_user", "admin");
+                toast.success("Autenticação de sistema (admin) realizada!");
+                setUsuario("");
+                setSenha("");
+                onSuccess();
+            } else {
+                toast.error("Usuário ou senha incorretos!");
+            }
+        } catch (error) {
+             console.error("Erro na autenticação:", error);
+             toast.error("Erro ao conectar com o banco de dados.");
         }
 
         setLoading(false);

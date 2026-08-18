@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
+import { db } from "@/api/db";
 
 const CATEGORIAS = [
     "CLÍNICOS - ANALGÉSICO, ANTITERMICO",
@@ -133,8 +135,9 @@ const APRESENTACAO_MAP_INV = Object.fromEntries(Object.entries(APRESENTACAO_MAP)
 
 export default function MedicamentoForm({ open, onClose, onSave, medicamento, isLoading }) {
     const [form, setForm] = useState({
-        nome: "", nome_comercial: "", codigo: "", principio_ativo: "", categoria: "", apresentacao: "",
-        unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false
+        nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "",
+        concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false,
+        origem: "", grupo_terapeutico: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false
     });
 
     useEffect(() => {
@@ -146,17 +149,44 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                 principio_ativo: medicamento.principio_ativo || "",
                 categoria: medicamento.categoria || "",
                 apresentacao: medicamento.apresentacao || "",
+                concentracao: medicamento.concentracao || medicamento.unidade_medida || "",
                 unidade_medida: medicamento.unidade_medida || "",
                 estoque_minimo: medicamento.estoque_minimo || 0,
                 localizacao: medicamento.localizacao || "",
                 observacoes: medicamento.observacoes || "",
                 padronizado: medicamento.padronizado || false,
                 is_mav: medicamento.is_mav !== undefined ? Boolean(medicamento.is_mav) : isMav(medicamento.nome || ""),
+                origem: medicamento.origem || "",
+                grupo_terapeutico: medicamento.grupo_terapeutico || "",
+                forma_farmaceutica: medicamento.forma_farmaceutica || "",
+                via_administracao: medicamento.via_administracao || "",
+                portaria_344: medicamento.portaria_344 || false,
+                antimicrobiano: medicamento.antimicrobiano || false,
+                ccih: medicamento.ccih || false,
             });
         } else {
-            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", categoria: "", apresentacao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false });
+            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", grupo_terapeutico: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false });
         }
     }, [medicamento, open]);
+
+    const { data: dbMedicamentos = [] } = useQuery({
+        queryKey: ['medicamentos'],
+        queryFn: () => db.entities.Medicamento.list(),
+    });
+
+    const uniqueApresentacoes = Array.from(
+        new Set([
+            ...APRESENTACOES.map(a => a.toUpperCase()),
+            ...dbMedicamentos.map(m => m.apresentacao?.toUpperCase()).filter(Boolean)
+        ])
+    ).sort();
+
+    const uniqueCategorias = Array.from(
+        new Set([
+            ...CATEGORIAS.map(c => c.toUpperCase()),
+            ...dbMedicamentos.map(m => m.grupo_terapeutico?.toUpperCase()).filter(Boolean)
+        ])
+    ).sort();
 
     const handleChange = (field) => (e) => setForm({ ...form, [field]: e.target.value });
     const handleSelectChange = (field) => (value) => setForm({ ...form, [field]: value });
@@ -168,7 +198,7 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
             toast.error("O nome do medicamento é obrigatório");
             return;
         }
-        if (!form.categoria) {
+        if (!form.grupo_terapeutico) {
             toast.error("Selecione uma categoria");
             return;
         }
@@ -182,7 +212,7 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{medicamento ? "Editar Medicamento" : "Novo Medicamento"}</DialogTitle>
                 </DialogHeader>
@@ -193,52 +223,56 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                             <Input value={form.nome} onChange={handleChange("nome")} required />
                         </div>
                         <div>
-                            <Label>Nome Comercial</Label>
-                            <Input value={form.nome_comercial} onChange={handleChange("nome_comercial")} placeholder="Opcional" />
-                        </div>
-                        <div>
                             <Label>Código (ID)</Label>
                             <Input value={form.codigo} onChange={handleChange("codigo")} placeholder="Ex: MED001" />
                         </div>
 
                         <div>
-                            <Label>Categoria</Label>
-                            <Select
-                                value={form.categoria}
-                                onValueChange={(val) => handleSelectChange("categoria")(val)}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Selecione..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {CATEGORIAS.map(cat => (
-                                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Label>Grupo Terapêutico</Label>
+                            <Input 
+                                list="categorias-list" 
+                                value={form.grupo_terapeutico} 
+                                onChange={(e) => setForm({ ...form, categoria: e.target.value.toUpperCase() })} 
+                                placeholder="Selecione ou digite..." 
+                            />
+                            <datalist id="categorias-list">
+                                {uniqueCategorias.map(cat => (
+                                    <option key={cat} value={cat} />
+                                ))}
+                            </datalist>
                         </div>
                         <div>
                             <Label>Apresentação</Label>
-                            <Select
-                                value={APRESENTACAO_MAP_INV[form.apresentacao] || form.apresentacao}
-                                onValueChange={(val) => handleSelectChange("apresentacao")(APRESENTACAO_MAP[val] || val)}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Selecione..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {APRESENTACOES.map(apr => (
-                                        <SelectItem key={apr} value={apr}>{apr}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Input 
+                                list="apresentacoes-list" 
+                                value={form.apresentacao} 
+                                onChange={(e) => setForm({ ...form, apresentacao: e.target.value.toUpperCase() })} 
+                                placeholder="Ex: COMPRIMIDO, AMPOLA, SACHÊ 5G..." 
+                            />
+                            <datalist id="apresentacoes-list">
+                                {uniqueApresentacoes.map(apr => (
+                                    <option key={apr} value={apr} />
+                                ))}
+                            </datalist>
                         </div>
                         <div>
-                            <Label>DOSAGEM</Label>
-                            <Input value={form.unidade_medida} onChange={handleChange("unidade_medida")} placeholder="Ex: mg, ml, un" />
+                            <Label>CONCENTRAÇÃO</Label>
+                            <Input value={form.concentracao} onChange={handleChange("concentracao")} placeholder="Ex: 500mg, 10ml, un" />
+                        </div>
+                        <div>
+                            <Label>Origem</Label>
+                            <Input value={form.origem} onChange={handleChange("origem")} placeholder="Ex: Central" />
+                        </div>
+                        <div>
+                            <Label>Forma Farmacêutica</Label>
+                            <Input value={form.forma_farmaceutica} onChange={handleChange("forma_farmaceutica")} placeholder="Ex: Sólida" />
+                        </div>
+                        <div>
+                            <Label>Via de Administração</Label>
+                            <Input value={form.via_administracao} onChange={(e) => setForm({ ...form, via_administracao: e.target.value.toUpperCase() })} placeholder="Ex: ORAL, IV, IM" />
                         </div>
                     </div>
-                    <div className="flex items-center gap-6 pt-2 pb-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 pb-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
                         <div className="flex items-center gap-2">
                             <input 
                                 type="checkbox" 
@@ -247,7 +281,7 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                                 onChange={(e) => setForm({ ...form, padronizado: e.target.checked })}
                                 className="rounded border-slate-300 w-4 h-4 text-blue-600" 
                             />
-                            <Label htmlFor="padronizado" className="cursor-pointer">Medicamento Padronizado</Label>
+                            <Label htmlFor="padronizado" className="cursor-pointer text-sm">Padronizado</Label>
                         </div>
                         <div className="flex items-center gap-2">
                             <input 
@@ -257,8 +291,44 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                                 onChange={(e) => setForm({ ...form, is_mav: e.target.checked })}
                                 className="rounded border-red-300 w-4 h-4 text-red-600 focus:ring-red-500" 
                             />
-                            <Label htmlFor="is_mav" className="cursor-pointer font-bold text-red-600 dark:text-red-400">
-                                MAV (Alta Vigilância)
+                            <Label htmlFor="is_mav" className="cursor-pointer text-sm font-bold text-red-600">
+                                MAV (Alto Risco)
+                            </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="portaria_344" 
+                                checked={form.portaria_344} 
+                                onChange={(e) => setForm({ ...form, portaria_344: e.target.checked })}
+                                className="rounded border-indigo-300 w-4 h-4 text-indigo-600 focus:ring-indigo-500" 
+                            />
+                            <Label htmlFor="portaria_344" className="cursor-pointer text-sm font-bold text-indigo-600">
+                                Portaria 344
+                            </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="antimicrobiano" 
+                                checked={form.antimicrobiano} 
+                                onChange={(e) => setForm({ ...form, antimicrobiano: e.target.checked })}
+                                className="rounded border-emerald-300 w-4 h-4 text-emerald-600 focus:ring-emerald-500" 
+                            />
+                            <Label htmlFor="antimicrobiano" className="cursor-pointer text-sm font-bold text-emerald-600">
+                                Antimicrobiano
+                            </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="ccih" 
+                                checked={form.ccih} 
+                                onChange={(e) => setForm({ ...form, ccih: e.target.checked })}
+                                className="rounded border-orange-300 w-4 h-4 text-orange-600 focus:ring-orange-500" 
+                            />
+                            <Label htmlFor="ccih" className="cursor-pointer text-sm font-bold text-orange-600">
+                                CCIH
                             </Label>
                         </div>
                     </div>

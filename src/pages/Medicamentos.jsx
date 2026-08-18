@@ -18,7 +18,7 @@ import MedicamentoForm from "@/components/forms/MedicamentoForm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
-const CATEGORIA_LABELS = {
+const GRUPO_LABELS = {
   analgesico: "Analgésico",
   antitermico: "Antitérmico",
   anti_inflamatorio: "Anti-inflamatório",
@@ -50,15 +50,15 @@ const APRESENTACAO_LABELS = {
   sache: "Sachê",
 };
 
-export function getApresentacaoEDosagem(med) {
-  if (!med) return { apresentacao: "-", dosagem: "-" };
+export function getApresentacaoEConcentracao(med) {
+  if (!med) return { apresentacao: "-", concentracao: "-" };
 
   const apresentacao = (med.apresentacao || "-").trim();
-  const dosagem = (med.dosagem || med.unidade_medida || "-").trim();
+  const concentracao = (med.concentracao || med.unidade_medida || "-").trim();
 
   return {
     apresentacao: apresentacao || "-",
-    dosagem: (dosagem && !["un", "unidade", "unid", "-", ""].includes(dosagem.toLowerCase())) ? dosagem : "-"
+    concentracao: (concentracao && !["un", "unidade", "unid", "-", ""].includes(concentracao.toLowerCase())) ? concentracao : "-"
   };
 }
 
@@ -71,9 +71,13 @@ export default function Medicamentos() {
   const [visibleColumns, setVisibleColumns] = useState({
     codigo: true,
     medicamento: true,
-    dosagem: true,
+    origem: false,
+    grupo: false,
+    forma: false,
+    concentracao: true,
     apresentacao: true,
-    categoria: true,
+    via: true,
+    grupo_terapeutico: true,
     estoque: true,
     acoes: true
   });
@@ -140,12 +144,26 @@ export default function Medicamentos() {
     if (activeTab === "nao_padronizados" && m.padronizado) return false;
     
     // Search filter
-    return (
-      m.nome?.toLowerCase().includes(search.toLowerCase()) ||
-      m.principio_ativo?.toLowerCase().includes(search.toLowerCase()) ||
-      m.codigo?.toLowerCase().includes(search.toLowerCase()) ||
-      m.codigo_barras?.includes(search)
-    );
+    const searchLower = search.toLowerCase();
+    const searchableString = [
+        m.nome,
+        m.principio_ativo,
+        m.codigo,
+        m.codigo_barras,
+        m.grupo_terapeutico,
+        m.origem,
+        m.grupo_terapeutico,
+        m.forma_farmaceutica,
+        m.via_administracao,
+        m.apresentacao,
+        m.concentracao,
+        m.antimicrobiano ? "antimicrobiano" : "",
+        m.ccih ? "ccih" : "",
+        m.portaria_344 ? "portaria 344 port. 344 portaria344" : "",
+        (m.alto_risco_mav || m.is_mav) ? "mav alto risco" : ""
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return searchableString.includes(searchLower);
   }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
 
   return (
@@ -154,7 +172,7 @@ export default function Medicamentos() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Catálogo de Medicamentos</h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Gerencie produtos, dosagens e padronização</p>
+          <p className="text-slate-500 text-sm font-medium mt-1">Gerencie produtos, concentrações e padronização</p>
         </div>
         <div className="flex items-center gap-2.5 no-print">
           <Button variant="outline" onClick={() => window.print()} className="gap-2 border-slate-300 hover:bg-slate-100 text-slate-700 shadow-sm transition-all">
@@ -180,7 +198,12 @@ export default function Medicamentos() {
                 >
                   {col === "codigo" ? "Cód." :
                     col === "apresentacao" ? "Apresentação" :
-                      col === "acoes" ? "Ações" : col}
+                      col === "grupo_terapeutico" ? "Grupo Terapêutico" :
+                        col === "grupo" ? "Grupo Antigo" :
+                          col === "forma" ? "Forma Farmacêutica" :
+                            col === "via" ? "Via de Administração" :
+                              col === "concentracao" ? "Concentração" :
+                                col === "acoes" ? "Ações" : col}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
@@ -223,9 +246,13 @@ export default function Medicamentos() {
             <TableRow className="hover:bg-transparent">
               {visibleColumns.codigo && <TableHead className="w-24 text-xs font-bold text-slate-600 uppercase tracking-wider">Código</TableHead>}
               {visibleColumns.medicamento && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Medicamento</TableHead>}
-              {visibleColumns.dosagem && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Dosagem</TableHead>}
+              {visibleColumns.origem && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Origem</TableHead>}
+              {visibleColumns.grupo && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Grupo</TableHead>}
+              {visibleColumns.forma && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Forma</TableHead>}
+              {visibleColumns.concentracao && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Concentração</TableHead>}
               {visibleColumns.apresentacao && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Apresentação</TableHead>}
-              {visibleColumns.categoria && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Categoria</TableHead>}
+              {visibleColumns.via && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Via de Administração</TableHead>}
+              {visibleColumns.grupo_terapeutico && <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Grupo Terapêutico</TableHead>}
               {visibleColumns.estoque && <TableHead className="text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Estoque</TableHead>}
               {visibleColumns.acoes && <TableHead className="w-16"></TableHead>}
             </TableRow>
@@ -245,7 +272,7 @@ export default function Medicamentos() {
               ))
             ) : filteredMeds.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-500">Nenhum medicamento encontrado</p>
                 </TableCell>
@@ -264,35 +291,47 @@ export default function Medicamentos() {
                     <TableCell>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <p className={cn("font-medium text-slate-800", isMav(med) && "text-red-600 font-bold flex items-center gap-1.5")}>
+                          <p className={cn("font-medium text-slate-800 flex flex-wrap items-center gap-1.5", isMav(med) && "text-red-600 font-bold")}>
                             {med.nome}
-                            {isMav(med) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
-                            {isPsicotropico(med.categoria) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
+                            {(isMav(med) || med.alto_risco_mav || med.is_mav) && <Badge variant="destructive" className="text-[10px] py-0 px-1 ml-1">MAV/Alto Risco</Badge>}
+                            {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
+                            {med.portaria_344 && <Badge className="bg-indigo-600 hover:bg-indigo-700 text-[10px] py-0 px-1 ml-1">Port. 344</Badge>}
+                            {med.antimicrobiano && <Badge className="bg-emerald-600 hover:bg-emerald-700 text-[10px] py-0 px-1 ml-1">Antimicrobiano</Badge>}
+                            {med.ccih && <Badge className="bg-orange-600 hover:bg-orange-700 text-[10px] py-0 px-1 ml-1">CCIH</Badge>}
                           </p>
                         </div>
-                        {med.nome_comercial && (
-                          <p className="text-xs text-indigo-600 font-medium">Comercial: {med.nome_comercial}</p>
-                        )}
                         {med.principio_ativo && (
                           <p className="text-[10px] text-slate-500">{med.principio_ativo}</p>
                         )}
                       </div>
                     </TableCell>
                   )}
-                  {visibleColumns.dosagem && (
+                  {visibleColumns.origem && (
+                    <TableCell className="text-slate-600 text-xs uppercase">{med.origem || "-"}</TableCell>
+                  )}
+                  {visibleColumns.grupo && (
+                    <TableCell className="text-slate-600 text-xs">{med.grupo_terapeutico || "-"}</TableCell>
+                  )}
+                  {visibleColumns.forma && (
+                    <TableCell className="text-slate-600 text-xs">{med.forma_farmaceutica || "-"}</TableCell>
+                  )}
+                  {visibleColumns.concentracao && (
                     <TableCell className="text-slate-800 font-bold font-mono">
-                      {getApresentacaoEDosagem(med).dosagem}
+                      {getApresentacaoEConcentracao(med).concentracao}
                     </TableCell>
                   )}
                   {visibleColumns.apresentacao && (
                     <TableCell className="text-slate-600 font-medium">
-                      {getApresentacaoEDosagem(med).apresentacao}
+                      {getApresentacaoEConcentracao(med).apresentacao}
                     </TableCell>
                   )}
-                  {visibleColumns.categoria && (
+                  {visibleColumns.via && (
+                    <TableCell className="text-slate-600 text-xs">{med.via_administracao || "-"}</TableCell>
+                  )}
+                  {visibleColumns.grupo_terapeutico && (
                     <TableCell>
                       <Badge variant="secondary" className="text-xs">
-                        {CATEGORIA_LABELS[med.categoria] || med.categoria}
+                        {GRUPO_LABELS[med.grupo_terapeutico] || med.grupo_terapeutico}
                       </Badge>
                     </TableCell>
                   )}
@@ -361,7 +400,7 @@ export default function Medicamentos() {
       <div id="print-area" className="hidden print:block p-8 bg-white text-slate-900 font-sans">
         <div className="border-b-2 border-blue-600 pb-4 mb-6 flex justify-between items-end">
           <div>
-            <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">AXION SAÚDE — RELATÓRIO DE MEDICAMENTOS</h1>
+            <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">ZORION SAÚDE — RELATÓRIO DE MEDICAMENTOS</h1>
             <p className="text-xs text-slate-500 font-semibold mt-1">ESTOQUE CENTRAL HOSPITALAR • LISTA DE PADRONIZAÇÃO DE MEDICAMENTOS</p>
           </div>
           <div className="text-right text-xs text-slate-500">
@@ -376,7 +415,7 @@ export default function Medicamentos() {
               <th className="border border-blue-800 py-2 px-3 text-center w-16">Cód</th>
               <th className="border border-blue-800 py-2 px-3">Medicamento / Princípio Ativo</th>
               <th className="border border-blue-800 py-2 px-3">Categoria</th>
-              <th className="border border-blue-800 py-2 px-3">Apresentação / Dosagem</th>
+              <th className="border border-blue-800 py-2 px-3">Apresentação / Concentração</th>
               <th className="border border-blue-800 py-2 px-3 text-center">Estoque Atual</th>
             </tr>
           </thead>
@@ -393,10 +432,10 @@ export default function Medicamentos() {
                   <p className="text-[10px] text-slate-500 uppercase">{med.principio_ativo || ""}</p>
                 </td>
                 <td className="border border-slate-200 py-2 px-3 text-xs">
-                  {CATEGORIA_LABELS[med.categoria] || med.categoria}
+                  {GRUPO_LABELS[med.grupo_terapeutico] || med.grupo_terapeutico}
                 </td>
                 <td className="border border-slate-200 py-2 px-3 text-xs font-medium">
-                  {getApresentacaoEDosagem(med).apresentacao} — <span className="font-bold font-mono">{getApresentacaoEDosagem(med).dosagem}</span>
+                  {getApresentacaoEConcentracao(med).apresentacao} — <span className="font-bold font-mono">{getApresentacaoEConcentracao(med).concentracao}</span>
                 </td>
                 <td className="border border-slate-200 py-2 px-3 text-center font-bold text-blue-700 text-sm">
                   {med.estoque_atual || 0}

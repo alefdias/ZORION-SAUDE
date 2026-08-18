@@ -5,19 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
-import { PackagePlus } from "lucide-react";
+import { DatePickerField } from "@/components/ui/date-picker-field";
+import { PackagePlus, AlertTriangle, CalendarCheck } from "lucide-react";
 import { toast } from "sonner";
 
 const getLocalDateString = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-
 import { isMav } from "@/utils/mavUtils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-const emptyForm = {
+const makeEmptyForm = () => ({
     medicamento_id: "",
     medicamento_nome: "",
     lote_id: "",
@@ -26,14 +26,15 @@ const emptyForm = {
     ala_id: "",
     ala_nome: "",
     data_devolucao: getLocalDateString(),
+    data_validade_lote: "",
     observacao: "",
-};
+});
 
 export default function DevolucaoForm({ open, onClose, onSave, medicamentos = [], lotes = [], alas = [], isLoading }) {
-    const [form, setForm] = useState(emptyForm);
+    const [form, setForm] = useState(makeEmptyForm);
 
     useEffect(() => {
-        if (open) setForm(emptyForm);
+        if (open) setForm(makeEmptyForm());
     }, [open]);
 
     const handleChange = (field) => (e) => {
@@ -53,10 +54,15 @@ export default function DevolucaoForm({ open, onClose, onSave, medicamentos = []
 
     const handleLote = (id) => {
         const lote = lotes.find((l) => l.id === id);
+        // Preenche automaticamente a validade do lote selecionado
+        const dataValidadeLote = lote?.data_validade
+            ? lote.data_validade.split("T")[0]
+            : "";
         setForm((prev) => ({
             ...prev,
             lote_id: id,
-            numero_lote: lote?.numero_lote || ""
+            numero_lote: lote?.numero_lote || "",
+            data_validade_lote: dataValidadeLote,
         }));
     };
 
@@ -89,6 +95,8 @@ export default function DevolucaoForm({ open, onClose, onSave, medicamentos = []
             ...form,
             quantidade: Number(form.quantidade),
             ala_id: form.ala_id || null,
+            // Passa validade do lote para o caller registrar na Entrada
+            data_validade: form.data_validade_lote || null,
         });
     };
 
@@ -100,7 +108,7 @@ export default function DevolucaoForm({ open, onClose, onSave, medicamentos = []
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <PackagePlus className="w-5 h-5 text-emerald-500" />
-                        Nova Devolução de Medicamento (Ala)
+                        Devolução → Farmácia Satélite
                     </DialogTitle>
                 </DialogHeader>
 
@@ -168,17 +176,27 @@ export default function DevolucaoForm({ open, onClose, onSave, medicamentos = []
                             />
                         </div>
 
-                        <div>
-                            <Label htmlFor="data-devolucao">Data da Devolução</Label>
-                            <Input
-                                id="data-devolucao"
-                                type="date"
-                                value={form.data_devolucao}
-                                onChange={handleChange("data_devolucao")}
-                                required
-                            />
-                        </div>
+                        <DatePickerField
+                            id="data-devolucao"
+                            label="Data da Devolução"
+                            value={form.data_devolucao}
+                            onChange={(v) => setForm(prev => ({ ...prev, data_devolucao: v }))}
+                        />
                     </div>
+
+                    {/* Validade do lote — preenchida automaticamente */}
+                    {form.data_validade_lote && (
+                        <div className="flex items-center gap-2 text-sm bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                            <CalendarCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="text-emerald-800">
+                                <span className="font-medium">Validade do lote:</span>{" "}
+                                {(() => {
+                                    try { return format(parseISO(form.data_validade_lote), "dd/MM/yyyy", { locale: ptBR }); }
+                                    catch { return form.data_validade_lote; }
+                                })()}
+                            </span>
+                        </div>
+                    )}
 
                     <div>
                         <Label htmlFor="ala-select">Ala que Devolveu</Label>

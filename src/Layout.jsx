@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "./utils";
 import logo from "./assets/logo-tr.png";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useWelcome } from "@/lib/AppInitializer";
 import { TransferenciaAcceptModal } from "@/components/TransferenciaAcceptModal";
 
@@ -18,17 +19,14 @@ import {
   X,
   LogOut,
   User,
-  Moon,
-  Sun,
-  ClipboardCheck,
   Settings,
   CalendarX2,
   Book,
-  Stethoscope,
   Activity,
   Users,
-  Syringe,
-  ChevronDown
+  ChevronDown,
+  TrendingUp,
+  Palette
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -64,11 +62,11 @@ const moduleSections = [
     mainPage: "Satelite",
     menu: [
       { name: "Painel Satélite", icon: LayoutDashboard, page: "Satelite" },
-      { name: "Pacientes & Fixa", icon: Users, page: "PacientesMedicao" },
+      { name: "Sazonalidade", icon: TrendingUp, page: "SateliteEvolucao" },
+      { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
       { name: "Movimentações", icon: ArrowLeftRight, page: "SateliteMovimentacoes" },
       { name: "Folha Reg. Específico", icon: Book, page: "SatelitePortaria" },
       { name: "Estoque Atual", icon: Package, page: "SateliteEstoque" },
-      { name: "Evolução", icon: ClipboardCheck, page: "SateliteEvolucao" },
     ]
   },
   {
@@ -91,18 +89,6 @@ const moduleSections = [
     menu: [
       { name: "Carrinho de Parada", icon: Activity, page: "CarrinhoParada" },
     ]
-  },
-  {
-    id: "clinico",
-    name: "Clínico & Recepção",
-    icon: Stethoscope,
-    mainPage: "Recepcao",
-    menu: [
-      { name: "Recepção", icon: Users, page: "Recepcao" },
-      { name: "Admissões", icon: ClipboardCheck, page: "RecepcaoAdmissoes" },
-      { name: "Enfermagem", icon: Syringe, page: "Enfermagem" },
-      { name: "Médico", icon: Stethoscope, page: "Medico" },
-    ]
   }
 ];
 
@@ -122,39 +108,29 @@ export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem("pharma_dark_mode");
-    return saved ? JSON.parse(saved) : false;
+  useEffect(() => {
+    document.documentElement.classList.remove("dark");
+    setUser({ full_name: "Administrador" });
+  }, []);
+  const [themeColor, setThemeColorState] = useState(() => {
+    return localStorage.getItem("zorion_theme") || "theme-ocean";
   });
+
+  const setThemeColor = (newTheme) => {
+    document.documentElement.classList.remove(themeColor);
+    document.documentElement.classList.add(newTheme);
+    localStorage.setItem("zorion_theme", newTheme);
+    setThemeColorState(newTheme);
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.add(themeColor);
+  }, []);
+
 
   useEffect(() => {
     setUser({ full_name: "Administrador" });
   }, []);
-
-  // Global Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "F11") {
-        e.preventDefault();
-        navigate(createPageUrl("Movimentacoes") + "?tab=entradas&action=new");
-      } else if (e.key === "F12") {
-        e.preventDefault();
-        navigate(createPageUrl("Movimentacoes") + "?tab=saidas&action=new");
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [navigate]);
-
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("pharma_dark_mode", JSON.stringify(darkMode));
-  }, [darkMode]);
 
   const { showWelcome } = useWelcome();
 
@@ -165,19 +141,19 @@ export default function Layout({ children, currentPageName }) {
   const activeSection = getCurrentSection(currentPageName);
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 transition-colors flex flex-col">
+    <div className="min-h-screen bg-slate-100 transition-colors flex flex-col">
       <Toaster position="top-right" richColors />
       <TransferenciaAcceptModal activeSection={activeSection} />
 
       {/* TOP HEADER NAVIGATION BAR */}
-      <header className="sticky top-0 z-50 bg-[#0F172A] text-white shadow-lg border-b border-slate-800 print:hidden">
+      <header className="sticky top-0 z-50 bg-blue-950 border-blue-900 text-white shadow-lg border-b print:hidden transition-colors">
         <div className="max-w-[1920px] mx-auto px-4 flex items-center justify-between h-14 gap-4">
-          
-          {/* LEFT: AXION Hospitalar Brand Text Only */}
+
+          {/* LEFT: ZORION Hospitalar Brand Text Only */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="flex flex-col justify-center">
               <h1 className="font-extrabold text-[20px] leading-none tracking-tight mb-0.5">
-                <span className="text-blue-500">AX</span><span className="text-white">ION</span>
+                <span className="text-blue-500">ZOR</span><span className="text-white">ION</span>
               </h1>
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] leading-none text-slate-400 font-medium">Hospitalar</span>
@@ -214,20 +190,10 @@ export default function Layout({ children, currentPageName }) {
             })}
           </nav>
 
-          {/* RIGHT: Actions (Sync, Dark Mode, Profile) */}
+          {/* RIGHT: Actions (Sync, Notifications, Dark Mode, Profile) */}
           <div className="flex items-center gap-2 shrink-0 pl-2">
+            <NotificationBell />
             <ServerConnectionBadge />
-
-            {/* Dark Mode Toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setDarkMode(!darkMode)}
-              className="w-7 h-7 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800"
-              title="Alternar Tema"
-            >
-              {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </Button>
 
             {/* User Profile / Logout Dropdown */}
             {user && (
@@ -243,19 +209,44 @@ export default function Layout({ children, currentPageName }) {
                     <ChevronDown className="w-3 h-3 text-slate-400 hidden md:inline" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-[#0F172A] border-slate-800 text-slate-200">
+                <DropdownMenuContent align="end" className="w-48 bg-blue-950 border-blue-900 text-slate-200">
                   <DropdownMenuLabel className="text-[11px] font-normal text-slate-400">
                     Sessão ativa: <strong className="text-white block font-medium truncate">{user.full_name}</strong>
                   </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-slate-800" />
-                  <DropdownMenuItem
-                    onClick={() => setDarkMode(!darkMode)}
-                    className="flex items-center gap-2 cursor-pointer text-xs hover:bg-slate-800"
-                  >
-                    {darkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
-                    <span>{darkMode ? "Modo Claro" : "Modo Escuro"}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-slate-800" />
+                  <DropdownMenuSeparator className="bg-blue-900/50" />
+                  <DropdownMenuSeparator className="bg-blue-900/50" />
+
+                  <div className="px-2 py-1.5">
+                    <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 px-1">
+                      <Palette className="w-3.5 h-3.5" />
+                      <span>Cor do Sistema</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 px-1 pb-1">
+                      {[
+                        { id: "theme-ocean", name: "Oceano", colors: ["bg-blue-600", "bg-blue-900", "bg-slate-100", "bg-white"] },
+                        { id: "theme-emerald", name: "Esmeralda", colors: ["bg-emerald-600", "bg-[#064e3b]", "bg-[#f0fdf4]", "bg-white"] },
+                        { id: "theme-midnight", name: "Meia-noite", colors: ["bg-slate-500", "bg-slate-900", "bg-[#020617]", "bg-slate-800"] },
+                        { id: "theme-sunset", name: "Pôr do Sol", colors: ["bg-orange-500", "bg-[#431407]", "bg-orange-50", "bg-white"] },
+                        { id: "theme-amethyst", name: "Ametista", colors: ["bg-purple-500", "bg-[#3b0764]", "bg-purple-50", "bg-white"] },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setThemeColor(t.id)}
+                          className={cn(
+                            "flex items-center gap-3 p-1.5 rounded-lg transition-colors border text-left",
+                            themeColor === t.id ? "bg-blue-900/50 border-blue-500/50" : "hover:bg-blue-900/30 border-transparent"
+                          )}
+                        >
+                          <div className="flex -space-x-1 shrink-0">
+                            {t.colors.map((c, i) => <div key={i} className={cn("w-4 h-4 rounded-full ring-2 ring-blue-950", c)} />)}
+                          </div>
+                          <span className={cn("text-[11px] font-medium transition-colors", themeColor === t.id ? "text-white" : "text-slate-300")}>{t.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <DropdownMenuSeparator className="bg-blue-900/50" />
                   <DropdownMenuItem
                     onClick={handleLogout}
                     className="flex items-center gap-2 cursor-pointer text-xs text-red-400 hover:bg-red-500/10 focus:text-red-300"
@@ -281,7 +272,7 @@ export default function Layout({ children, currentPageName }) {
 
         {/* MOBILE HORIZONTAL NAVIGATION MENU SLIDE-DOWN */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-800 bg-[#0F172A] px-3 py-2 space-y-2">
+          <div className="lg:hidden border-t border-blue-900 bg-blue-950 px-3 py-2 space-y-2">
             <div>
               <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Navegação: {activeSection.name}
