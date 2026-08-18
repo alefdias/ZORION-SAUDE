@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -8,23 +9,66 @@ import { format, parse, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
-/**
- * DatePickerField — campo de seleção de data com calendário pop-up.
- * 
- * Props:
- *  - label: string — rótulo do campo
- *  - required: bool — exibe asterisco vermelho
- *  - value: string — data no formato "YYYY-MM-DD"
- *  - onChange: (value: string) => void — callback com a data em "YYYY-MM-DD"
- *  - className: string — classes extras para o botão
- *  - disabled: bool
- *  - id: string
- */
 export function DatePickerField({ label, required, value, onChange, className, disabled, id, errorClass }) {
     const [open, setOpen] = useState(false);
+    const [inputValue, setInputValue] = useState("");
 
-    // Converter string "YYYY-MM-DD" → Date object
-    const parseDate = (str) => {
+    // Update local input string when external value changes
+    useEffect(() => {
+        if (!value) {
+            setInputValue("");
+            return;
+        }
+        try {
+            const d = parse(value, "yyyy-MM-dd", new Date());
+            if (isValid(d)) {
+                setInputValue(format(d, "dd/MM/yyyy"));
+            }
+        } catch {
+            setInputValue("");
+        }
+    }, [value]);
+
+    // Handle manual typing
+    const handleInputChange = (e) => {
+        let val = e.target.value.replace(/[^0-9/]/g, ""); // Allow only numbers and slashes
+        setInputValue(val);
+
+        // Try to parse "DD/MM/YYYY" or "DDMMYYYY"
+        if (val.length === 10 && /^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+            const parsed = parse(val, "dd/MM/yyyy", new Date());
+            if (isValid(parsed)) {
+                const y = parsed.getFullYear();
+                const m = String(parsed.getMonth() + 1).padStart(2, "0");
+                const d = String(parsed.getDate()).padStart(2, "0");
+                onChange(`${y}-${m}-${d}`);
+            }
+        } else if (val === "") {
+            onChange("");
+        }
+    };
+
+    const handleBlur = () => {
+        // Formata e revalida ao perder o foco
+        if (!inputValue) {
+            onChange("");
+            return;
+        }
+        const parsed = parse(inputValue, "dd/MM/yyyy", new Date());
+        if (isValid(parsed) && inputValue.length === 10) {
+            // já está ok
+        } else {
+            // Volta pro valor anterior válido
+            if (value) {
+                const d = parse(value, "yyyy-MM-dd", new Date());
+                if (isValid(d)) setInputValue(format(d, "dd/MM/yyyy"));
+            } else {
+                setInputValue("");
+            }
+        }
+    };
+
+    const parseDateFromValue = (str) => {
         if (!str) return undefined;
         try {
             const d = parse(str, "yyyy-MM-dd", new Date());
@@ -34,7 +78,7 @@ export function DatePickerField({ label, required, value, onChange, className, d
         }
     };
 
-    const selected = parseDate(value);
+    const selected = parseDateFromValue(value);
 
     const handleSelect = (date) => {
         if (!date) {
@@ -42,11 +86,11 @@ export function DatePickerField({ label, required, value, onChange, className, d
             setOpen(false);
             return;
         }
-        // Formatar como "YYYY-MM-DD" (sem fuso horário)
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, "0");
         const d = String(date.getDate()).padStart(2, "0");
         onChange(`${y}-${m}-${d}`);
+        setInputValue(format(date, "dd/MM/yyyy"));
         setOpen(false);
     };
 
@@ -54,41 +98,47 @@ export function DatePickerField({ label, required, value, onChange, className, d
         <div className="flex flex-col gap-1.5">
             {label && (
                 <Label htmlFor={id} className="flex items-center gap-1">
-                    <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
                     {label}
                     {required && <span className="text-red-500">*</span>}
                 </Label>
             )}
-            <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                    <Button
-                        id={id}
-                        type="button"
-                        variant="outline"
-                        disabled={disabled}
-                        className={cn(
-                            "w-full justify-start text-left font-normal h-9 px-3",
-                            !selected && "text-muted-foreground",
-                            errorClass,
-                            className
-                        )}
-                    >
-                        {selected
-                            ? format(selected, "dd/MM/yyyy")
-                            : <span className="text-slate-400 text-sm">Selecionar data...</span>}
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start" side="bottom">
-                    <Calendar
-                        mode="single"
-                        selected={selected}
-                        onSelect={handleSelect}
-                        initialFocus
-                        locale={ptBR}
-                        defaultMonth={selected}
-                    />
-                </PopoverContent>
-            </Popover>
+            <div className="relative flex items-center">
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            disabled={disabled}
+                            className="absolute left-1 z-10 text-slate-400 hover:text-emerald-600 hover:bg-slate-100/50"
+                        >
+                            <CalendarIcon className="w-4 h-4" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start" side="bottom">
+                        <Calendar
+                            mode="single"
+                            selected={selected}
+                            onSelect={handleSelect}
+                            initialFocus
+                            locale={ptBR}
+                            defaultMonth={selected}
+                        />
+                    </PopoverContent>
+                </Popover>
+                
+                <Input
+                    id={id}
+                    type="text"
+                    placeholder="DD/MM/AAAA"
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onBlur={handleBlur}
+                    disabled={disabled}
+                    maxLength={10}
+                    className={cn("pl-10 h-9", errorClass, className)}
+                />
+            </div>
         </div>
     );
 }
