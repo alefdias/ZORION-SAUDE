@@ -44,6 +44,16 @@ const ensureTableQuery = {
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "antimicrobiano" BOOLEAN DEFAULT false;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "alto_risco_mav" BOOLEAN DEFAULT false;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "ccih" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "apresentacao" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "concentracao" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "padronizado" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "is_mav" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "nome_comercial" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "principio_ativo" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "categoria" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "unidade_medida" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "localizacao" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
   `,
   Entrada: `
     CREATE TABLE IF NOT EXISTS "Entrada" (
@@ -128,8 +138,9 @@ const ensureTableQuery = {
     );
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "coren" TEXT;
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "crf" TEXT;
-    INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil") 
-    VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin')
+    ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "primeiro_acesso" BOOLEAN DEFAULT true;
+    INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil", "primeiro_acesso") 
+    VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin', false)
     ON CONFLICT DO NOTHING;
   `,
   PrescricaoPaciente: `

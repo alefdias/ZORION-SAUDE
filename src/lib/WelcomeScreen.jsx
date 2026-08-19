@@ -11,6 +11,7 @@ import { addLog } from "./logger";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 import { Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { db } from "@/api/db";
 
 // ─── Ícones SVG ───────────────────────────────────────────────────────────────
 
@@ -356,7 +357,7 @@ export function WelcomeScreen({ onEnter }) {
     setTimeout(() => onEnter(selectedModule.key), 550);
   };
 
-  const handlePasswordChange = (e) => {
+  const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       toast.error("As senhas não coincidem.");
@@ -365,6 +366,13 @@ export function WelcomeScreen({ onEnter }) {
     if (newPassword.length < 3) {
       toast.error("A senha deve ter pelo menos 3 caracteres.");
       return;
+    }
+
+    try {
+      // Tentar atualizar no PostgreSQL
+      await db.entities.Usuario.update(loggedInUser.id, { senha: newPassword, primeiro_acesso: false });
+    } catch (e) {
+      console.warn("Falha ao atualizar no Postgres, prosseguindo com localstorage", e);
     }
 
     const users = JSON.parse(localStorage.getItem("axion_users") || "[]");

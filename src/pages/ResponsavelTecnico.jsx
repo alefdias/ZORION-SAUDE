@@ -61,7 +61,7 @@ export default function ResponsavelTecnico() {
           modules: u.perfil === "administrador" ? AVAILABLE_MODULES.map(m => m.id) : 
                    u.perfil === "farmaceutico" ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada"] : 
                    ["carrinho_parada", "carrinho_enfermagem"],
-          first_login: false
+          first_login: u.primeiro_acesso !== false
       }));
       localStorage.setItem("axion_users", JSON.stringify(localUsers));
     } catch (e) {
@@ -109,7 +109,8 @@ export default function ResponsavelTecnico() {
            senha: password,
            perfil: cargo,
            coren: cargo === 'enfermeiro' ? coren : "",
-           crf: cargo !== 'enfermeiro' ? crf : ""
+           crf: cargo !== 'enfermeiro' ? crf : "",
+           primeiro_acesso: true
         });
         toast.success("Usuário atualizado com sucesso no banco de dados!");
       } else {
@@ -126,7 +127,8 @@ export default function ResponsavelTecnico() {
            senha: password,
            perfil: cargo,
            coren: cargo === 'enfermeiro' ? coren : "",
-           crf: cargo !== 'enfermeiro' ? crf : ""
+           crf: cargo !== 'enfermeiro' ? crf : "",
+           primeiro_acesso: true
         });
         toast.success("Usuário cadastrado no Postgres com sucesso!");
       }
@@ -587,8 +589,53 @@ export default function ResponsavelTecnico() {
               Zerar Banco de Dados de Medicamentos
             </button>
           </div>
+          
+          <div className="flex flex-col md:flex-row gap-6 items-center justify-between mt-6 pt-6 border-t border-indigo-200 dark:border-indigo-900/50">
+             <div>
+               <h3 className="text-indigo-700 dark:text-indigo-400 font-bold text-lg flex items-center gap-2">
+                 Inserir Medicamentos Padrão (Por Script)
+               </h3>
+               <p className="text-indigo-600/80 dark:text-indigo-400/80 text-sm mt-1">
+                 Clique para inserir automaticamente os medicamentos padrões iniciais no banco de dados, incluindo Acetilcisteína.
+               </p>
+             </div>
+             <button
+               onClick={async () => {
+                 try {
+                    const defaultMeds = [
+                        { id: crypto.randomUUID(), nome: "ACETILCISTEINA", codigo: "5/6", concentracao: "120 MG/G", apresentacao: "SACHE 5G", via_administracao: "ORAL", grupo_terapeutico: "CLÍNICOS - MUCOLÍTICO", forma_farmaceutica: "Sólida", estoque_minimo: 0, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "DIPIRONA SÓDICA", codigo: "MED002", concentracao: "500 MG/ML", apresentacao: "AMPOLA", via_administracao: "IV", grupo_terapeutico: "CLÍNICOS - ANALGÉSICO, ANTITERMICO", forma_farmaceutica: "Líquida", estoque_minimo: 10, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "PARACETAMOL", codigo: "MED003", concentracao: "750 MG", apresentacao: "COMPRIMIDO", via_administracao: "ORAL", grupo_terapeutico: "CLÍNICOS - ANALGÉSICO, ANTITERMICO", forma_farmaceutica: "Sólida", estoque_minimo: 10, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "AMOXICILINA", codigo: "MED004", concentracao: "500 MG", apresentacao: "CÁPSULA", via_administracao: "ORAL", grupo_terapeutico: "CLÍNICOS - ANTIBIÓTICO / ANTIBACTERIANO", forma_farmaceutica: "Sólida", estoque_minimo: 5, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "OMEPRAZOL", codigo: "MED005", concentracao: "40 MG", apresentacao: "AMPOLA", via_administracao: "IV", grupo_terapeutico: "CLÍNICOS - ANTIULCEROSO", forma_farmaceutica: "Líquida", estoque_minimo: 5, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "CEFTRIAXONA", codigo: "MED006", concentracao: "1 G", apresentacao: "FRASCO", via_administracao: "IV", grupo_terapeutico: "CLÍNICOS - ANTIBIÓTICO / ANTIBACTERIANO", forma_farmaceutica: "Líquida", estoque_minimo: 5, estoque_atual: 0, padronizado: true, is_mav: false, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "ADRENALINA", codigo: "MED007", concentracao: "1 MG/ML", apresentacao: "AMPOLA", via_administracao: "IV", grupo_terapeutico: "CLÍNICOS - CARDIOTÔNICO", forma_farmaceutica: "Líquida", estoque_minimo: 5, estoque_atual: 0, padronizado: true, is_mav: true, created_at: new Date().toISOString() },
+                        { id: crypto.randomUUID(), nome: "DIAZEPAM", codigo: "MED008", concentracao: "10 MG", apresentacao: "AMPOLA", via_administracao: "IV", grupo_terapeutico: "PSICOTRÓPICOS - ANSIOLITICO, SEDATIVO", forma_farmaceutica: "Líquida", estoque_minimo: 5, estoque_atual: 0, padronizado: true, is_mav: true, portaria_344: true, created_at: new Date().toISOString() }
+                    ];
+                    let count = 0;
+                    for (const med of defaultMeds) {
+                        try {
+                           const exists = await db.entities.Medicamento.list();
+                           if (!exists.find(m => m.nome === med.nome)) {
+                               await db.entities.Medicamento.create(med);
+                               count++;
+                           }
+                        } catch (e) { console.error(e); }
+                    }
+                    toast.success(`${count} Medicamentos foram inseridos pelo script com sucesso!`);
+                 } catch (e) {
+                    toast.error("Erro ao inserir via script: " + e.message);
+                 }
+               }}
+               className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-indigo-600/20 transition-all"
+             >
+               Rodar Script de Inserção
+             </button>
+          </div>
+
         </div>
       </div>
+
     </div>
   );
 }
