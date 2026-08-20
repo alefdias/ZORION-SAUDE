@@ -5618,6 +5618,7 @@ name = "zorion-saude"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "fallible-iterator",
  "log",
  "postgres",
  "serde",

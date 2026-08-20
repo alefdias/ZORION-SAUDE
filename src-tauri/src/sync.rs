@@ -121,35 +121,44 @@ pub async fn start_db_listener(
     let conn_str = format!("host={} user=postgres password={} dbname={} connect_timeout=3", ip, password, db_name);
     
     std::thread::spawn(move || {
-        let mut client = match Client::connect(&conn_str, NoTls) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        
-        if client.batch_execute("LISTEN app_update").is_err() {
-            return;
-        }
-        
         loop {
-            // Keep connection alive and poll network
-            if client.batch_execute("").is_err() {
-                break;
-            }
-            
-            let mut has_update = false;
-            {
-                let mut notifs = client.notifications();
-                let mut iter = notifs.timeout_iter(std::time::Duration::from_millis(100));
-                while let Ok(Some(_)) = iter.next() {
-                    has_update = true;
+            let mut client = match Client::connect(&conn_str, NoTls) {
+                Ok(c) => c,
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    continue;
                 }
+            };
+            
+            if client.batch_execute("LISTEN app_update").is_err() {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                continue;
             }
             
-            if has_update {
-                let _ = app.emit("db_update", ());
+            loop {
+                // Keep connection alive and poll network
+                if client.batch_execute("").is_err() {
+                    break; // Sai do loop interno para reconectar
+                }
+                
+                let mut has_update = false;
+                {
+                    let mut notifs = client.notifications();
+                    let mut iter = notifs.timeout_iter(std::time::Duration::from_millis(100));
+                    while let Ok(Some(_)) = iter.next() {
+                        has_update = true;
+                    }
+                }
+                
+                if has_update {
+                    let _ = app.emit("db_update", ());
+                }
+                
+                std::thread::sleep(std::time::Duration::from_millis(400));
             }
             
-            std::thread::sleep(std::time::Duration::from_millis(400));
+            // Espera antes de tentar reconectar
+            std::thread::sleep(std::time::Duration::from_secs(3));
         }
     });
     
