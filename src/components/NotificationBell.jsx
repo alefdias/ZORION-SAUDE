@@ -70,7 +70,7 @@ export function NotificationBell() {
   });
 
   const pendingPedidos = pedidos.filter(p => p.status === "Pendente" || p.status === "Em Separação");
-  const readyPedidos = pedidos.filter(p => p.status === "Separado" || p.status === "Entregue");
+  const readyPedidos = pedidos.filter(p => p.status === "Separado");
   const count = pendingPedidos.length + readyPedidos.length;
 
   // Sound alert on new orders or upon initial load/login if count > 0
@@ -99,7 +99,7 @@ export function NotificationBell() {
           <Bell className={`w-5 h-5 ${count > 0 ? "text-amber-400 animate-bounce" : "text-slate-400"}`} />
           {count > 0 && (
             <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white ring-2 ring-[#0F172A] shadow-md animate-pulse">
-              {count}
+              {count > 9 ? "9+" : count}
             </span>
           )}
         </button>
