@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -22,6 +23,7 @@ function App() {
   useMidnightReload();
 
   useEffect(() => {
+    // Listener via evento Tauri (mantém como complemento)
     let unlisten;
     const setup = async () => {
       try {
@@ -36,6 +38,44 @@ function App() {
     return () => {
       if (unlisten) unlisten();
     };
+  }, []);
+
+  // Polling silencioso: detecta qualquer mudança no banco a cada 4s
+  // Sem piscar, sem interromper — só invalida o cache do React Query em background
+  useEffect(() => {
+    let lastCount = null;
+
+    const checkForChanges = async () => {
+      try {
+        const ip = localStorage.getItem('pg_ip');
+        const dbName = localStorage.getItem('pg_db');
+        const password = localStorage.getItem('pg_pass');
+        if (!ip || !password) return;
+
+        const raw = await invoke('query_postgres', {
+          ip,
+          dbName,
+          password,
+          query: `SELECT (n_tup_ins + n_tup_upd + n_tup_del + n_tup_hot_upd)::text as cnt
+                  FROM pg_stat_user_tables
+                  WHERE relname IN ('Medicamento','Paciente','PrescricaoPaciente','Lote','Saida','Entrada')
+                  ORDER BY relname`,
+        });
+        const rows = JSON.parse(raw);
+        const current = rows.map(r => r.cnt).join('-');
+
+        if (lastCount === null) {
+          lastCount = current;
+        } else if (current !== lastCount) {
+          lastCount = current;
+          // Silencioso: só invalida cache, sem nenhum efeito visual
+          queryClientInstance.invalidateQueries();
+        }
+      } catch (_) { /* silencioso */ }
+    };
+
+    const interval = setInterval(checkForChanges, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
