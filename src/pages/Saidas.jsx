@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,12 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { 
     Plus, Search, PackageMinus, Trash2, FileText, Printer, Edit, 
-    AlertTriangle, ChevronLeft, ChevronRight, CalendarX, Settings2,
+    AlertTriangle, Settings2,
     Calendar as CalendarIcon, User
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { format, parseISO, subDays, addDays, isValid, startOfDay } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { safeFormatDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";

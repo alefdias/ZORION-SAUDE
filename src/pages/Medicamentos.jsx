@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Package, Printer, Settings2, Lock, User } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Package, Printer, Settings2, User } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -15,7 +15,7 @@ import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import MedicamentoForm from "@/components/forms/MedicamentoForm";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 const GRUPO_LABELS = {

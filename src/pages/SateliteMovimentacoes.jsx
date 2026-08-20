@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PackagePlus, Search, RotateCcw, PackageMinus, CalendarCheck, User, ShoppingCart } from "lucide-react";
+import { Search, RotateCcw, PackageMinus, CalendarCheck, User, ShoppingCart } from "lucide-react";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import { format, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";

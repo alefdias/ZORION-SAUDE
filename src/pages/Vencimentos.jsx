@@ -1,10 +1,9 @@
 import { useState, useMemo, useRef } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { differenceInDays, parseISO, isValid, format, subMonths, startOfMonth, endOfMonth, endOfDay, subDays } from "date-fns";
+import { differenceInDays, parseISO, isValid, format, subMonths, startOfMonth, endOfDay, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,6 @@ import {
   Trash2,
   BarChart2,
 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { isMav } from "@/utils/mavUtils";
 import { cn } from "@/lib/utils";
@@ -816,7 +814,7 @@ export default function Vencimentos() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <style jsx global>{`
+      <style>{`
         @media print {
           @page {
             size: A4;

@@ -1,9 +1,7 @@
 import { useState, useCallback } from "react";
 import { useSyncStatus, sync, getPendingDetails, getLastSync } from "@/api/syncManager";
 import { Wifi, WifiOff, RefreshCw, X, CloudUpload, Trash2, Pencil, Plus, ChevronDown, ChevronRight, History } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 

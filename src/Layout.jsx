@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "./utils";
-import logo from "./assets/logo-tr.png";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useWelcome } from "@/lib/AppInitializer";

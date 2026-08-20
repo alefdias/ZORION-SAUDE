@@ -1,14 +1,12 @@
 import { useState, useRef } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
-import {  format, startOfMonth, endOfMonth, differenceInDays, subDays, startOfDay, endOfDay, isValid, subMonths, isAfter, isBefore , parseISO } from "date-fns";
+import {  format, startOfMonth, endOfMonth, differenceInDays, subDays, startOfDay, endOfDay, isValid, subMonths, isBefore , parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Printer, FileText, TrendingUp, TrendingDown, AlertTriangle, Package } from "lucide-react";
+import { Printer, FileText, AlertTriangle, Package } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import RelatorioTable from "@/components/relatorios/RelatorioTable";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Input } from "@/components/ui/input";

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { UserPlus, Save, Trash2, Loader2 } from "lucide-react";
+import { UserPlus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/api/db";
 

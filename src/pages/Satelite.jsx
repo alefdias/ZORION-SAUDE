@@ -1,14 +1,11 @@
-import { useState, useMemo } from "react";
-import Saidas from "./Saidas";
-import { getApresentacaoEConcentracao } from "./Medicamentos";
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Package, ArrowUpFromLine, LayoutDashboard, Building2, Stethoscope, AlertTriangle } from "lucide-react";
+import { Package, ArrowUpFromLine, Stethoscope, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { db } from "@/api/db";
 import { Card } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format, isToday, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { isToday, parseISO } from "date-fns";
 
 function PainelDashboard() {
   const { data: medicamentos = [] } = useQuery({

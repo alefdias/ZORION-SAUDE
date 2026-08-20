@@ -19,18 +19,11 @@ import {
   Send, 
   CheckCircle2, 
   Clock, 
-  AlertTriangle, 
-  Building2, 
-  Calendar, 
-  CheckSquare, 
-  Square, 
   Truck,
   Eye,
   Search,
-  Filter,
   Package,
-  Layers,
-  ArrowRight
+  Layers
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {

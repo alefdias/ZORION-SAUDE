@@ -24,8 +24,6 @@ const STATUS_COLORS = {
 
 export default function SateliteEstoque() {
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("padronizados");
-  const [displayCount, setDisplayCount] = useState(50);
   const hoje = new Date();
 
   const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
@@ -148,7 +146,7 @@ export default function SateliteEstoque() {
 
     return (
       <Accordion type="multiple" className="w-full bg-white dark:bg-slate-900 rounded-b-xl shadow-sm border border-slate-100 dark:border-slate-800">
-        {items.slice(0, displayCount).map(med => (
+        {items.map(med => (
           <AccordionItem key={med.id} value={med.id} className="border-b border-slate-100 dark:border-slate-800 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
             <AccordionTrigger className="hover:no-underline py-2">
               <div className="flex items-center justify-between w-full pr-4">
@@ -276,7 +274,7 @@ export default function SateliteEstoque() {
         </div>
       </Card>
 
-      <Tabs defaultValue="padronizados" onValueChange={setActiveTab}>
+      <Tabs defaultValue="padronizados">
         <TabsList className="mb-6 bg-slate-100 dark:bg-slate-800 p-1">
           <TabsTrigger value="padronizados" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
             Padronizados ({padronizados.length})

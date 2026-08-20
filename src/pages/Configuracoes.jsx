@@ -3,8 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Moon, Save, Upload, HardDrive, Settings, Leaf, Waves, Sparkles, Box, Flower2, CheckCircle2 } from "lucide-react";
+import { Moon, Settings, Leaf, Waves, Sparkles, Box, Flower2 } from "lucide-react";
 
 export default function Configuracoes() {
     const queryClient = useQueryClient();

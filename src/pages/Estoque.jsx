@@ -7,16 +7,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Boxes, AlertTriangle, Clock, ArrowRightLeft, Package, Book, User, Bell, PackageCheck } from "lucide-react";
+import { Search, User, Bell, PackageCheck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays, parseISO, isValid, format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { safeFormatDate, safeParseISO } from "@/utils/dateUtils";
-import { isMav, isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
+import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Trash2, Pencil, CalendarDays, ShoppingCart, ShieldCheck, ShieldAlert } from "lucide-react";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
@@ -31,20 +28,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { invoke } from "@tauri-apps/api/core";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+
+
 
 const STATUS_COLORS = {
   disponivel: "bg-emerald-100 text-emerald-700",

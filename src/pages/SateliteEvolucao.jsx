@@ -4,14 +4,12 @@ import { db } from "@/api/db";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, TrendingDown, Sun, Snowflake, Leaf, Flame, Calendar, Package, Award, ArrowUpRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Sun, Snowflake, Leaf, Flame, Calendar, Package, Award } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  LineChart, Line, Legend, Cell, PieChart, Pie
+  ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell
 } from "recharts";
-import { format, parseISO, getMonth, getYear, isValid } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { parseISO, getMonth, getYear, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];

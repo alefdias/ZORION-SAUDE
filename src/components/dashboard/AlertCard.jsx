@@ -3,7 +3,6 @@ import { ptBR } from "date-fns/locale";
 import { Card } from "@/components/ui/card";
 import { AlertTriangle, Clock, XCircle, ChevronRight, X, Calendar, Package, Hash, Printer } from "lucide-react";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 
 const alertConfig = {
     vencidos: {

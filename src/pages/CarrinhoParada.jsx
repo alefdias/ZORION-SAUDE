@@ -7,14 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { addLog } from "@/lib/logger";
 import { db } from "@/api/db";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { 
   Pill, 
   Syringe, 
   ArrowLeft, 
   User, 
-  ClipboardCheck, 
   Printer, 
   CheckCircle2, 
   AlertTriangle, 

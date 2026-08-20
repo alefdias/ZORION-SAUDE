@@ -1,15 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, ShoppingCart, ArrowRight, PackageCheck, AlertCircle } from "lucide-react";
+import { Bell, ShoppingCart, ArrowRight, PackageCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";

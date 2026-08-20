@@ -17,11 +17,9 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { isMav } from "@/utils/mavUtils";
 import { 
   Users, 
   Pill, 
-  CalendarDays, 
   Plus, 
   Search, 
   Pencil, 
@@ -30,19 +28,15 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   PackageMinus, 
-  Clock, 
   Bed, 
   Building2,
-  FileCheck,
   RefreshCw,
   Power,
   Eye,
   FileText,
   LogOut,
-  Undo2,
-  ShoppingCart
+  Undo2
 } from "lucide-react";
-import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 
 const getLocalDateString = () => {
   const d = new Date();

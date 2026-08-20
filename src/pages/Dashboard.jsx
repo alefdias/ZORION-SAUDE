@@ -1,18 +1,15 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
-import { Package, TrendingUp, TrendingDown, Boxes, ArrowDownToLine, ArrowUpFromLine, HandHelping, RotateCcw } from "lucide-react";
+import { Package, TrendingUp, TrendingDown, Boxes } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import StatsCard from "@/components/dashboard/StatsCard";
-import AlertCard from "@/components/dashboard/AlertCard";
 import MovimentacaoChart from "@/components/dashboard/MovimentacaoChart";
 import GrupoChart from "@/components/dashboard/GrupoChart";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
