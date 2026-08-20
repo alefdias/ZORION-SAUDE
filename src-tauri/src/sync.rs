@@ -151,7 +151,7 @@ pub async fn start_db_listener(
                 }
                 
                 if has_update {
-                    let _ = app.emit("db_update", ());
+                    let _ = app.emit("db_update", "update");
                 }
                 
                 std::thread::sleep(std::time::Duration::from_millis(2000));
