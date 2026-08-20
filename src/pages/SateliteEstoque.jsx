@@ -95,7 +95,7 @@ export default function SateliteEstoque() {
       const rows = filteredEstoque.map(med => [
         med.codigo || "S/C",
         med.nome,
-        med.unidade_medida || "-",
+        med.concentracao || "-",
         med.apresentacao || "-",
         med.estoque_satelite || 0,
         med.estoque_atual || 0,
@@ -164,7 +164,7 @@ export default function SateliteEstoque() {
                     </p>
                     <div className="flex gap-2 items-center text-xs mt-1">
                       <span className="text-slate-500 dark:text-slate-400 font-medium">
-                        {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
+                        {med.concentracao ? `Concentração: ${med.concentracao}` : (med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida")}
                       </span>
                       {med.apresentacao && (
                         <span className="text-slate-500 dark:text-slate-400 font-medium px-2 border-l border-slate-200 dark:border-slate-700">

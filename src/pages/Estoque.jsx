@@ -274,7 +274,7 @@ export default function Estoque() {
         if (med.lotes.length === 0) {
           rows.push([
             med.nome,
-            med.unidade_medida || "-",
+            med.concentracao || med.unidade_medida || "-",
             "Sem Lote",
             "-",
             med.estoque_atual || 0,
@@ -284,7 +284,7 @@ export default function Estoque() {
           med.lotes.forEach(lote => {
             rows.push([
               med.nome,
-              med.unidade_medida || "-",
+              med.concentracao || med.unidade_medida || "-",
               lote.numero_lote,
               safeFormatDate(lote.data_validade),
               lote.quantidade_atual,
@@ -735,7 +735,7 @@ export default function Estoque() {
                             </p>
                             <div className="flex gap-2 items-center text-xs mt-1">
                               <span className="text-slate-500 font-medium">
-                                {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
+                                {med.concentracao ? `Concentração: ${med.concentracao}` : "Concentração não definida"}
                               </span>
                               {med.apresentacao && (
                                 <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -878,7 +878,7 @@ export default function Estoque() {
                             </p>
                             <div className="flex gap-2 items-center text-xs mt-1">
                               <span className="text-slate-500 font-medium">
-                                {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
+                                {med.concentracao ? `Concentração: ${med.concentracao}` : "Concentração não definida"}
                               </span>
                               {med.apresentacao && (
                                 <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
@@ -1032,7 +1032,7 @@ export default function Estoque() {
                         {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
-                            {med.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
+                            {med.concentracao ? `Concentração: ${med.concentracao}` : "Concentração não definida"}
                           </span>
                           {med.apresentacao && (
                             <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
