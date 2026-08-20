@@ -190,6 +190,20 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
     const handleChange = (field) => (e) => setForm({ ...form, [field]: e.target.value });
     const handleSelectChange = (field) => (value) => setForm({ ...form, [field]: value });
 
+    const [addGrupoOpen, setAddGrupoOpen] = useState(false);
+    const [novoGrupo, setNovoGrupo] = useState("");
+
+    const handleAddGrupo = (e) => {
+        e.preventDefault();
+        if (novoGrupo.trim()) {
+            const upper = novoGrupo.trim().toUpperCase();
+            setForm({ ...form, grupo_terapeutico: upper });
+            setAddGrupoOpen(false);
+            setNovoGrupo("");
+            toast.success("Grupo selecionado com sucesso!");
+        }
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
@@ -210,6 +224,7 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
     };
 
     return (
+        <>
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
@@ -227,11 +242,21 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                         </div>
 
                         <div>
-                            <Label>Grupo Terapêutico</Label>
+                            <div className="flex items-center justify-between mb-1">
+                                <Label>Grupo Terapêutico</Label>
+                                <Button 
+                                    type="button" 
+                                    variant="ghost" 
+                                    className="h-4 p-0 text-xs text-blue-600 hover:text-blue-700"
+                                    onClick={() => setAddGrupoOpen(true)}
+                                >
+                                    + Adicionar Novo
+                                </Button>
+                            </div>
                             <Input 
                                 list="categorias-list" 
                                 value={form.grupo_terapeutico} 
-                                onChange={(e) => setForm({ ...form, categoria: e.target.value.toUpperCase() })} 
+                                onChange={(e) => setForm({ ...form, grupo_terapeutico: e.target.value.toUpperCase() })} 
                                 placeholder="Selecione ou digite..." 
                             />
                             <datalist id="categorias-list">
@@ -345,5 +370,29 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                 </form>
             </DialogContent>
         </Dialog>
+
+        <Dialog open={addGrupoOpen} onOpenChange={setAddGrupoOpen}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Novo Grupo Terapêutico</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddGrupo} className="space-y-4">
+                    <div>
+                        <Label>Nome do Grupo</Label>
+                        <Input 
+                            value={novoGrupo} 
+                            onChange={(e) => setNovoGrupo(e.target.value)} 
+                            placeholder="Digite o nome do novo grupo..."
+                            autoFocus
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setAddGrupoOpen(false)}>Cancelar</Button>
+                        <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Adicionar e Selecionar</Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+        </>
     );
 }

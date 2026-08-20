@@ -263,41 +263,70 @@ export function WelcomeScreen({ onEnter }) {
     return () => clearTimeout(t);
   }, []);
 
-  // Make sure at least default admin exists
+  // Make sure at least default admin exists and sync users from Postgres
   useEffect(() => {
-    const saved = localStorage.getItem("axion_users");
-    let users = saved ? JSON.parse(saved) : [];
-    
-    const adminIndex = users.findIndex(u => u.username === "admin");
-    const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
-    
-    if (adminIndex === -1) {
-      users.push({
-        id: "1",
-        nome: "Administrador RT",
-        username: "admin",
-        password: "admin123",
-        modules: allModules,
-        first_login: false
-      });
-      localStorage.setItem("axion_users", JSON.stringify(users));
-    } else {
-      let changed = false;
-      if (users[adminIndex].password !== "admin123") {
-        users[adminIndex].password = "admin123";
-        changed = true;
+    const syncUsers = async () => {
+      try {
+        const data = await db.entities.Usuario.list();
+        if (data && data.length > 0) {
+          const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+          const localUsers = data.map(u => ({
+              id: u.id,
+              nome: u.nome,
+              username: u.login,
+              password: u.senha,
+              cargo: u.perfil,
+              coren: u.coren,
+              crf: u.crf,
+              modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
+                       (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia"] : 
+                       ["carrinho_parada", "carrinho_enfermagem"],
+              first_login: u.primeiro_acesso !== false
+          }));
+          localStorage.setItem("axion_users", JSON.stringify(localUsers));
+          setAvailableUsers(localUsers);
+          return;
+        }
+      } catch (e) {
+        console.warn("Falha ao sincronizar usuarios do postgres no WelcomeScreen", e);
       }
-      allModules.forEach(m => {
-        if (!users[adminIndex].modules.includes(m)) {
-          users[adminIndex].modules.push(m);
+      
+      const saved = localStorage.getItem("axion_users");
+      let users = saved ? JSON.parse(saved) : [];
+      
+      const adminIndex = users.findIndex(u => u.username === "admin");
+      const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+      
+      if (adminIndex === -1) {
+        users.push({
+          id: "1",
+          nome: "Administrador RT",
+          username: "admin",
+          password: "admin123",
+          modules: allModules,
+          first_login: false
+        });
+        localStorage.setItem("axion_users", JSON.stringify(users));
+      } else {
+        let changed = false;
+        if (users[adminIndex].password !== "admin123") {
+          users[adminIndex].password = "admin123";
           changed = true;
         }
-      });
-      if (changed) {
-        localStorage.setItem("axion_users", JSON.stringify(users));
+        allModules.forEach(m => {
+          if (!users[adminIndex].modules.includes(m)) {
+            users[adminIndex].modules.push(m);
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem("axion_users", JSON.stringify(users));
+        }
       }
-    }
-    setAvailableUsers(users);
+      setAvailableUsers(users);
+    };
+
+    syncUsers();
   }, []);
 
   const handleModuleClick = (mod) => {
@@ -311,9 +340,34 @@ export function WelcomeScreen({ onEnter }) {
     setLoggedInUser(null);
   };
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    const users = JSON.parse(localStorage.getItem("axion_users") || "[]");
+    let users = availableUsers;
+    
+    try {
+      const data = await db.entities.Usuario.list();
+      if (data && data.length > 0) {
+        const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+        users = data.map(u => ({
+            id: u.id,
+            nome: u.nome,
+            username: u.login,
+            password: u.senha,
+            cargo: u.perfil,
+            coren: u.coren,
+            crf: u.crf,
+            modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
+                     (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia"] : 
+                     ["carrinho_parada", "carrinho_enfermagem"],
+            first_login: u.primeiro_acesso !== false
+        }));
+        localStorage.setItem("axion_users", JSON.stringify(users));
+        setAvailableUsers(users);
+      }
+    } catch (err) {
+      console.warn("Erro no fetch de usuarios durante login", err);
+    }
+
     const user = users.find(u => u.username === username && u.password === password);
 
     if (!user) {
