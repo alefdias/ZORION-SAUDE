@@ -8,6 +8,7 @@ import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AppInitializer } from './lib/AppInitializer';
 import { Toaster as SonnerToaster } from "sonner";
+import { useMidnightReload } from './hooks/useMidnightReload';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -18,6 +19,8 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   : <>{children}</>;
 
 function App() {
+  useMidnightReload();
+
   useEffect(() => {
     let unlisten;
     const setup = async () => {
