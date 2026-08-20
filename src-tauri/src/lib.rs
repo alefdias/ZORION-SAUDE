@@ -17,7 +17,8 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       sync::test_postgres_connection,
       sync::query_postgres,
-      sync::execute_postgres
+      sync::execute_postgres,
+      sync::start_db_listener
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -16,6 +18,23 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   : <>{children}</>;
 
 function App() {
+  useEffect(() => {
+    let unlisten;
+    const setup = async () => {
+      try {
+        unlisten = await listen('db_update', () => {
+          queryClientInstance.invalidateQueries();
+        });
+      } catch (e) {
+        console.warn('Failed to listen to db_update:', e);
+      }
+    };
+    setup();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClientInstance}>
       <AppInitializer>

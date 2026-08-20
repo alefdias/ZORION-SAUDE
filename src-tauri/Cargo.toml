@@ -29,3 +29,4 @@ tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "^2.0.0"
 postgres = { version = "0.19.10", features = ["with-chrono-0_4"] }
+fallible-iterator = "0.3.0"

@@ -102,6 +102,13 @@ export async function initializeApp() {
                     console.error("Erro ao migrar pacientes R2", err);
                 }
             }
+            
+            // Start PostgreSQL listen/notify loop
+            try {
+                await invoke("start_db_listener", { ip, dbName, password });
+            } catch (err) {
+                console.warn("DB Listener não suportado/iniciado:", err);
+            }
         }
     } catch (e) {
         console.error("Erro ao criar TransferenciaPendente/Migrar Pacientes:", e);

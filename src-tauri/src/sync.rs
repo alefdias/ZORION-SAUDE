@@ -1,5 +1,7 @@
 use serde_json::Value;
 use postgres::{Client, NoTls};
+use fallible_iterator::FallibleIterator;
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn test_postgres_connection(
@@ -102,8 +104,54 @@ pub async fn execute_postgres(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut client = Client::connect(&conn_str, NoTls).map_err(|e| format!("Conexão falhou: {:?}", e))?;
         client.batch_execute(&query).map_err(|e| format!("Execute falhou: {:?}", e))?;
+        let _ = client.batch_execute("NOTIFY app_update");
         Ok(1)
     }).await.map_err(|e| e.to_string())?;
 
     result
+}
+
+#[tauri::command]
+pub async fn start_db_listener(
+    app: tauri::AppHandle,
+    ip: String,
+    db_name: String,
+    password: String,
+) -> Result<(), String> {
+    let conn_str = format!("host={} user=postgres password={} dbname={} connect_timeout=3", ip, password, db_name);
+    
+    std::thread::spawn(move || {
+        let mut client = match Client::connect(&conn_str, NoTls) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        
+        if client.batch_execute("LISTEN app_update").is_err() {
+            return;
+        }
+        
+        loop {
+            // Keep connection alive and poll network
+            if client.batch_execute("").is_err() {
+                break;
+            }
+            
+            let mut has_update = false;
+            {
+                let mut notifs = client.notifications();
+                let mut iter = notifs.timeout_iter(std::time::Duration::from_millis(100));
+                while let Ok(Some(_)) = iter.next() {
+                    has_update = true;
+                }
+            }
+            
+            if has_update {
+                let _ = app.emit("db_update", ());
+            }
+            
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+    });
+    
+    Ok(())
 }
