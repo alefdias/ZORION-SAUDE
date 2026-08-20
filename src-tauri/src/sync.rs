@@ -154,7 +154,7 @@ pub async fn start_db_listener(
                     let _ = app.emit("db_update", ());
                 }
                 
-                std::thread::sleep(std::time::Duration::from_millis(400));
+                std::thread::sleep(std::time::Duration::from_millis(2000));
             }
             
             // Espera antes de tentar reconectar
