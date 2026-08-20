@@ -137,7 +137,7 @@ pub async fn start_db_listener(
             
             loop {
                 // Keep connection alive and poll network
-                if client.batch_execute("").is_err() {
+                if client.execute("SELECT 1", &[]).is_err() {
                     break; // Sai do loop interno para reconectar
                 }
                 
