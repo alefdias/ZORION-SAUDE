@@ -25,7 +25,8 @@ import {
   Users,
   ChevronDown,
   TrendingUp,
-  Palette
+  Palette,
+  Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -101,6 +102,33 @@ function getCurrentSection(pageName) {
     }
   }
   return moduleSections[0]; // fallback: estoque
+}
+
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dateStr = now.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short'
+  }).replace('.', '');
+
+  const timeStr = now.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  return (
+    <div className="fixed bottom-3 right-4 z-50 flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-full shadow-xl backdrop-blur-md text-xs font-mono select-none hover:bg-slate-900 transition-all pointer-events-none">
+      <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+      <span className="capitalize text-slate-300 font-medium">{dateStr}</span>
+      <span className="font-bold text-cyan-300 tracking-wide">{timeStr}</span>
+    </div>
+  );
 }
 
 export default function Layout({ children, currentPageName }) {
@@ -191,6 +219,7 @@ export default function Layout({ children, currentPageName }) {
 
           {/* RIGHT: Actions (Sync, Notifications, Dark Mode, Profile) */}
           <div className="flex items-center gap-2 shrink-0 pl-2">
+            <LiveClock />
             <NotificationBell />
             <ServerConnectionBadge />
 
@@ -306,6 +335,9 @@ export default function Layout({ children, currentPageName }) {
       <main className="flex-1 w-full p-4 md:p-6 print:p-0">
         {children}
       </main>
+
+      {/* Relógio Flutuante no Canto Inferior Direito */}
+      <LiveClock />
     </div>
   );
 }

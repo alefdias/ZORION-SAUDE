@@ -35,7 +35,8 @@ import {
   Eye,
   FileText,
   LogOut,
-  Undo2
+  Undo2,
+  User
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -78,6 +79,7 @@ export default function PacientesMedicao() {
 
   // Modais State
   const [viewPatientDetails, setViewPatientDetails] = useState(null);
+  const [patientTab, setPatientTab] = useState("medicacoes");
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [patientFormData, setPatientFormData] = useState({
@@ -100,6 +102,10 @@ export default function PacientesMedicao() {
     dose14: "0",
     dose22: "2",
     dose06: "2",
+    isMetade08: false,
+    isMetade14: false,
+    isMetade22: false,
+    isMetade06: false,
     esquemaPosologico: "1-0-2-2",
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
@@ -170,6 +176,11 @@ export default function PacientesMedicao() {
     queryFn: () => db.entities.Saida.list(),
   });
 
+  const { data: gavetas = [] } = useQuery({
+    queryKey: ['gavetas_paciente'],
+    queryFn: () => db.entities.GavetaPaciente.list ? db.entities.GavetaPaciente.list() : [],
+  });
+
   const getSaidasAvulsasDoPaciente = (pacienteNome) => {
     if (!pacienteNome) return [];
     return saidas.filter(s => 
@@ -213,10 +224,10 @@ export default function PacientesMedicao() {
         throw new Error("Apenas medicamentos já cadastrados no sistema podem ser selecionados para a prescrição.");
       }
 
-      const d08 = parseInt(data.dose08) || 0;
-      const d14 = parseInt(data.dose14) || 0;
-      const d22 = parseInt(data.dose22) || 0;
-      const d06 = parseInt(data.dose06) || 0;
+      const d08 = (parseFloat(data.dose08) || 0) * (data.isMetade08 ? 0.5 : 1);
+      const d14 = (parseFloat(data.dose14) || 0) * (data.isMetade14 ? 0.5 : 1);
+      const d22 = (parseFloat(data.dose22) || 0) * (data.isMetade22 ? 0.5 : 1);
+      const d06 = (parseFloat(data.dose06) || 0) * (data.isMetade06 ? 0.5 : 1);
       const totalDiario = d08 + d14 + d22 + d06;
       const esquema = `${d08}-${d14}-${d22}-${d06}`;
 
@@ -354,39 +365,14 @@ export default function PacientesMedicao() {
         return patientIds.includes(pId) && status === "Ativa";
       });
 
-      const medDeductions = {};
+      // Nova etapa 1: Calcular saídas e deduções PER PATIENT considerando a GavetaPaciente
+      const saidasParaRegistrar = [];
+      const deducoesEstoqueCentral = {}; // o que de fato sairá da Satélite
+      const atualizacoesGaveta = [];
 
-      // Primeira etapa: Calcular o total necessário por medicamento
-      for (const pr of activePrescs) {
-        const d08 = getDoseForHora(pr.horarios, "08:00");
-        const d14 = getDoseForHora(pr.horarios, "14:00");
-        const d22 = getDoseForHora(pr.horarios, "22:00");
-        const d06 = getDoseForHora(pr.horarios, "06:00");
-        const calculatedDaily = d08 + d14 + d22 + d06;
-        const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (pr.totalDiario || 0);
-
-        const qtdSaida = dailyTotal * dias;
-        if (qtdSaida <= 0) continue;
-
-        const medId = pr.medicamentoId || pr.medicamento_id;
-        medDeductions[medId] = (medDeductions[medId] || 0) + qtdSaida;
-      }
-
-      // Segunda etapa: Validar se há estoque suficiente para TODAS as deduções
-      for (const [medId, totalQtd] of Object.entries(medDeductions)) {
-        const med = medicamentos.find(m => m.id === medId);
-        const atualSatelite = med ? (med.estoque_satelite || 0) : 0;
-        if (atualSatelite < totalQtd) {
-          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${med ? med.nome : "Medicamento Desconhecido"}. Necessário: ${totalQtd}, Disponível: ${atualSatelite}`);
-        }
-      }
-
-      // Terceira etapa: Criar registros de saída e efetivar a baixa
       for (const pr of activePrescs) {
         const pacId = pr.pacienteId || pr.paciente_id;
         const medId = pr.medicamentoId || pr.medicamento_id;
-        const pac = selectedPacs.find(p => p.id === pacId);
-        const med = medicamentos.find(m => m.id === medId);
 
         const d08 = getDoseForHora(pr.horarios, "08:00");
         const d14 = getDoseForHora(pr.horarios, "14:00");
@@ -395,39 +381,112 @@ export default function PacientesMedicao() {
         const calculatedDaily = d08 + d14 + d22 + d06;
         const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (pr.totalDiario || 0);
 
-        const qtdSaida = dailyTotal * dias;
+        const qtdSaida = dailyTotal * dias; // e.g. 1.5
         if (qtdSaida <= 0) continue;
 
+        // Se converte toda a saída em "metades" para o cálculo
+        const metadesNecessarias = Math.round(qtdSaida * 2); 
+        
+        const gavetaItem = gavetas.find(g => g.paciente_id === pacId && g.medicamento_id === medId);
+        const metadesNaGaveta = gavetaItem ? (gavetaItem.quantidade || 0) : 0; 
+
+        let inteirosDoEstoque = 0;
+        let novasMetadesGaveta = 0;
+
+        if (metadesNaGaveta >= metadesNecessarias) {
+           novasMetadesGaveta = metadesNaGaveta - metadesNecessarias;
+        } else {
+           const metadesFaltantes = metadesNecessarias - metadesNaGaveta;
+           inteirosDoEstoque = Math.ceil(metadesFaltantes / 2); // Pega comprimidos inteiros da farmácia
+           const metadesGeradas = inteirosDoEstoque * 2;
+           novasMetadesGaveta = metadesGeradas - metadesFaltantes;
+        }
+
+        if (inteirosDoEstoque > 0) {
+           deducoesEstoqueCentral[medId] = (deducoesEstoqueCentral[medId] || 0) + inteirosDoEstoque;
+        }
+
+        saidasParaRegistrar.push({
+           pr, pacId, medId, inteirosDoEstoque, metadesUsadas: metadesNecessarias, gavetaItem, novasMetadesGaveta, qtdOriginalStr: qtdSaida
+        });
+      }
+
+      // Etapa 2: Validar se há estoque suficiente para TODAS as deduções inteiras
+      for (const [medId, totalQtd] of Object.entries(deducoesEstoqueCentral)) {
+        const med = medicamentos.find(m => m.id === medId);
+        const atualSatelite = med ? (med.estoque_satelite || 0) : 0;
+        if (atualSatelite < totalQtd) {
+          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${med ? med.nome : "Medicamento Desconhecido"}. Necessário inteiros: ${totalQtd}, Disponível: ${atualSatelite}`);
+        }
+      }
+
+      // Etapa 3: Criar registros de saída para Portaria 344 e efetivar atualizações
+      for (const saida of saidasParaRegistrar) {
+        const { pr, pacId, medId, inteirosDoEstoque, metadesUsadas, gavetaItem, novasMetadesGaveta, qtdOriginalStr } = saida;
+        
+        const pac = selectedPacs.find(p => p.id === pacId);
+        const med = medicamentos.find(m => m.id === medId);
         const loteDoMed = lotes.find(l => (l.medicamento_id === medId || l.medicamentoId === medId));
         const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
         const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Paciente";
 
-        await db.entities.Saida.create({
-          medicamento_id: medId,
-          medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
-          lote_id: loteId,
-          numero_lote: numeroLote,
-          quantidade: qtdSaida,
-          destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
-          paciente_nome: pac ? pac.nome : "",
-          ala_id: pac?.alaId || pac?.ala_id || null,
-          ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
-          motivo: `Baixa de medicação fixa (${dias} ${dias === 1 ? 'dia' : 'dias'}) - Paciente: ${pac?.nome || "Paciente"} (Pront: ${pac?.prontuario || "N/A"})`,
-          observacao: `Dispensação de medicação fixa: ${pr.esquemaPosologico || 'Grade 4 Horários'}`,
-          data_saida: todayDateStr,
-          created_at: nowStr
-        });
+        if (inteirosDoEstoque > 0) {
+          await db.entities.Saida.create({
+            medicamento_id: medId,
+            medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
+            lote_id: loteId,
+            numero_lote: numeroLote,
+            quantidade: inteirosDoEstoque, // Integraidade da Portaria 344
+            destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
+            paciente_nome: pac ? pac.nome : "",
+            ala_id: pac?.alaId || pac?.ala_id || null,
+            ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
+            motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'}) - Fracionamento`,
+            observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt. Faturada: ${qtdOriginalStr} un`,
+            data_saida: todayDateStr,
+            created_at: nowStr
+          });
+        } else {
+          // Consumiu apenas da gaveta, registrar auditoria
+          await db.entities.Saida.create({
+            medicamento_id: medId,
+            medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
+            lote_id: loteId,
+            numero_lote: numeroLote,
+            quantidade: 0,
+            destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
+            paciente_nome: pac ? pac.nome : "",
+            ala_id: pac?.alaId || pac?.ala_id || null,
+            ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
+            motivo: `Uso da Gaveta Nominal (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
+            observacao: `Consumiu saldo fracionado da gaveta do paciente. Qt. Faturada: ${qtdOriginalStr} un`,
+            data_saida: todayDateStr,
+            created_at: nowStr
+          });
+        }
+
+        // Atualizar gaveta do paciente
+        if (gavetaItem) {
+           await db.entities.GavetaPaciente.update(gavetaItem.id, {
+               quantidade: novasMetadesGaveta
+           });
+        } else if (novasMetadesGaveta > 0) {
+           await db.entities.GavetaPaciente.create({
+               paciente_id: pacId,
+               medicamento_id: medId,
+               lote_id: loteId,
+               quantidade: novasMetadesGaveta
+           });
+        }
       }
 
-      // Atualizar estoque_satelite de cada medicamento deduzido (nunca deduz da central)
-      for (const [medId, totalQtd] of Object.entries(medDeductions)) {
+      // Etapa 4: Atualizar estoque_satelite com a dedução de INTEIROS
+      for (const [medId, totalQtd] of Object.entries(deducoesEstoqueCentral)) {
         const med = medicamentos.find(m => m.id === medId);
         if (med) {
           await db.entities.Medicamento.update(medId, {
             estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - totalQtd)
           });
-          // Nota: Não atualizamos lote.quantidade_atual aqui pois os itens na satélite
-          // já foram deduzidos do lote no momento da transferência da Central para a Satélite.
         }
       }
     },
@@ -435,6 +494,7 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      queryClient.invalidateQueries({ queryKey: ['gavetas_paciente'] });
       setBatchBaixaModalOpen(false);
       setSelectedPatientIds([]);
       toast.success("Baixa em lote concluída! As saídas foram registradas com sucesso no módulo de Saídas.");
@@ -620,7 +680,28 @@ export default function PacientesMedicao() {
         });
       }
 
-      // 3. Registrar Log Auditado de Alta
+      // 3. Descarte de medicamentos fracionados na Gaveta (Portaria 344)
+      const gavetasDoPaciente = gavetas.filter(g => g.paciente_id === pacienteId && (g.quantidade > 0));
+      for (const gav of gavetasDoPaciente) {
+         const med = medicamentos.find(m => m.id === gav.medicamento_id);
+         await db.entities.Saida.create({
+            medicamento_id: gav.medicamento_id,
+            medicamento_nome: med ? med.nome : "Medicamento Desconhecido",
+            lote_id: gav.lote_id,
+            numero_lote: "DESCARTE",
+            quantidade: 0, // Apenas descarte de frações
+            destino: "Descarte Especial SNGPC",
+            paciente_nome: pac.nome,
+            motivo: `Descarte de sobras fracionadas (${gav.quantidade} metades) - Alta: ${tipo}`,
+            observacao: `Descarte obrigatório de medicamento fracionado após alta hospitalar (Portaria 344).`,
+            data_saida: todayDateStr,
+            created_at: nowStr
+         });
+         // Zera a gaveta do paciente
+         await db.entities.GavetaPaciente.update(gav.id, { quantidade: 0 });
+      }
+
+      // 4. Registrar Log Auditado de Alta
       const firstMed = medicamentos.length > 0 ? medicamentos[0] : null;
       const firstLote = lotes.length > 0 ? lotes[0] : null;
 
@@ -632,7 +713,7 @@ export default function PacientesMedicao() {
         quantidade: 0,
         destino: "Histórico de Altas",
         motivo: `${tipo} concedida ao paciente ${pac.nome} (Prontuário: ${pac.prontuario || "N/A"})`,
-        observacao: `Prescrições suspensas. Levar medicação: ${dias} dias.`,
+        observacao: `Prescrições suspensas. Levar medicação: ${dias} dias. ${gavetasDoPaciente.length > 0 ? gavetasDoPaciente.length + ' sobras descartadas.' : ''}`,
         data_saida: todayDateStr,
         created_at: nowStr
       });
@@ -643,6 +724,7 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      queryClient.invalidateQueries({ queryKey: ['gavetas_paciente'] });
       if (viewPatientDetails) setViewPatientDetails(null);
       setAltaModalOpen(false);
       
@@ -720,6 +802,10 @@ export default function PacientesMedicao() {
       dose14: "0",
       dose22: "2",
       dose06: "2",
+      isMetade08: false,
+      isMetade14: false,
+      isMetade22: false,
+      isMetade06: false,
       esquemaPosologico: "1-0-2-2",
       dataInicio: format(new Date(), "yyyy-MM-dd"),
       dataFim: "",
@@ -739,10 +825,14 @@ export default function PacientesMedicao() {
     setPrescFormData({
       pacienteId: p.pacienteId || "",
       medicamentoId: p.medicamentoId || "",
-      dose08: String(d08),
-      dose14: String(d14),
-      dose22: String(d22),
-      dose06: String(d06),
+      dose08: String(d08 === 0.5 ? 1 : d08),
+      isMetade08: d08 === 0.5,
+      dose14: String(d14 === 0.5 ? 1 : d14),
+      isMetade14: d14 === 0.5,
+      dose22: String(d22 === 0.5 ? 1 : d22),
+      isMetade22: d22 === 0.5,
+      dose06: String(d06 === 0.5 ? 1 : d06),
+      isMetade06: d06 === 0.5,
       esquemaPosologico: p.esquemaPosologico || `${d08}-${d14}-${d22}-${d06}`,
       dataInicio: p.dataInicio || format(new Date(), "yyyy-MM-dd"),
       dataFim: p.dataFim || "",
@@ -1370,350 +1460,186 @@ export default function PacientesMedicao() {
 
       {/* ─── MODAL: DETALHES & PRESCRIÇÕES COMPLETAS DO PACIENTE ─────────── */}
       <Dialog open={!!viewPatientDetails} onOpenChange={(open) => !open && setViewPatientDetails(null)}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto p-0 border-0 shadow-2xl rounded-2xl bg-white dark:bg-slate-900">
-          <div className="bg-gradient-to-r from-slate-100 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/30 ring-4 ring-white dark:ring-slate-900">
-                  {viewPatientDetails?.nome?.charAt(0).toUpperCase()}
+        <DialogContent className="sm:max-w-[1100px] w-[95vw] h-[90vh] flex flex-col p-0 border-0 shadow-2xl rounded-xl bg-slate-50 dark:bg-slate-900 overflow-hidden">
+          
+          {/* Header Section (Blue) */}
+          <div className="bg-[#0e3b8f] text-white p-6 shrink-0 relative">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-5">
+                <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center text-[#0e3b8f]">
+                  <User className="w-10 h-10" />
                 </div>
                 <div>
-                  <DialogTitle className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    {viewPatientDetails?.nome}
-                    <Badge variant="outline" className={cn(
-                      "px-2.5 py-0.5 border-2 uppercase tracking-wider text-[10px]",
-                      viewPatientDetails?.status === "Ativo" 
-                        ? "border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10" 
-                        : "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-500/10"
-                    )}>
-                      {viewPatientDetails?.status || "Ativo"}
-                    </Badge>
-                  </DialogTitle>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium">
-                    <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono text-slate-800 dark:text-slate-200">
-                      <FileText className="w-3.5 h-3.5 text-blue-500" />
-                      PRONT: {viewPatientDetails?.prontuario}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      Setor: <strong className="text-slate-800 dark:text-slate-200">{viewPatientDetails?.alaNome || "Não informado"}</strong>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Bed className="w-3.5 h-3.5 text-slate-400" />
-                      Leito: <strong className="text-slate-800 dark:text-slate-200">{viewPatientDetails?.leito || "S/L"}</strong>
-                    </span>
-                  </div>
+                   <h2 className="text-2xl font-black mb-1">{viewPatientDetails?.nome}</h2>
+                   <div className="text-blue-200 text-sm flex gap-2">
+                     <span>ID: {viewPatientDetails?.prontuario}</span> |
+                     <span>{viewPatientDetails?.idade || '--'} anos</span>
+                   </div>
+                   <div className="text-blue-200 text-sm mt-1 flex items-center gap-2">
+                     <span>Setor: {viewPatientDetails?.alaNome || "Não informado"}</span> |
+                     <span>Leito: {viewPatientDetails?.leito || "S/L"}</span>
+                   </div>
                 </div>
               </div>
-
-              <div className="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button 
-                  size="sm" 
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-md hover:shadow-lg transition-all rounded-full px-5 font-bold"
-                  onClick={() => handleOpenNewPresc(viewPatientDetails?.id)}
-                >
-                  <Plus className="w-4 h-4" />
-                  Nova Prescrição
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="rounded-full w-9 h-9 p-0 border-slate-200 text-slate-600 hover:bg-slate-100"
-                  onClick={() => handleOpenEditPatient(viewPatientDetails)}
-                  title="Editar dados cadastrais do paciente"
-                >
-                  <Pencil className="w-4 h-4" />
+              <div className="text-right">
+                <div className="text-blue-200 text-sm mb-3">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
+                <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-6" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
+                   Editar Paciente
                 </Button>
               </div>
             </div>
           </div>
 
-          <div className="space-y-6 p-6 pt-2">
-            {viewPatientDetails?.observacoes && (
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-900/30 border border-amber-200 dark:border-amber-800 p-4 rounded-xl flex items-start gap-3 shadow-sm animate-in fade-in">
-                <div className="bg-amber-100 dark:bg-amber-900 p-2 rounded-full shrink-0 animate-pulse">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                </div>
-                <div>
-                  <strong className="font-black text-amber-900 dark:text-amber-300 block text-sm">Alergias e Observações Clínicas Relevantes</strong>
-                  <span className="text-amber-800/90 dark:text-amber-400/90 text-sm mt-0.5 block leading-relaxed">{viewPatientDetails.observacoes}</span>
-                </div>
-              </div>
-            )}
+          {/* Tabs Section */}
+          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 shrink-0 pt-2 overflow-x-auto hide-scrollbar">
+             <button onClick={() => setPatientTab('resumo')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'resumo' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Resumo</button>
+             <button onClick={() => setPatientTab('historico_clinico')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'historico_clinico' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Histórico Clínico</button>
+             <button onClick={() => setPatientTab('medicacoes')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'medicacoes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Medicações</button>
+             <button onClick={() => setPatientTab('exames')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'exames' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Exames</button>
+             <button onClick={() => setPatientTab('alergias')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'alergias' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Alergias</button>
+             <button onClick={() => setPatientTab('documentos')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'documentos' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Documentos</button>
+          </div>
 
-            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-              <h4 className="text-base font-black text-slate-800 dark:text-slate-200 flex items-center gap-2 uppercase tracking-wide">
-                <div className="w-1.5 h-5 bg-blue-500 rounded-full"></div>
-                Prescrições Ativas e Histórico
-              </h4>
-              <Badge variant="secondary" className="bg-white dark:bg-slate-900 border border-slate-200 shadow-sm font-mono text-blue-600">
-                {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).length} itens
-              </Badge>
-            </div>
-
-            {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).length === 0 ? (
-              <div className="text-center py-16 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-900/50 transition-all hover:bg-slate-50">
-                <div className="bg-white p-4 rounded-full inline-block shadow-sm mb-3">
-                  <Pill className="w-8 h-8 text-blue-300" />
-                </div>
-                <p className="text-base text-slate-500 font-bold">Prontuário limpo.</p>
-                <p className="text-sm text-slate-400 mb-4">Nenhuma medicação prescrita para este paciente ainda.</p>
-                <Button 
-                  onClick={() => handleOpenNewPresc(viewPatientDetails?.id)} 
-                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 shadow-md hover:shadow-lg transition-all"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Prescrever Primeira Medicação
-                </Button>
-              </div>
+          {/* Body Section */}
+          <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-900">
+            {patientTab !== 'medicacoes' ? (
+               <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 pb-20">
+                 <Building2 className="w-12 h-12 text-slate-300" />
+                 <h3 className="text-lg font-bold text-slate-500">Módulo em Construção</h3>
+                 <p className="text-sm">Esta aba ({patientTab.replace('_', ' ')}) estará disponível nas próximas atualizações.</p>
+               </div>
             ) : (
-              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
-                <Table>
-                  <TableHeader className="bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-200">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="font-bold text-slate-700">Medicamento</TableHead>
-                      <TableHead className="text-center font-bold text-slate-700">Grade Posológica</TableHead>
-                      <TableHead className="text-center font-bold text-slate-700">Dose/Dia</TableHead>
-                      <TableHead className="text-center font-bold text-slate-700">Status</TableHead>
-                      <TableHead className="text-right font-bold text-slate-700 pr-6">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id).map((pr) => {
-                      const d08 = getDoseForHora(pr.horarios, "08:00");
-                      const d14 = getDoseForHora(pr.horarios, "14:00");
-                      const d22 = getDoseForHora(pr.horarios, "22:00");
-                      const d06 = getDoseForHora(pr.horarios, "06:00");
-                      const isSuspensa = pr.status === "Suspensa" || pr.status === "Devolvida";
+               <div className="space-y-6 max-w-6xl mx-auto pb-10">
+                  {/* Medicações Ativas */}
+                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+                     <div className="flex justify-between items-start mb-4">
+                        <div className="flex gap-3">
+                           <div className="bg-emerald-100 p-2 rounded-lg text-emerald-700"><Pill className="w-5 h-5" /></div>
+                           <div>
+                             <h3 className="text-lg font-bold text-emerald-800 dark:text-emerald-500 leading-tight">Medicações Ativas</h3>
+                             <p className="text-sm text-slate-500">Medicamentos que o paciente está tomando atualmente</p>
+                           </div>
+                        </div>
+                        <Button className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 gap-2 font-semibold shadow-sm" onClick={() => handleOpenNewPresc(viewPatientDetails?.id)}>
+                          <Plus className="w-4 h-4" />
+                          Adicionar Medicação
+                        </Button>
+                     </div>
+                     
+                     <div className="overflow-x-auto">
+                       <Table>
+                         <TableHeader className="bg-slate-50/50">
+                            <TableRow>
+                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
+                               <TableHead className="font-bold text-slate-600">Dose</TableHead>
+                               <TableHead className="font-bold text-slate-600">Frequência</TableHead>
+                               <TableHead className="font-bold text-slate-600">Via</TableHead>
+                               <TableHead className="font-bold text-slate-600">Início</TableHead>
+                               <TableHead className="font-bold text-slate-600">Prescrito por</TableHead>
+                               <TableHead className="font-bold text-slate-600 text-right">Ações</TableHead>
+                            </TableRow>
+                         </TableHeader>
+                         <TableBody>
+                            {(() => {
+                               const ativas = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && pr.status !== "Suspensa" && pr.status !== "Devolvida");
+                               if (ativas.length === 0) return (
+                                 <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-500">Nenhuma medicação ativa.</TableCell></TableRow>
+                               );
+                               return ativas.map(pr => {
+                                  const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+                                  const via = med?.via_administracao || "Oral";
+                                  const apresentacao = med?.apresentacao || "Comprimido";
+                                  return (
+                                    <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
+                                       <TableCell className="font-semibold text-slate-800 py-3">
+                                         {pr.medicamentoNome}
+                                         <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
+                                       </TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium">{pr.totalDiario} un/dia</TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium">{pr.esquemaPosologico}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm">{via}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm">{pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm leading-tight">
+                                          <div className="font-medium text-slate-800">Médico(a) Assist.</div>
+                                          <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                       </TableCell>
+                                       <TableCell className="text-right py-3 space-x-1">
+                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600 hover:bg-blue-50" onClick={() => handleOpenEditPresc(pr)} title="Editar prescrição"><Pencil className="w-4 h-4"/></Button>
+                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
+                                            if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
+                                              togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
+                                            }
+                                          }} title="Suspender medicamento"><Trash2 className="w-4 h-4"/></Button>
+                                       </TableCell>
+                                    </TableRow>
+                                  );
+                               });
+                            })()}
+                         </TableBody>
+                       </Table>
+                     </div>
+                  </div>
 
-                      return (
-                        <TableRow 
-                          key={pr.id} 
-                          className={cn(
-                            "transition-all duration-300 border-b border-slate-100",
-                            isSuspensa 
-                              ? "bg-slate-50/60 dark:bg-slate-900/40 opacity-70 grayscale-[0.2]" 
-                              : "bg-white dark:bg-slate-900 border-l-4 border-l-emerald-500 hover:bg-slate-50 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.05)]"
-                          )}
-                        >
-                          <TableCell className="py-4">
-                            <div>
-                              <p className={cn(
-                                "font-black flex items-center gap-2",
-                                isSuspensa ? "text-slate-600 line-through decoration-slate-300" : "text-slate-900 dark:text-slate-100"
-                              )}>
-                                {pr.medicamentoNome}
-                                {pr.is_mav && (
-                                  <Badge variant="outline" className="text-[9px] font-black bg-red-100 text-red-700 border-red-300 px-1.5 py-0 rounded-sm uppercase">
-                                    MAV
-                                  </Badge>
-                                )}
-                              </p>
-                              <p className="text-xs text-slate-500 font-medium mt-1">
-                                {pr.apresentacao && <span className="mr-2 text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{pr.apresentacao}</span>}
-                                <span>Cod: {pr.medicamentoCodigo || "N/A"}</span>
-                              </p>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4">
-                            <div className={cn(
-                              "inline-flex items-center gap-1.5 p-1.5 rounded-xl border font-mono shadow-inner text-xs",
-                              isSuspensa ? "bg-slate-100 border-slate-200" : "bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700"
-                            )}>
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-bold text-slate-400 leading-none">08h</span>
-                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d08 > 0 ? "bg-blue-500 text-white shadow-sm" : "text-slate-300")}>{d08 > 0 ? `${d08}x` : '-'}</span>
-                              </div>
-                              <span className="text-slate-200 mt-3">|</span>
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-bold text-slate-400 leading-none">14h</span>
-                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d14 > 0 ? "bg-amber-500 text-white shadow-sm" : "text-slate-300")}>{d14 > 0 ? `${d14}x` : '-'}</span>
-                              </div>
-                              <span className="text-slate-200 mt-3">|</span>
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-bold text-slate-400 leading-none">22h</span>
-                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d22 > 0 ? "bg-purple-500 text-white shadow-sm" : "text-slate-300")}>{d22 > 0 ? `${d22}x` : '-'}</span>
-                              </div>
-                              <span className="text-slate-200 mt-3">|</span>
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-bold text-slate-400 leading-none">06h</span>
-                                <span className={cn("w-12 text-center py-1 rounded-md font-bold transition-colors", d06 > 0 ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300")}>{d06 > 0 ? `${d06}x` : '-'}</span>
-                              </div>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4">
-                            <div className="flex flex-col items-center">
-                              <span className="font-black text-lg text-slate-700 dark:text-slate-200 leading-none">{pr.totalDiario}</span>
-                              <span className="text-[10px] font-bold uppercase text-slate-400 mt-1">Dose/Dia</span>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4">
-                            <Badge 
-                              variant={!isSuspensa ? "default" : "secondary"}
-                              className={cn(
-                                "cursor-pointer select-none px-3 py-1 font-bold uppercase tracking-wider text-[10px] transition-all hover:scale-105",
-                                !isSuspensa ? "bg-emerald-500 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20" : "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                              )}
-                              onClick={() => togglePrescStatusMutation.mutate({ id: pr.id, status: pr.status })}
-                              title="Clique para alternar status (Ativa / Suspensa)"
-                            >
-                              {pr.status || "Ativa"}
-                            </Badge>
-                          </TableCell>
-
-                          <TableCell className="text-right py-4 pr-6">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="w-8 h-8 rounded-full text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                                onClick={() => handleOpenEditPresc(pr)}
-                                title="Editar prescrição"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className={cn("w-8 h-8 rounded-full transition-colors", !isSuspensa ? "text-amber-500 hover:bg-amber-50" : "text-emerald-600 hover:bg-emerald-50")}
-                                onClick={() => togglePrescStatusMutation.mutate({ id: pr.id, status: pr.status })}
-                                title={!isSuspensa ? "Suspender prescrição" : "Ativar prescrição"}
-                              >
-                                <Power className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="w-8 h-8 rounded-full text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
-                                onClick={() => {
-                                  setDevolucaoPresc(pr);
-                                  setDevolucaoQtd("");
-                                  setDevolucaoTipo("Alta a Pedido");
-                                  setDevolucaoMotivo("");
-                                  setDevolucaoModalOpen(true);
-                                }}
-                                title="Devolver medicação ao estoque central"
-                              >
-                                <Undo2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="w-8 h-8 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                onClick={() => {
-                                  setDeleteTarget({ type: 'prescricao', id: pr.id, name: pr.medicamentoNome });
-                                  setDeleteReason("");
-                                  setDeleteLogModalOpen(true);
-                                }}
-                                title="Excluir Permanentemente"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                  {/* Histórico de Medicações */}
+                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm mt-6">
+                     <div className="flex gap-3 mb-4">
+                        <div className="bg-slate-100 p-2 rounded-lg text-slate-600"><FileText className="w-5 h-5" /></div>
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-tight">Histórico de Medicações</h3>
+                          <p className="text-sm text-slate-500">Medicamentos que foram suspensos ou alterados</p>
+                        </div>
+                     </div>
+                     
+                     <div className="overflow-x-auto">
+                       <Table>
+                         <TableHeader className="bg-slate-50/50">
+                            <TableRow>
+                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
+                               <TableHead className="font-bold text-slate-600">Dose</TableHead>
+                               <TableHead className="font-bold text-slate-600">Frequência</TableHead>
+                               <TableHead className="font-bold text-slate-600">Via</TableHead>
+                               <TableHead className="font-bold text-slate-600">Período de Uso</TableHead>
+                               <TableHead className="font-bold text-slate-600">Motivo da Suspensão</TableHead>
+                               <TableHead className="font-bold text-slate-600">Prescrito por</TableHead>
+                            </TableRow>
+                         </TableHeader>
+                         <TableBody>
+                            {(() => {
+                               const historico = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && (pr.status === "Suspensa" || pr.status === "Devolvida"));
+                               if (historico.length === 0) return (
+                                 <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-500">Nenhum histórico encontrado.</TableCell></TableRow>
+                               );
+                               return historico.map(pr => {
+                                  const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+                                  const via = med?.via_administracao || "Oral";
+                                  const apresentacao = med?.apresentacao || "Comprimido";
+                                  return (
+                                    <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
+                                       <TableCell className="font-semibold text-slate-800 py-3 opacity-60">
+                                         {pr.medicamentoNome}
+                                         <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-slate-50 text-slate-500 border-slate-200 rounded">{apresentacao}</Badge>
+                                       </TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">{pr.totalDiario} un/dia</TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">{pr.esquemaPosologico}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm opacity-60">{via}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm opacity-60">
+                                          {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'} a {pr.dataFim ? new Date(pr.dataFim).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Hoje'}
+                                       </TableCell>
+                                       <TableCell className="text-slate-600 text-sm opacity-60 max-w-[200px] truncate">{pr.observacoes || "Suspensão Clínica"}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm leading-tight opacity-60">
+                                          <div className="font-medium text-slate-800">Médico(a) Assist.</div>
+                                          <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                       </TableCell>
+                                    </TableRow>
+                                  );
+                               });
+                            })()}
+                         </TableBody>
+                       </Table>
+                     </div>
+                  </div>
+               </div>
             )}
-
-            {/* HISTÓRICO DE SAÍDAS AVULSAS */}
-            {(() => {
-              const avulsas = getSaidasAvulsasDoPaciente(viewPatientDetails?.nome);
-              if (avulsas.length === 0) return null;
-              return (
-                <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-2 uppercase tracking-wide">
-                      <div className="w-1.5 h-4 bg-emerald-500 rounded-full"></div>
-                      Histórico de Saídas Avulsas / Extras
-                    </h4>
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
-                      {avulsas.length} registros
-                    </Badge>
-                  </div>
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
-                    <Table>
-                      <TableHeader className="bg-slate-50 dark:bg-slate-800/80">
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="w-32 text-xs font-bold text-slate-600 uppercase tracking-wider">Data</TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Medicamento / Lote</TableHead>
-                          <TableHead className="text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Qtd</TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 uppercase tracking-wider">Motivo / Observação</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {avulsas.map((s) => (
-                          <TableRow key={s.id} className="hover:bg-slate-50/50">
-                            <TableCell className="text-slate-500 font-medium text-xs">
-                              {safeFormatDate(s.data_saida || s.created_at)}
-                            </TableCell>
-                            <TableCell>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{s.medicamento_nome}</p>
-                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">Lote: {s.numero_lote || "S/L"}</p>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge className="bg-red-100 text-red-700 hover:bg-red-200 font-bold">-{s.quantidade}</Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-slate-600 max-w-[200px] truncate">
-                              <p className="font-medium">{s.motivo || "Saída Avulsa"}</p>
-                              {s.observacao && <p className="text-slate-400 mt-0.5">{s.observacao}</p>}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              );
-            })()}
-
-          </div>
-
-          <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-4 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-b-2xl border-t border-slate-200 dark:border-slate-800">
-            <Button variant="ghost" size="sm" onClick={() => setViewPatientDetails(null)} className="w-full sm:w-auto font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 rounded-full px-6">
-              Fechar Prontuário
-            </Button>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2 text-slate-600 bg-white shadow-sm hover:shadow rounded-full font-bold">
-                <Printer className="w-4 h-4" />
-                Imprimir
-              </Button>
-              <Button 
-                size="sm" 
-                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold gap-2 shadow-md hover:shadow-lg transition-all rounded-full px-5"
-                onClick={() => {
-                  setSelectedPatientIds([viewPatientDetails?.id]);
-                  setBatchBaixaModalOpen(true);
-                }}
-              >
-                <PackageMinus className="w-4 h-4" />
-                Baixar Estoque
-              </Button>
-              {viewPatientDetails?.status !== "Alta" && (
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  className="border-amber-300 bg-gradient-to-br from-amber-50 to-orange-100 hover:from-amber-100 hover:to-orange-200 text-amber-900 font-bold gap-2 shadow-sm rounded-full px-5"
-                  onClick={() => {
-                    if (window.confirm(`Tem certeza que deseja DAR ALTA para o paciente ${viewPatientDetails?.nome}? Todas as prescrições serão suspensas e ele sairá dos relatórios.`)) {
-                      setAltaPacienteId(viewPatientDetails.id);
-                      setAltaDevolucoes({});
-                      setAltaModalOpen(true);
-                    }
-                  }}
-                  title="Dar alta hospitalar ao paciente"
-                >
-                  <LogOut className="w-4 h-4 text-amber-700" />
-                  Conceder Alta
-                </Button>
-              )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1901,78 +1827,87 @@ export default function PacientesMedicao() {
               </div>
 
               <div className="grid grid-cols-4 gap-2 text-center">
-                <div>
+                <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 block mb-1">08:00 (Manhã)</span>
                   <Input
                     type="number"
                     min="0"
+                    step="1"
                     className="text-center font-bold"
                     value={prescFormData.dose08}
                     onChange={(e) => {
-                      const d08 = e.target.value;
-                      setPrescFormData(prev => ({
-                        ...prev,
-                        dose08: d08,
-                        esquemaPosologico: `${d08 || 0}-${prev.dose14 || 0}-${prev.dose22 || 0}-${prev.dose06 || 0}`
-                      }));
+                      const val = e.target.value;
+                      setPrescFormData(prev => ({ ...prev, dose08: val }));
                     }}
                   />
+                  <div className="mt-1 flex items-center gap-1">
+                    <input type="checkbox" id="met08" checked={prescFormData.isMetade08} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade08: e.target.checked}))} className="w-3 h-3 accent-amber-600 rounded cursor-pointer" />
+                    <label htmlFor="met08" className="text-[10px] font-bold text-amber-900 cursor-pointer uppercase">Metade</label>
+                  </div>
                 </div>
-                <div>
+                <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-blue-800 dark:text-blue-300 block mb-1">14:00 (Tarde)</span>
                   <Input
                     type="number"
                     min="0"
+                    step="1"
                     className="text-center font-bold"
                     value={prescFormData.dose14}
                     onChange={(e) => {
-                      const d14 = e.target.value;
-                      setPrescFormData(prev => ({
-                        ...prev,
-                        dose14: d14,
-                        esquemaPosologico: `${prev.dose08 || 0}-${d14 || 0}-${prev.dose22 || 0}-${prev.dose06 || 0}`
-                      }));
+                      const val = e.target.value;
+                      setPrescFormData(prev => ({ ...prev, dose14: val }));
                     }}
                   />
+                  <div className="mt-1 flex items-center gap-1">
+                    <input type="checkbox" id="met14" checked={prescFormData.isMetade14} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade14: e.target.checked}))} className="w-3 h-3 accent-blue-600 rounded cursor-pointer" />
+                    <label htmlFor="met14" className="text-[10px] font-bold text-blue-900 cursor-pointer uppercase">Metade</label>
+                  </div>
                 </div>
-                <div>
+                <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-indigo-800 dark:text-indigo-300 block mb-1">22:00 (Noite)</span>
                   <Input
                     type="number"
                     min="0"
+                    step="1"
                     className="text-center font-bold"
                     value={prescFormData.dose22}
                     onChange={(e) => {
-                      const d22 = e.target.value;
-                      setPrescFormData(prev => ({
-                        ...prev,
-                        dose22: d22,
-                        esquemaPosologico: `${prev.dose08 || 0}-${prev.dose14 || 0}-${d22 || 0}-${prev.dose06 || 0}`
-                      }));
+                      const val = e.target.value;
+                      setPrescFormData(prev => ({ ...prev, dose22: val }));
                     }}
                   />
+                  <div className="mt-1 flex items-center gap-1">
+                    <input type="checkbox" id="met22" checked={prescFormData.isMetade22} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade22: e.target.checked}))} className="w-3 h-3 accent-indigo-600 rounded cursor-pointer" />
+                    <label htmlFor="met22" className="text-[10px] font-bold text-indigo-900 cursor-pointer uppercase">Metade</label>
+                  </div>
                 </div>
-                <div>
+                <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-purple-800 dark:text-purple-300 block mb-1">06:00 (Madrug)</span>
                   <Input
                     type="number"
                     min="0"
+                    step="1"
                     className="text-center font-bold"
                     value={prescFormData.dose06}
                     onChange={(e) => {
-                      const d06 = e.target.value;
-                      setPrescFormData(prev => ({
-                        ...prev,
-                        dose06: d06,
-                        esquemaPosologico: `${prev.dose08 || 0}-${prev.dose14 || 0}-${prev.dose22 || 0}-${d06 || 0}`
-                      }));
+                      const val = e.target.value;
+                      setPrescFormData(prev => ({ ...prev, dose06: val }));
                     }}
                   />
+                  <div className="mt-1 flex items-center gap-1">
+                    <input type="checkbox" id="met06" checked={prescFormData.isMetade06} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade06: e.target.checked}))} className="w-3 h-3 accent-purple-600 rounded cursor-pointer" />
+                    <label htmlFor="met06" className="text-[10px] font-bold text-purple-900 cursor-pointer uppercase">Metade</label>
+                  </div>
                 </div>
               </div>
 
               <div className="text-right text-xs font-bold text-blue-900 dark:text-blue-300">
-                Total Diário: {(parseInt(prescFormData.dose08)||0) + (parseInt(prescFormData.dose14)||0) + (parseInt(prescFormData.dose22)||0) + (parseInt(prescFormData.dose06)||0)} unidades/dia
+                Total Diário: {
+                  ((parseFloat(prescFormData.dose08)||0) * (prescFormData.isMetade08 ? 0.5 : 1)) + 
+                  ((parseFloat(prescFormData.dose14)||0) * (prescFormData.isMetade14 ? 0.5 : 1)) + 
+                  ((parseFloat(prescFormData.dose22)||0) * (prescFormData.isMetade22 ? 0.5 : 1)) + 
+                  ((parseFloat(prescFormData.dose06)||0) * (prescFormData.isMetade06 ? 0.5 : 1))
+                } unidades/dia
               </div>
             </div>
 

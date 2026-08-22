@@ -278,3 +278,22 @@ ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_separacao" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_entrega" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_recebimento" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+
+-- ==========================================
+-- ALTERAÇÕES PARA FRACIONAMENTO E PORTARIA 344
+-- ==========================================
+
+-- 1. Ligação de Pai/Filho no Medicamento (Para o Fracionamento)
+ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "medicamento_origem_id" TEXT;
+ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "fator_fracionamento" INTEGER DEFAULT 0;
+
+-- 2. Tabela da "Gaveta do Paciente" (Estoque Nominal de Metadinhas)
+CREATE TABLE IF NOT EXISTS "GavetaPaciente" (
+    "id" TEXT PRIMARY KEY,
+    "paciente_id" TEXT,
+    "medicamento_id" TEXT,
+    "lote_id" TEXT,
+    "quantidade" INTEGER,
+    "created_at" TEXT,
+    "deleted_at" TEXT
+);

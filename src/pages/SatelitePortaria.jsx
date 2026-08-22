@@ -171,13 +171,16 @@ export default function SatelitePortaria() {
                 if (val) {
                   navigate(`/LivroRegistro?medId=${val}`);
                 }
-              }} disabled={!selectedLista}>
-                <SelectTrigger className="flex-1 h-11 w-full truncate">
-                  <SelectValue placeholder={selectedLista ? "Escolha o medicamento..." : "Selecione a lista primeiro"} />
+              }}>
+                <SelectTrigger className="flex-1 h-11 w-full truncate bg-white">
+                  <SelectValue placeholder="Escolha o medicamento..." />
                 </SelectTrigger>
                 <SelectContent className="max-w-[90vw] sm:max-w-none">
                   {medicamentos
-                    .filter(m => isPsicotropico(m.grupo_terapeutico) && getPortaria344List(m.nome) === selectedLista)
+                    .filter(m => {
+                      if (!selectedLista) return true;
+                      return getPortaria344List(m) === selectedLista || isPsicotropico(m);
+                    })
                     .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
                     .map(med => (
                       <SelectItem key={med.id} value={med.id}>

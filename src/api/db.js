@@ -54,6 +54,10 @@ const ensureTableQuery = {
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "unidade_medida" TEXT;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "localizacao" TEXT;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    UPDATE "Medicamento" SET "grupo_terapeutico" = 'IMUNOSSUPRESSOR (PORTARIA 344)' WHERE UPPER("nome") ~* '(TALIDOMIDA|LENALIDOMIDA|CICLOSPORINA|TACROLIMO|SIROLIMO|EVEROLIMO|AZATIOPRINA|MICOFENOLATO|LEFLUNOMIDA|METOTREXATO)';
+    UPDATE "Medicamento" SET "grupo_terapeutico" = 'PSICOTRÓPICO / CONTROLADO (PORTARIA 344)' WHERE UPPER("nome") ~* '(MORFINA|TRAMADOL|METADONA|FENTANILA|ALPRAZOLAM|BROMAZEPAM|CLONAZEPAM|DIAZEPAM|LORAZEPAM|MIDAZOLAM|ZOLPIDEM|FENOBARBITAL|METILFENIDATO|RISPERIDONA|HALOPERIDOL|QUETIAPINA|OLANZAPINA|AMITRIPTILINA|FLUOXETINA|SERTRALINA|ESCITALOPRAM|PAROXETINA|VENLAFAXINA|DULOXETINA|CARBAMAZEPINA|VALPROATO|LAMOTRIGINA|TOPIRAMATO|GABAPENTINA|PREGABALINA)';
+    UPDATE "Medicamento" SET "grupo_terapeutico" = 'ANTIBIÓTICO / ANTIMICROBIANO' WHERE UPPER("nome") ~* '(AMOXICILINA|AMPICILINA|AZITROMICINA|CLARITROMICINA|CEFALEXINA|CEFTRIAXONA|CEFAZOLINA|CIPROFLOXACINO|LEVOFLOXACINO|METRONIDAZOL|VANCOMICINA|MEROPENEM|PIPERACILINA|GENTAMICINA|AMIKACINA|CLINDAMICINA|SULFAMETOXAZOL)' AND ("grupo_terapeutico" IS NULL OR "grupo_terapeutico" = '');
+    UPDATE "Medicamento" SET "grupo_terapeutico" = 'CLÍNICOS - MUCOLÍTICO E EXPECTORANTE' WHERE UPPER("nome") ~* '(ACETILCISTEINA|ACETILCISTEÍNA|AMBROXOL|ACEBROFILINA|CARBOCISTEINA|BROMEXINA)';
   `,
   Entrada: `
     CREATE TABLE IF NOT EXISTS "Entrada" (
@@ -164,6 +168,17 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataInicio" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataFim" TEXT;
+  `,
+  GavetaPaciente: `
+    CREATE TABLE IF NOT EXISTS "GavetaPaciente" (
+        "id" TEXT PRIMARY KEY,
+        "paciente_id" TEXT,
+        "medicamento_id" TEXT,
+        "lote_id" TEXT,
+        "quantidade" INTEGER,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
   `
 };
 
@@ -396,6 +411,7 @@ export const db = {
     Auditoria: createEntityProxy("Auditoria"),
     TransferenciaPendente: createEntityProxy("TransferenciaPendente"),
     PedidoSatelite: createEntityProxy("PedidoSatelite"),
-    Usuario: createEntityProxy("Usuario")
+    Usuario: createEntityProxy("Usuario"),
+    GavetaPaciente: createEntityProxy("GavetaPaciente")
   }
 };
