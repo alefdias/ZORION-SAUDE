@@ -188,15 +188,28 @@ export default function PassagemPlantao({ isTab = false }) {
     return now >= shiftInterval.start && now <= shiftInterval.end;
   }, [shiftInterval]);
 
+  // Ref para acompanhar a data de hoje e só virar turno automaticamente se o usuário estiver acompanhando o dia ao vivo
+  const lastLiveDateRef = useRef(currentDetails.dataStr);
+
   // Relógio em tempo real para sincronização automática de plantão (19h e 00h)
   useEffect(() => {
     const checkLiveShift = () => {
       const current = getCurrentShiftDetails();
-      const currentShift = computeShiftInterval(current.dataStr, current.turno);
-      const now = new Date();
-      if (now >= currentShift.start && now <= currentShift.end) {
-        if (selectedDate !== current.dataStr) setSelectedDate(current.dataStr);
-        if (selectedTurno !== current.turno) setSelectedTurno(current.turno);
+
+      // Só interfere se o usuário estiver no dia atual ao vivo. Se navegou para uma data passada (ex: 05/09), não reseta!
+      const wasOnToday = selectedDate === lastLiveDateRef.current;
+
+      if (wasOnToday && selectedDate !== current.dataStr) {
+        // Virada natural da meia-noite no plantão ao vivo
+        setSelectedDate(current.dataStr);
+        setSelectedTurno(current.turno);
+        lastLiveDateRef.current = current.dataStr;
+      } else if (selectedDate === current.dataStr) {
+        // Se está no dia de hoje, atualiza o turno quando der 19h ou 07h
+        if (selectedTurno !== current.turno) {
+          setSelectedTurno(current.turno);
+        }
+        lastLiveDateRef.current = current.dataStr;
       }
     };
 
@@ -541,6 +554,7 @@ export default function PassagemPlantao({ isTab = false }) {
     setSelectedDate(current.dataStr);
     setSelectedTurno(current.turno);
     setActiveCategory("todos");
+    lastLiveDateRef.current = current.dataStr;
     toast.info(`Retornado para o ${current.turno === 'diurno' ? 'Plantão Diurno' : 'Plantão Noturno'} atual.`);
   };
 
@@ -549,12 +563,18 @@ export default function PassagemPlantao({ isTab = false }) {
     try {
       toast.loading("Gerando PDF da Passagem de Plantão (1 Folha)...");
       const element = printRef.current;
+      if (!element) {
+        throw new Error("Elemento do relatório não encontrado para exportação.");
+      }
+
       const canvas = await html2canvas(element, { 
         scale: 2, 
         useCORS: true,
+        backgroundColor: "#ffffff",
         logging: false 
       });
-      const imgData = canvas.toDataURL("image/png");
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.98);
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -564,7 +584,7 @@ export default function PassagemPlantao({ isTab = false }) {
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
       // Desenha estritamente em 1 única folha A4 (sem páginas excedentes)
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST");
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
       pdf.save(`passagem-plantao-${selectedTurno}-${selectedDate}.pdf`);
       toast.dismiss();
       toast.success("PDF da Passagem de Plantão gerado em 1 folha!");
@@ -1283,12 +1303,22 @@ export default function PassagemPlantao({ isTab = false }) {
       `}</style>
 
       {/* ─── RELATÓRIO OFICIAL PARA IMPRESSÃO / PDF (1 ÚNICA FOLHA A4) ─────────── */}
-      <div className="hidden">
+      <div 
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          top: "0",
+          width: "210mm",
+          zIndex: -9999,
+          pointerEvents: "none",
+          opacity: 1
+        }}
+      >
         <div 
           id="printable-plantao-sheet"
           ref={printRef} 
           className="w-[210mm] max-h-[296mm] h-[296mm] p-[8mm] box-border bg-white text-slate-900 flex flex-col justify-between overflow-hidden text-[10.5px]"
-          style={{ width: "210mm", height: "296mm", maxHeight: "296mm", boxSizing: "border-box" }}
+          style={{ width: "210mm", height: "296mm", maxHeight: "296mm", boxSizing: "border-box", backgroundColor: "#ffffff" }}
         >
           {/* Topo e Conteúdo */}
           <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
