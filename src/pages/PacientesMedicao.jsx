@@ -101,15 +101,15 @@ export default function PacientesMedicao() {
   const [prescFormData, setPrescFormData] = useState({
     pacienteId: "",
     medicamentoId: "",
-    dose08: "1",
+    dose08: "0",
     dose14: "0",
-    dose22: "2",
-    dose06: "2",
+    dose22: "0",
+    dose06: "0",
     isMetade08: false,
     isMetade14: false,
     isMetade22: false,
     isMetade06: false,
-    esquemaPosologico: "1-0-2-2",
+    esquemaPosologico: "0-0-0-0",
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
     status: "Ativa",
@@ -247,10 +247,10 @@ export default function PacientesMedicao() {
         throw new Error("Apenas medicamentos já cadastrados no sistema podem ser selecionados para a prescrição.");
       }
 
-      const d08 = (parseFloat(data.dose08) || 0) * (data.isMetade08 ? 0.5 : 1);
-      const d14 = (parseFloat(data.dose14) || 0) * (data.isMetade14 ? 0.5 : 1);
-      const d22 = (parseFloat(data.dose22) || 0) * (data.isMetade22 ? 0.5 : 1);
-      const d06 = (parseFloat(data.dose06) || 0) * (data.isMetade06 ? 0.5 : 1);
+      const d08 = parseFloat(data.dose08) || 0;
+      const d14 = parseFloat(data.dose14) || 0;
+      const d22 = parseFloat(data.dose22) || 0;
+      const d06 = parseFloat(data.dose06) || 0;
       const totalDiario = d08 + d14 + d22 + d06;
       const esquema = `${d08}-${d14}-${d22}-${d06}`;
 
@@ -970,15 +970,15 @@ export default function PacientesMedicao() {
     setPrescFormData({
       pacienteId: pacienteIdTarget,
       medicamentoId: "",
-      dose08: "1",
+      dose08: "0",
       dose14: "0",
-      dose22: "2",
-      dose06: "2",
+      dose22: "0",
+      dose06: "0",
       isMetade08: false,
       isMetade14: false,
       isMetade22: false,
       isMetade06: false,
-      esquemaPosologico: "1-0-2-2",
+      esquemaPosologico: "0-0-0-0",
       dataInicio: format(new Date(), "yyyy-MM-dd"),
       dataFim: "",
       status: "Ativa",
@@ -997,15 +997,15 @@ export default function PacientesMedicao() {
     setPrescFormData({
       pacienteId: p.pacienteId || "",
       medicamentoId: p.medicamentoId || "",
-      dose08: String(d08 === 0.5 ? 1 : d08),
-      isMetade08: d08 === 0.5,
-      dose14: String(d14 === 0.5 ? 1 : d14),
-      isMetade14: d14 === 0.5,
-      dose22: String(d22 === 0.5 ? 1 : d22),
-      isMetade22: d22 === 0.5,
-      dose06: String(d06 === 0.5 ? 1 : d06),
-      isMetade06: d06 === 0.5,
-      esquemaPosologico: p.esquemaPosologico || `${d08}-${d14}-${d22}-${d06}`,
+      dose08: String(d08 || 0),
+      isMetade08: false,
+      dose14: String(d14 || 0),
+      isMetade14: false,
+      dose22: String(d22 || 0),
+      isMetade22: false,
+      dose06: String(d06 || 0),
+      isMetade06: false,
+      esquemaPosologico: p.esquemaPosologico || `${d08 || 0}-${d14 || 0}-${d22 || 0}-${d06 || 0}`,
       dataInicio: p.dataInicio || format(new Date(), "yyyy-MM-dd"),
       dataFim: p.dataFim || "",
       status: p.status || "Ativa",
@@ -2035,38 +2035,38 @@ export default function PacientesMedicao() {
               />
             </div>
 
-            {/* Esquema Posológico 1-0-2-2 */}
+            {/* Esquema Posológico 0-0-0-0 */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
               <div className="flex justify-between items-center">
                 <Label className="font-bold text-slate-800 dark:text-slate-200">
-                  Esquema Posológico por Horário (Ex: 1-0-2-2)
+                  Esquema Posológico por Horário (Ex: 0-0-0-0)
                 </Label>
                 <Input
-                  className="w-28 font-mono text-center font-bold text-blue-700"
+                  className="w-28 font-mono text-center font-bold text-blue-700 bg-white"
                   value={prescFormData.esquemaPosologico}
                   onChange={(e) => handleEsquemaPosologicoStringChange(e.target.value)}
-                  placeholder="1-0-2-2"
+                  placeholder="0-0-0-0"
                 />
               </div>
 
-              <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-4 gap-2.5 text-center">
                 <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 block mb-1">08:00 (Manhã)</span>
                   <Input
                     type="number"
                     min="0"
                     step="1"
-                    className="text-center font-bold"
+                    className="text-center font-bold h-10 bg-white"
                     value={prescFormData.dose08}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setPrescFormData(prev => ({ ...prev, dose08: val }));
+                      setPrescFormData(prev => ({
+                        ...prev,
+                        dose08: val,
+                        esquemaPosologico: `${val || 0}-${prev.dose14 || 0}-${prev.dose22 || 0}-${prev.dose06 || 0}`
+                      }));
                     }}
                   />
-                  <div className="mt-1 flex items-center gap-1">
-                    <input type="checkbox" id="met08" checked={prescFormData.isMetade08} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade08: e.target.checked}))} className="w-3 h-3 accent-amber-600 rounded cursor-pointer" />
-                    <label htmlFor="met08" className="text-[10px] font-bold text-amber-900 cursor-pointer uppercase">Metade</label>
-                  </div>
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-blue-800 dark:text-blue-300 block mb-1">14:00 (Tarde)</span>
@@ -2074,17 +2074,17 @@ export default function PacientesMedicao() {
                     type="number"
                     min="0"
                     step="1"
-                    className="text-center font-bold"
+                    className="text-center font-bold h-10 bg-white"
                     value={prescFormData.dose14}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setPrescFormData(prev => ({ ...prev, dose14: val }));
+                      setPrescFormData(prev => ({
+                        ...prev,
+                        dose14: val,
+                        esquemaPosologico: `${prev.dose08 || 0}-${val || 0}-${prev.dose22 || 0}-${prev.dose06 || 0}`
+                      }));
                     }}
                   />
-                  <div className="mt-1 flex items-center gap-1">
-                    <input type="checkbox" id="met14" checked={prescFormData.isMetade14} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade14: e.target.checked}))} className="w-3 h-3 accent-blue-600 rounded cursor-pointer" />
-                    <label htmlFor="met14" className="text-[10px] font-bold text-blue-900 cursor-pointer uppercase">Metade</label>
-                  </div>
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-indigo-800 dark:text-indigo-300 block mb-1">22:00 (Noite)</span>
@@ -2092,17 +2092,17 @@ export default function PacientesMedicao() {
                     type="number"
                     min="0"
                     step="1"
-                    className="text-center font-bold"
+                    className="text-center font-bold h-10 bg-white"
                     value={prescFormData.dose22}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setPrescFormData(prev => ({ ...prev, dose22: val }));
+                      setPrescFormData(prev => ({
+                        ...prev,
+                        dose22: val,
+                        esquemaPosologico: `${prev.dose08 || 0}-${prev.dose14 || 0}-${val || 0}-${prev.dose06 || 0}`
+                      }));
                     }}
                   />
-                  <div className="mt-1 flex items-center gap-1">
-                    <input type="checkbox" id="met22" checked={prescFormData.isMetade22} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade22: e.target.checked}))} className="w-3 h-3 accent-indigo-600 rounded cursor-pointer" />
-                    <label htmlFor="met22" className="text-[10px] font-bold text-indigo-900 cursor-pointer uppercase">Metade</label>
-                  </div>
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-purple-800 dark:text-purple-300 block mb-1">06:00 (Madrug)</span>
@@ -2110,26 +2110,26 @@ export default function PacientesMedicao() {
                     type="number"
                     min="0"
                     step="1"
-                    className="text-center font-bold"
+                    className="text-center font-bold h-10 bg-white"
                     value={prescFormData.dose06}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setPrescFormData(prev => ({ ...prev, dose06: val }));
+                      setPrescFormData(prev => ({
+                        ...prev,
+                        dose06: val,
+                        esquemaPosologico: `${prev.dose08 || 0}-${prev.dose14 || 0}-${prev.dose22 || 0}-${val || 0}`
+                      }));
                     }}
                   />
-                  <div className="mt-1 flex items-center gap-1">
-                    <input type="checkbox" id="met06" checked={prescFormData.isMetade06} onChange={(e) => setPrescFormData(prev => ({...prev, isMetade06: e.target.checked}))} className="w-3 h-3 accent-purple-600 rounded cursor-pointer" />
-                    <label htmlFor="met06" className="text-[10px] font-bold text-purple-900 cursor-pointer uppercase">Metade</label>
-                  </div>
                 </div>
               </div>
 
               <div className="text-right text-xs font-bold text-blue-900 dark:text-blue-300">
                 Total Diário: {
-                  ((parseFloat(prescFormData.dose08)||0) * (prescFormData.isMetade08 ? 0.5 : 1)) + 
-                  ((parseFloat(prescFormData.dose14)||0) * (prescFormData.isMetade14 ? 0.5 : 1)) + 
-                  ((parseFloat(prescFormData.dose22)||0) * (prescFormData.isMetade22 ? 0.5 : 1)) + 
-                  ((parseFloat(prescFormData.dose06)||0) * (prescFormData.isMetade06 ? 0.5 : 1))
+                  (parseFloat(prescFormData.dose08) || 0) + 
+                  (parseFloat(prescFormData.dose14) || 0) + 
+                  (parseFloat(prescFormData.dose22) || 0) + 
+                  (parseFloat(prescFormData.dose06) || 0)
                 } unidades/dia
               </div>
             </div>
