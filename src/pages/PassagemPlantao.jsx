@@ -283,12 +283,18 @@ export default function PassagemPlantao({ isTab = false }) {
       const isLog = (s.medicamento_nome && s.medicamento_nome.includes("[LOG")) || (s.tipo && s.tipo.includes("Log"));
       if (isLog) return;
 
+      const saidaDateOnly = s.data_saida ? String(s.data_saida).split("T")[0] : null;
+      const createdDateOnly = s.created_at ? String(s.created_at).split("T")[0].split(" ")[0] : null;
       const dateStr = s.created_at || (s.data_saida ? `${s.data_saida}T12:00:00` : null);
       if (!dateStr) return;
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return;
 
-      if (d >= start && d <= end) {
+      const inInterval = d >= start && d <= end;
+      const isDateMatch = saidaDateOnly === selectedDate || createdDateOnly === selectedDate;
+
+      if (inInterval || isDateMatch) {
+        const eventDate = (!inInterval && isDateMatch) ? new Date(`${selectedDate}T08:00:00`) : d;
         const qtd = Number(s.quantidade) || 0;
         const medNome = s.medicamento_nome || "Medicamento não informado";
         const lote = s.numero_lote || "Lote N/I";
@@ -308,7 +314,7 @@ export default function PassagemPlantao({ isTab = false }) {
 
         events.push({
           id: `saida-${s.id}`,
-          date: d,
+          date: eventDate,
           tipoCategoria: "saida",
           titulo: "Dispensação de Medicamento",
           textoTecnico,
@@ -324,12 +330,18 @@ export default function PassagemPlantao({ isTab = false }) {
 
     // 2. Processar Entradas e Devoluções
     (entradas || []).forEach(e => {
+      const entryDateOnly = e.data_entrada ? String(e.data_entrada).split("T")[0] : null;
+      const createdDateOnly = e.created_at ? String(e.created_at).split("T")[0].split(" ")[0] : null;
       const dateStr = e.created_at || (e.data_entrada ? `${e.data_entrada}T12:00:00` : null);
       if (!dateStr) return;
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return;
 
-      if (d >= start && d <= end) {
+      const inInterval = d >= start && d <= end;
+      const isDateMatch = entryDateOnly === selectedDate || createdDateOnly === selectedDate;
+
+      if (inInterval || isDateMatch) {
+        const eventDate = (!inInterval && isDateMatch) ? new Date(`${selectedDate}T08:00:00`) : d;
         const fn = (e.fornecedor_nome || "").toLowerCase();
         const tp = (e.tipo || "").toLowerCase();
         const nl = (e.numero_lote || "").toUpperCase();
@@ -355,7 +367,7 @@ export default function PassagemPlantao({ isTab = false }) {
 
           events.push({
             id: `dev-${e.id}`,
-            date: d,
+            date: eventDate,
             tipoCategoria: "devolucao",
             titulo: "Devolução Recebida na Satélite",
             textoTecnico,
@@ -374,7 +386,7 @@ export default function PassagemPlantao({ isTab = false }) {
 
           events.push({
             id: `ent-${e.id}`,
-            date: d,
+            date: eventDate,
             tipoCategoria: "entrada",
             titulo: "Entrada / Remessa de Abastecimento",
             textoTecnico,
@@ -504,23 +516,31 @@ export default function PassagemPlantao({ isTab = false }) {
     });
   }, [timelineEvents, activeCategory, search]);
 
+  // Resetar categoria para "todos" sempre que a data mudar para não esconder movimentações
+  useEffect(() => {
+    setActiveCategory("todos");
+  }, [selectedDate]);
+
   // Função para navegar entre dias
   const handlePrevDay = () => {
     const [y, m, d] = selectedDate.split("-").map(Number);
     const prev = subDays(new Date(y, m - 1, d), 1);
     setSelectedDate(format(prev, "yyyy-MM-dd"));
+    setActiveCategory("todos");
   };
 
   const handleNextDay = () => {
     const [y, m, d] = selectedDate.split("-").map(Number);
     const next = addDays(new Date(y, m - 1, d), 1);
     setSelectedDate(format(next, "yyyy-MM-dd"));
+    setActiveCategory("todos");
   };
 
   const handleResetToCurrentShift = () => {
     const current = getCurrentShiftDetails();
     setSelectedDate(current.dataStr);
     setSelectedTurno(current.turno);
+    setActiveCategory("todos");
     toast.info(`Retornado para o ${current.turno === 'diurno' ? 'Plantão Diurno' : 'Plantão Noturno'} atual.`);
   };
 
@@ -642,39 +662,10 @@ export default function PassagemPlantao({ isTab = false }) {
         </div>
       </div>
 
-      {/* Turno Selector and Date Navigator Bar */}
+      {/* Date Navigator and Shift Period Bar */}
       <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Turno Pill selector */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-full md:w-auto">
-          <button
-            onClick={() => setSelectedTurno("diurno")}
-            className={cn(
-              "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-              selectedTurno === "diurno"
-                ? "bg-amber-500 text-white shadow-xs"
-                : "text-slate-600 hover:bg-white/60 dark:text-slate-300"
-            )}
-          >
-            <Sun className="w-4 h-4 text-amber-100" />
-            Plantão Diurno (07h às 19h)
-          </button>
-
-          <button
-            onClick={() => setSelectedTurno("noturno")}
-            className={cn(
-              "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-              selectedTurno === "noturno"
-                ? "bg-indigo-900 text-white shadow-xs"
-                : "text-slate-600 hover:bg-white/60 dark:text-slate-300"
-            )}
-          >
-            <Moon className="w-4 h-4 text-indigo-300" />
-            Plantão Noturno (19h às 07h)
-          </button>
-        </div>
-
         {/* Date Navigator */}
-        <div className="flex items-center gap-2 w-full md:w-auto justify-center">
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <Button
             variant="outline"
             size="sm"
@@ -685,8 +676,8 @@ export default function PassagemPlantao({ isTab = false }) {
             <ChevronLeft className="w-4 h-4" />
           </Button>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            <CalendarIcon className="w-4 h-4 text-purple-600" />
             <input
               type="date"
               value={selectedDate}
@@ -704,13 +695,22 @@ export default function PassagemPlantao({ isTab = false }) {
           >
             <ChevronRight className="w-4 h-4" />
           </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleGoToToday}
+            className="text-xs text-purple-600 font-semibold hover:bg-purple-50 h-8.5 px-2.5"
+          >
+            Hoje
+          </Button>
         </div>
 
         {/* Shift Details Badge */}
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-200/60 w-full md:w-auto justify-center">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 px-3.5 py-1.5 rounded-lg border border-slate-200/60 w-full md:w-auto justify-center md:justify-end">
           <Clock className="w-3.5 h-3.5 text-purple-600" />
           <span>
-            Período: <strong>{format(shiftInterval.start, "dd/MM HH:mm")}</strong> até <strong>{format(shiftInterval.end, "dd/MM HH:mm")}</strong>
+            Período: <strong>{format(shiftInterval.start, "dd/MM/yyyy HH:mm")}</strong> até <strong>{format(shiftInterval.end, "dd/MM/yyyy HH:mm")}</strong>
           </span>
         </div>
       </div>
