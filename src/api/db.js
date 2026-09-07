@@ -237,6 +237,20 @@ const ensureTableQuery = {
     ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "cnae" TEXT DEFAULT '4644-3/01';
     ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "endereco" TEXT;
     ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "contato" TEXT;
+  `,
+  PlantaoOcorrencia: `
+    CREATE TABLE IF NOT EXISTS "PlantaoOcorrencia" (
+        "id" TEXT PRIMARY KEY,
+        "data_plantao" TEXT,
+        "turno" TEXT,
+        "tipo" TEXT,
+        "titulo" TEXT,
+        "descricao" TEXT,
+        "farmaceutico_nome" TEXT,
+        "farmaceutico_crf" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
   `
 };
 
@@ -297,7 +311,7 @@ const createEntityProxy = (entityName) => ({
     }
     let query = `SELECT * FROM "${entityName}"`;
     
-    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario"];
+    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario", "PlantaoOcorrencia"];
     if (deletedColTables.includes(entityName)) {
         query += ` WHERE deleted_at IS NULL`;
     }

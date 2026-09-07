@@ -29,7 +29,8 @@ import {
   Clock,
   CreditCard,
   ShoppingCart,
-  ShieldCheck
+  ShieldCheck,
+  ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,7 @@ const moduleSections = [
       { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
       { name: "Adiantamento", icon: CreditCard, page: "SateliteAdiantamento" },
       { name: "Movimentações", icon: ArrowLeftRight, page: "SateliteMovimentacoes" },
+      { name: "Passagem de Plantão", icon: ClipboardList, page: "PassagemPlantao" },
       { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Estoque", icon: Package, page: "SateliteEstoque" },
     ]
@@ -122,7 +124,7 @@ function getCurrentSection(pageName) {
   }
 
   // Páginas exclusivas da Farmácia Satélite
-  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria") {
+  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "PassagemPlantao" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria") {
     try { sessionStorage.setItem("zorion_active_section", "satelite"); } catch (e) {}
     return moduleSections.find(sec => sec.id === "satelite");
   }

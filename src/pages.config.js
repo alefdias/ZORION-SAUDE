@@ -71,6 +71,7 @@ import LivroRegistro from './pages/LivroRegistro';
 import SateliteEvolucao from './pages/SateliteEvolucao';
 import SateliteAdiantamento from './pages/SateliteAdiantamento';
 import Compras from './pages/Compras';
+import PassagemPlantao from './pages/PassagemPlantao';
 import __Layout from './Layout.jsx';
 
 
@@ -98,6 +99,7 @@ export const PAGES = {
   "LivroRegistro": LivroRegistro,
   "SateliteEvolucao": SateliteEvolucao,
   "SateliteAdiantamento": SateliteAdiantamento,
+  "PassagemPlantao": PassagemPlantao,
 }
 
 export const pagesConfig = {

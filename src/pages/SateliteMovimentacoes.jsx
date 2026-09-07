@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import Saidas from "./Saidas";
 import Devolucoes from "./Devolucoes";
-import { ShoppingCart, AlertTriangle, RotateCcw, PackageMinus } from "lucide-react";
+import PassagemPlantao from "./PassagemPlantao";
+import { ShoppingCart, AlertTriangle, RotateCcw, PackageMinus, ClipboardList } from "lucide-react";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import PedidosSateliteUrgencia from "@/components/PedidosSateliteUrgencia";
 import { cn } from "@/lib/utils";
@@ -9,7 +11,17 @@ import { cn } from "@/lib/utils";
 
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function SateliteMovimentacoes() {
-  const [activeTab, setActiveTab] = useState("pedidos");
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+
+  const [activeTab, setActiveTab] = useState(tabParam || "pedidos");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   return (
     <div className="w-full h-full bg-slate-50/50 dark:bg-slate-950 flex flex-col">
@@ -69,6 +81,19 @@ export default function SateliteMovimentacoes() {
           <PackageMinus className="w-4 h-4" />
           Saídas
         </button>
+
+        <button
+          onClick={() => setActiveTab("passagem_plantao")}
+          className={cn(
+            "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
+            activeTab === "passagem_plantao"
+              ? "border-purple-600 text-purple-700 font-bold bg-purple-50/40"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          )}
+        >
+          <ClipboardList className="w-4 h-4 text-purple-600" />
+          Passagem de Plantão
+        </button>
       </div>
 
       {/* Conteúdo */}
@@ -83,8 +108,10 @@ export default function SateliteMovimentacoes() {
           </div>
         ) : activeTab === "devolucoes" ? (
           <Devolucoes isTab={true} />
-        ) : (
+        ) : activeTab === "saidas" ? (
           <Saidas isTab={true} />
+        ) : (
+          <PassagemPlantao isTab={true} />
         )}
       </div>
     </div>
