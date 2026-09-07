@@ -99,14 +99,51 @@ const moduleSections = [
 ];
 
 function getCurrentSection(pageName) {
-  if (pageName === "LivroRegistro" || pageName === "SateliteAdiantamento" || pageName === "SatelitePortaria") {
+  let savedSectionId = null;
+  try {
+    savedSectionId = sessionStorage.getItem("zorion_active_section");
+  } catch (e) {
+    // ignore
+  }
+
+  // Se a seção ativa previamente salva já contiver esta página em seu menu, mantém a mesma seção!
+  // Isso impede que o módulo Responsável Técnico (RT) pule para a Farmácia Satélite ao clicar em "Portaria 344".
+  if (savedSectionId) {
+    const matchedSaved = moduleSections.find(sec => sec.id === savedSectionId);
+    if (matchedSaved && matchedSaved.menu.some(m => m.page === pageName)) {
+      return matchedSaved;
+    }
+  }
+
+  // Páginas exclusivas do RT
+  if (pageName === "ResponsavelTecnico" || pageName === "Cadastros" || pageName === "Emprestimos" || pageName === "Configuracoes") {
+    try { sessionStorage.setItem("zorion_active_section", "rt"); } catch (e) {}
+    return moduleSections.find(sec => sec.id === "rt");
+  }
+
+  // Páginas exclusivas da Farmácia Satélite
+  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria") {
+    try { sessionStorage.setItem("zorion_active_section", "satelite"); } catch (e) {}
     return moduleSections.find(sec => sec.id === "satelite");
   }
+
+  // Se for LivroRegistro sem histórico prévio, verifica se há preferência salva ou fallback para satélite
+  if (pageName === "LivroRegistro") {
+    if (savedSectionId === "rt") {
+      return moduleSections.find(sec => sec.id === "rt");
+    }
+    const sat = moduleSections.find(sec => sec.id === "satelite");
+    return sat || moduleSections[0];
+  }
+
+  // Busca geral nas seções configuradas
   for (const sec of moduleSections) {
     if (sec.menu.some(m => m.page === pageName)) {
+      try { sessionStorage.setItem("zorion_active_section", sec.id); } catch (e) {}
       return sec;
     }
   }
+
   return moduleSections[0]; // fallback: estoque
 }
 
@@ -206,6 +243,11 @@ export default function Layout({ children, currentPageName }) {
                 <Link
                   key={item.page}
                   to={createPageUrl(item.page)}
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem("zorion_active_section", activeSection.id);
+                    } catch (e) {}
+                  }}
                   className={cn(
                     "flex flex-col items-center justify-center gap-0.5 px-2 xl:px-2.5 py-1 min-w-[58px] xl:min-w-[68px] rounded-lg transition-all whitespace-nowrap group shrink-0",
                     isActive
@@ -226,7 +268,7 @@ export default function Layout({ children, currentPageName }) {
           {/* RIGHT: Actions (Sync, Notifications, Dark Mode, Profile) */}
           <div className="flex items-center gap-2 shrink-0 pl-2">
             <LiveClock />
-            <NotificationBell />
+            <NotificationBell activeSection={activeSection} />
             <ServerConnectionBadge />
 
             {/* User Profile / Logout Dropdown */}
@@ -318,7 +360,12 @@ export default function Layout({ children, currentPageName }) {
                     <Link
                       key={item.page}
                       to={createPageUrl(item.page)}
-                      onClick={() => setMobileMenuOpen(false)}
+                      onClick={() => {
+                        try {
+                          sessionStorage.setItem("zorion_active_section", activeSection.id);
+                        } catch (e) {}
+                        setMobileMenuOpen(false);
+                      }}
                       className={cn(
                         "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all",
                         isActive

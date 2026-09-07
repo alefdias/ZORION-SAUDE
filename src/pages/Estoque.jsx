@@ -539,7 +539,7 @@ export default function Estoque() {
                           <div className="text-right">
                             <p className="text-xs text-slate-500">Estoque Atual</p>
                             <p className={cn("text-lg font-bold", med.temAlerta ? "text-amber-600" : "text-indigo-600")}>
-                              {med.estoque_atual || 0}
+                              {(med.estoque_atual || 0).toLocaleString('pt-BR')}
                             </p>
                           </div>
                         </div>
@@ -581,7 +581,7 @@ export default function Estoque() {
                                   {safeFormatDate(lote.data_validade)}
                                 </TableCell>
                                 <TableCell className="font-bold text-slate-700">
-                                  {lote.quantidade_atual || 0}
+                                  {(lote.quantidade_atual || 0).toLocaleString('pt-BR')}
                                 </TableCell>
                                 <TableCell>
                                   <Badge className={STATUS_COLORS[lote.statusCalculado]}>
@@ -682,7 +682,7 @@ export default function Estoque() {
                           <div className="text-right">
                             <p className="text-xs text-slate-500">Estoque Atual</p>
                             <p className={cn("text-lg font-bold", med.temAlerta ? "text-amber-600" : "text-indigo-600")}>
-                              {med.estoque_atual || 0}
+                              {(med.estoque_atual || 0).toLocaleString('pt-BR')}
                             </p>
                           </div>
                         </div>
@@ -724,7 +724,7 @@ export default function Estoque() {
                                   {safeFormatDate(lote.data_validade)}
                                 </TableCell>
                                 <TableCell className="font-bold text-slate-700">
-                                  {lote.quantidade_atual || 0}
+                                  {(lote.quantidade_atual || 0).toLocaleString('pt-BR')}
                                 </TableCell>
                                 <TableCell>
                                   <Badge className={STATUS_COLORS[lote.statusCalculado]}>

@@ -70,9 +70,16 @@ CREATE TABLE IF NOT EXISTS "Saida" (
 CREATE TABLE IF NOT EXISTS "Fornecedor" (
     "id" TEXT PRIMARY KEY,
     "nome" TEXT,
+    "razao_social" TEXT,
     "cnpj" TEXT,
+    "municipio" TEXT,
+    "uf" TEXT,
+    "situacao" TEXT DEFAULT 'ATIVA',
+    "cnae" TEXT DEFAULT '4644-3/01',
     "telefone" TEXT,
     "email" TEXT,
+    "endereco" TEXT,
+    "contato" TEXT,
     "created_at" TEXT,
     "deleted_at" TEXT
 );
@@ -233,6 +240,10 @@ ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_separacao" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_entrega" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_recebimento" TEXT;
 ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "margem_seguranca" INTEGER DEFAULT 0;
+ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "descontar_estoque" INTEGER DEFAULT 0;
+ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT;
+ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_cancelamento" TEXT;
 
 CREATE TABLE IF NOT EXISTS "TransferenciaPendente" (
     "id" TEXT PRIMARY KEY,

@@ -126,6 +126,10 @@ const ensureTableQuery = {
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_recebimento" TEXT;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "prioridade" TEXT DEFAULT 'Normal';
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "margem_seguranca" INTEGER DEFAULT 0;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "descontar_estoque" INTEGER DEFAULT 0;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_cancelamento" TEXT;
   `,
   TransferenciaPendente: `
     CREATE TABLE IF NOT EXISTS "TransferenciaPendente" (
@@ -208,6 +212,31 @@ const ensureTableQuery = {
         "created_at" TEXT,
         "deleted_at" TEXT
     );
+  `,
+  Fornecedor: `
+    CREATE TABLE IF NOT EXISTS "Fornecedor" (
+        "id" TEXT PRIMARY KEY,
+        "nome" TEXT,
+        "razao_social" TEXT,
+        "cnpj" TEXT,
+        "municipio" TEXT,
+        "uf" TEXT,
+        "situacao" TEXT DEFAULT 'ATIVA',
+        "cnae" TEXT DEFAULT '4644-3/01',
+        "telefone" TEXT,
+        "email" TEXT,
+        "endereco" TEXT,
+        "contato" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "razao_social" TEXT;
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "municipio" TEXT;
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "uf" TEXT;
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "situacao" TEXT DEFAULT 'ATIVA';
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "cnae" TEXT DEFAULT '4644-3/01';
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "endereco" TEXT;
+    ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "contato" TEXT;
   `
 };
 

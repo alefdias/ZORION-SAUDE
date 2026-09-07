@@ -11,13 +11,21 @@ import { AppInitializer } from './lib/AppInitializer';
 import { Toaster as SonnerToaster } from "sonner";
 import { useMidnightReload } from './hooks/useMidnightReload';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
 
-const LayoutWrapper = ({ children, currentPageName }) => Layout ?
-  <Layout currentPageName={currentPageName}>{children}</Layout>
-  : <>{children}</>;
+const LayoutWrapper = ({ children, currentPageName }) => (
+  <ErrorBoundary>
+    {Layout ? (
+      <Layout currentPageName={currentPageName}>{children}</Layout>
+    ) : (
+      <>{children}</>
+    )}
+  </ErrorBoundary>
+);
 
 function App() {
   useMidnightReload();
@@ -58,10 +66,10 @@ function App() {
           password,
           query: `SELECT (n_tup_ins + n_tup_upd + n_tup_del + n_tup_hot_upd)::text as cnt
                   FROM pg_stat_user_tables
-                  WHERE relname IN ('Medicamento','Paciente','PrescricaoPaciente','Lote','Saida','Entrada')
+                  WHERE relname IN ('Medicamento','Paciente','PrescricaoPaciente','Lote','Saida','Entrada','PedidoSatelite','TransferenciaPendente')
                   ORDER BY relname`,
         });
-        const rows = JSON.parse(raw);
+        const rows = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
         const current = rows.map(r => r.cnt).join('-');
 
         if (lastCount === null) {
@@ -74,7 +82,7 @@ function App() {
       } catch (_) { /* silencioso */ }
     };
 
-    const interval = setInterval(checkForChanges, 4000);
+    const interval = setInterval(checkForChanges, 2500);
     return () => clearInterval(interval);
   }, []);
 

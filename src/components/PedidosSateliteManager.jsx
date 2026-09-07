@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   ShoppingCart, 
   PackageCheck, 
@@ -23,7 +24,12 @@ import {
   Eye,
   Search,
   Package,
-  Layers
+  Layers,
+  Percent,
+  RotateCcw,
+  Ban,
+  AlertTriangle,
+  XCircle
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -34,6 +40,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [selectedAlaId, setSelectedAlaId] = useState("all");
   const [diasCalculo, setDiasCalculo] = useState(1);
   const [customDias, setCustomDias] = useState("");
+  const [margemPercentual, setMargemPercentual] = useState(0); // 0, 10, 20, 25, 30, "custom"
+  const [customMargem, setCustomMargem] = useState("");
+  const [descontarEstoque, setDescontarEstoque] = useState(false);
   const [customQuantities, setCustomQuantities] = useState({}); // medId -> custom quantity
   const [observacaoPedido, setObservacaoPedido] = useState("");
   const [prioridadePedido, setPrioridadePedido] = useState("Normal"); // "Normal" | "Urgente" | "Emergência"
@@ -76,7 +85,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const list = await db.entities.PedidoSatelite.list('-created_at');
       return list || [];
     },
-    refetchInterval: 4000 // Real-time sync every 4s
+    refetchInterval: 2000 // Real-time sync every 2s alongside PostgreSQL LISTEN/NOTIFY
   });
 
   // Effective days count
@@ -88,7 +97,16 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     return Number(diasCalculo) || 1;
   }, [diasCalculo, customDias]);
 
-  // Calculation of medication needs per selected Ala and Days
+  // Effective safety margin percentage
+  const effectiveMargem = useMemo(() => {
+    if (margemPercentual === "custom") {
+      const parsed = parseFloat(customMargem);
+      return isNaN(parsed) || parsed < 0 ? 0 : parsed;
+    }
+    return Number(margemPercentual) || 0;
+  }, [margemPercentual, customMargem]);
+
+  // Calculation of medication needs per selected Ala, Days, Safety Margin, and Stock Discount
   const calculoNecessidade = useMemo(() => {
     const ativas = prescricoes.filter(p => {
       if (p.status !== "Ativa") return false;
@@ -133,8 +151,51 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       medMap[p.medicamentoId].totalPacientes += 1;
     });
 
-    return Object.values(medMap).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [prescricoes, pacientes, medicamentos, selectedAlaId, alas, effectiveDays]);
+    return Object.values(medMap).map(item => {
+      // 1. Quantidade com margem de segurança (arredondado para cima)
+      const qtdComMargem = effectiveMargem > 0
+        ? Math.ceil(item.qtdCalculada * (1 + (effectiveMargem / 100)))
+        : item.qtdCalculada;
+
+      const qtdMargemExtra = qtdComMargem - item.qtdCalculada;
+
+      // 2. Se a opção de abater o estoque satélite já existente estiver marcada
+      const qtdSugerida = descontarEstoque
+        ? Math.max(0, qtdComMargem - (item.estoqueSatelite || 0))
+        : qtdComMargem;
+
+      return {
+        ...item,
+        qtdComMargem,
+        qtdMargemExtra,
+        qtdSugerida
+      };
+    }).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [prescricoes, pacientes, medicamentos, selectedAlaId, alas, effectiveDays, effectiveMargem, descontarEstoque]);
+
+  // Resumo macro do pedido calculado
+  const resumoPedido = useMemo(() => {
+    let totalPrescrito = 0;
+    let totalMargemExtra = 0;
+    let totalSolicitado = 0;
+
+    calculoNecessidade.forEach(item => {
+      const finalQtd = customQuantities[item.medicamentoId] !== undefined 
+        ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
+        : item.qtdSugerida;
+
+      totalPrescrito += item.qtdCalculada;
+      totalMargemExtra += item.qtdMargemExtra;
+      totalSolicitado += finalQtd;
+    });
+
+    return {
+      totalItens: calculoNecessidade.length,
+      totalPrescrito,
+      totalMargemExtra,
+      totalSolicitado
+    };
+  }, [calculoNecessidade, customQuantities]);
 
   // Create Order Mutation
   const criarPedidoMutation = useMutation({
@@ -149,7 +210,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const itens = calculoNecessidade.map(item => {
         const finalQtd = customQuantities[item.medicamentoId] !== undefined 
           ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
-          : item.qtdCalculada;
+          : item.qtdSugerida;
 
         return {
           medicamento_id: item.medicamentoId,
@@ -157,6 +218,11 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           codigo: item.codigo,
           concentracao: item.concentracao,
           apresentacao: item.apresentacao,
+          qtd_prescrita: item.qtdCalculada,
+          margem_percentual: effectiveMargem,
+          qtd_margem_extra: item.qtdMargemExtra,
+          descontou_estoque: descontarEstoque ? 1 : 0,
+          estoque_satelite_momento: item.estoqueSatelite,
           qtd_solicitada: finalQtd,
           qtd_atendida: finalQtd, // Central can adjust during separation
           separado: false,
@@ -170,18 +236,29 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
       const pedidoId = crypto.randomUUID();
       const timestampCode = Date.now().toString().slice(-6);
+
+      let obsFinal = observacaoPedido || "";
+      if (effectiveMargem > 0 || descontarEstoque) {
+        const tagMargem = effectiveMargem > 0 ? `Margem: +${effectiveMargem}%` : '';
+        const tagEstoque = descontarEstoque ? 'Estoque Satélite Abatido' : '';
+        const tags = [tagMargem, tagEstoque].filter(Boolean).join(' | ');
+        obsFinal = obsFinal ? `[${tags}] ${obsFinal}` : `[${tags}]`;
+      }
+
       const novoPedido = {
         id: pedidoId,
         codigo: `PED-${timestampCode}`,
         ala_id: selectedAlaId,
         ala_nome: alaNomeStr,
         dias_calculados: effectiveDays,
+        margem_seguranca: effectiveMargem,
+        descontar_estoque: descontarEstoque ? 1 : 0,
         solicitante: "Farmácia Satélite",
         data_solicitacao: new Date().toISOString(),
         status: "Pendente",
         prioridade: prioridadePedido || "Normal",
         itens_json: JSON.stringify(itens),
-        observacao: observacaoPedido || "",
+        observacao: obsFinal,
         created_at: new Date().toISOString()
       };
 
@@ -190,6 +267,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         codigo: novoPedido.codigo,
         ala: novoPedido.ala_nome,
         prioridade: novoPedido.prioridade,
+        margem: effectiveMargem,
         itens: itens.length
       });
       return novoPedido;
@@ -208,13 +286,28 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
   // Modal Action Mutation (Separar, Entregar, Conferir/Receber)
   const updatePedidoMutation = useMutation({
-    mutationFn: async ({ pedido, newStatus, updatedItens, actionType }) => {
+    mutationFn: async ({ pedido, newStatus, updatedItens, motivoCancelamento }) => {
       const payload = {
         status: newStatus,
         itens_json: JSON.stringify(updatedItens)
       };
 
-      if (newStatus === "Separado") {
+      if (newStatus === "Cancelado") {
+        payload.motivo_cancelamento = motivoCancelamento || "Cancelado pelo operador";
+        payload.data_cancelamento = new Date().toISOString();
+        payload.observacao = pedido.observacao 
+          ? `[CANCELADO: ${motivoCancelamento || "Sem motivo"}] ${pedido.observacao}`
+          : `[CANCELADO: ${motivoCancelamento || "Sem motivo"}]`;
+        
+        try {
+          await db.logAction(
+            "Cancelamento Pedido",
+            "PedidoSatelite",
+            pedido.id,
+            `Pedido ${pedido.codigo} (${pedido.ala_nome}) cancelado. Motivo: ${motivoCancelamento || "Sem motivo informado"}`
+          );
+        } catch (e) {}
+      } else if (newStatus === "Separado") {
         payload.data_separacao = new Date().toISOString();
       } else if (newStatus === "Entregue") {
         payload.data_entrega = new Date().toISOString();
@@ -254,8 +347,10 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       await db.entities.PedidoSatelite.update(pedido.id, payload);
     },
     onSuccess: (_, variables) => {
-      const { newStatus } = variables;
-      if (newStatus === "Em Separação") toast.info("Pedido marcado em separação.");
+      const { newStatus, pedido } = variables;
+      if (newStatus === "Cancelado") {
+        toast.error(`Pedido ${pedido.codigo} cancelado com sucesso. A Farmácia Satélite foi notificada!`);
+      } else if (newStatus === "Em Separação") toast.info("Pedido marcado em separação.");
       else if (newStatus === "Separado") toast.success("Separação finalizada! Pedido pronto para entrega.");
       else if (newStatus === "Entregue") toast.success("Pedido entregue ao farmacêutico da satélite.");
       else if (newStatus === "Concluido") toast.success("Recebimento confirmado! Estoque da Satélite atualizado com sucesso!");
@@ -299,6 +394,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         return <Badge className="bg-orange-100 text-orange-800 border-orange-300 flex items-center gap-1"><Truck className="w-3 h-3" /> Entregue (Aguardando Conferência)</Badge>;
       case "Concluido":
         return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Concluído & Recebido</Badge>;
+      case "Cancelado":
+        return <Badge className="bg-red-100 text-red-800 border-red-300 flex items-center gap-1 font-bold"><Ban className="w-3 h-3 text-red-600" /> Cancelado</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -316,107 +413,213 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                 Solicitar Pedido à Farmácia Central
               </h2>
               <p className="text-xs text-slate-500">
-                Calcule a necessidade de medicamentos fixos por Ala e Período para reposição do estoque satélite.
+                Calcule a necessidade de medicamentos por Ala e Período com margem flexível de segurança para reposição do estoque satélite.
               </p>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Selector de Ala */}
-              <div className="w-[200px]">
-                <Label className="text-[11px] text-slate-500 font-semibold mb-1 block">Ala / Setor</Label>
-                <Select value={selectedAlaId} onValueChange={setSelectedAlaId}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue placeholder="Selecione a Ala..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as Alas</SelectItem>
-                    {alas.map(a => (
-                      <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Selector de Período de Dias */}
-              <div>
-                <Label className="text-[11px] text-slate-500 font-semibold mb-1 block">Dias de Suprimento</Label>
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 5, 7, 10].map(d => (
-                    <Button
-                      key={d}
-                      size="sm"
-                      variant={diasCalculo === d ? "default" : "outline"}
-                      onClick={() => setDiasCalculo(d)}
-                      className={cn("h-9 text-xs px-2.5", diasCalculo === d && "bg-blue-600 font-bold")}
-                    >
-                      {d}D
-                    </Button>
-                  ))}
-                  <Button
-                    size="sm"
-                    variant={diasCalculo === "custom" ? "default" : "outline"}
-                    onClick={() => setDiasCalculo("custom")}
-                    className={cn("h-9 text-xs px-2.5", diasCalculo === "custom" && "bg-blue-600 font-bold")}
+            {calculoNecessidade.length > 0 && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-600">Prioridade:</span>
+                  <select
+                    value={prioridadePedido}
+                    onChange={e => setPrioridadePedido(e.target.value)}
+                    className={`text-xs font-bold rounded-lg border px-2 py-1.5 outline-none ${
+                      prioridadePedido === "Emergência" 
+                        ? "bg-red-600 text-white border-red-700" 
+                        : prioridadePedido === "Urgente" 
+                          ? "bg-amber-500 text-white border-amber-600" 
+                          : "bg-white text-slate-700 border-slate-300"
+                    }`}
                   >
-                    Outro
+                    <option value="Normal">Normal</option>
+                    <option value="Urgente">⚠️ Urgente</option>
+                    <option value="Emergência">🚨 Emergência</option>
+                  </select>
+                </div>
+
+                <Button
+                  onClick={() => criarPedidoMutation.mutate()}
+                  disabled={criarPedidoMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-md h-9"
+                >
+                  <Send className="w-4 h-4" />
+                  {criarPedidoMutation.isPending ? "Enviando..." : "Fazer Pedido à Central"}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Painel de Controles e Parâmetros */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+            {/* Seletor de Ala */}
+            <div className="md:col-span-3">
+              <Label className="text-[11px] text-slate-500 font-semibold mb-1 block">Ala / Setor</Label>
+              <Select value={selectedAlaId} onValueChange={(val) => { setSelectedAlaId(val); setCustomQuantities({}); }}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione a Ala..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Alas</SelectItem>
+                  {alas.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Seletor de Dias */}
+            <div className="md:col-span-4">
+              <Label className="text-[11px] text-slate-500 font-semibold mb-1 block">Dias de Suprimento</Label>
+              <div className="flex items-center gap-1 flex-wrap">
+                {[1, 2, 3, 5, 7, 10].map(d => (
+                  <Button
+                    key={d}
+                    size="sm"
+                    variant={diasCalculo === d ? "default" : "outline"}
+                    onClick={() => { setDiasCalculo(d); setCustomQuantities({}); }}
+                    className={cn("h-9 text-xs px-2.5", diasCalculo === d && "bg-blue-600 font-bold")}
+                  >
+                    {d}D
                   </Button>
-                  {diasCalculo === "custom" && (
+                ))}
+                <Button
+                  size="sm"
+                  variant={diasCalculo === "custom" ? "default" : "outline"}
+                  onClick={() => { setDiasCalculo("custom"); setCustomQuantities({}); }}
+                  className={cn("h-9 text-xs px-2.5", diasCalculo === "custom" && "bg-blue-600 font-bold")}
+                >
+                  Outro
+                </Button>
+                {diasCalculo === "custom" && (
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    placeholder="Dias"
+                    value={customDias}
+                    onChange={(e) => { setCustomDias(e.target.value); setCustomQuantities({}); }}
+                    className="w-16 h-9 text-xs"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Seletor de Margem de Segurança (Altas e Admissões) */}
+            <div className="md:col-span-5">
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-[11px] text-slate-700 dark:text-slate-200 font-bold flex items-center gap-1">
+                  <Percent className="w-3.5 h-3.5 text-emerald-600" />
+                  Margem de Segurança (Altas / Admissões)
+                </Label>
+                {effectiveMargem > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                    +{effectiveMargem}% ativo
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {[0, 10, 20, 25, 30].map(m => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={margemPercentual === m ? "default" : "outline"}
+                    onClick={() => { setMargemPercentual(m); setCustomQuantities({}); }}
+                    className={cn(
+                      "h-9 text-xs px-2.5",
+                      margemPercentual === m 
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm" 
+                        : "border-slate-200 hover:border-emerald-300"
+                    )}
+                  >
+                    {m === 0 ? "0% (Exato)" : `+${m}%`}
+                  </Button>
+                ))}
+                <Button
+                  size="sm"
+                  variant={margemPercentual === "custom" ? "default" : "outline"}
+                  onClick={() => { setMargemPercentual("custom"); setCustomQuantities({}); }}
+                  className={cn(
+                    "h-9 text-xs px-2.5",
+                    margemPercentual === "custom" 
+                      ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold" 
+                      : "border-slate-200"
+                  )}
+                >
+                  Outro %
+                </Button>
+                {margemPercentual === "custom" && (
+                  <div className="flex items-center gap-1">
                     <Input
                       type="number"
-                      min="1"
-                      max="90"
-                      placeholder="Dias"
-                      value={customDias}
-                      onChange={(e) => setCustomDias(e.target.value)}
-                      className="w-16 h-9 text-xs"
+                      min="0"
+                      max="200"
+                      placeholder="%"
+                      value={customMargem}
+                      onChange={(e) => { setCustomMargem(e.target.value); setCustomQuantities({}); }}
+                      className="w-16 h-9 text-xs font-bold text-center"
                     />
-                  )}
-                </div>
+                    <span className="text-xs font-bold text-slate-500">%</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Tabela de Cálculo da Necessidade */}
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                <Package className="w-4 h-4 text-blue-600" />
-                Itens Necessários ({calculoNecessidade.length} medicamentos)
+          {/* Linha de Configurações Extras (Abater Estoque Atual) */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-800 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={descontarEstoque}
+                onChange={(e) => { setDescontarEstoque(e.target.checked); setCustomQuantities({}); }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                Abater estoque já existente na Farmácia Satélite da quantidade a pedir
               </span>
+              <span className="text-[11px] text-slate-500 hidden md:inline">
+                (ex: precisa de 63, já tem 10 no estoque satélite → sugere pedir 53)
+              </span>
+            </label>
 
-              {calculoNecessidade.length > 0 && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold text-slate-600">Prioridade:</span>
-                    <select
-                      value={prioridadePedido}
-                      onChange={e => setPrioridadePedido(e.target.value)}
-                      className={`text-xs font-bold rounded-lg border px-2 py-1.5 outline-none ${
-                        prioridadePedido === "Emergência" 
-                          ? "bg-red-600 text-white border-red-700" 
-                          : prioridadePedido === "Urgente" 
-                            ? "bg-amber-500 text-white border-amber-600" 
-                            : "bg-white text-slate-700 border-slate-300"
-                      }`}
-                    >
-                      <option value="Normal">Normal</option>
-                      <option value="Urgente">⚠️ Urgente</option>
-                      <option value="Emergência">🚨 Emergência</option>
-                    </select>
-                  </div>
+            {Object.keys(customQuantities).length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCustomQuantities({})}
+                className="h-7 text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Redefinir edições manuais
+              </Button>
+            )}
+          </div>
 
-                  <Button
-                    onClick={() => criarPedidoMutation.mutate()}
-                    disabled={criarPedidoMutation.isPending}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-md"
-                  >
-                    <Send className="w-4 h-4" />
-                    {criarPedidoMutation.isPending ? "Enviando..." : "Fazer Pedido à Central"}
-                  </Button>
-                </div>
-              )}
+          {/* Cards de Resumo do Cálculo */}
+          {calculoNecessidade.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-500">Medicamentos</p>
+                <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalItens} <span className="text-xs font-normal text-slate-500">itens</span></p>
+              </div>
+              <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-500">Consumo Prescrito ({effectiveDays}D)</p>
+                <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalPrescrito} <span className="text-xs font-normal text-slate-500">un</span></p>
+              </div>
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40">
+                <p className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Reserva de Segurança ({effectiveMargem}%)</p>
+                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">+{resumoPedido.totalMargemExtra} <span className="text-xs font-normal text-emerald-600">un</span></p>
+              </div>
+              <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200/70 dark:border-blue-900/40">
+                <p className="text-[10px] uppercase font-bold text-blue-700 dark:text-blue-400">Total a Solicitar</p>
+                <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{resumoPedido.totalSolicitado} <span className="text-xs font-normal text-blue-600">un</span></p>
+              </div>
             </div>
+          )}
 
+          {/* Tabela de Itens da Necessidade */}
+          <div className="space-y-4">
             <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
               <Table>
                 <TableHeader className="bg-slate-100 dark:bg-slate-800">
@@ -424,25 +627,33 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                     <TableHead className="w-16">Cód</TableHead>
                     <TableHead>Medicamento / Concentração</TableHead>
                     <TableHead className="text-center">Consumo Diário (1D)</TableHead>
-                    <TableHead className="text-center bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-300 font-bold">
-                      Calculado ({effectiveDays} Dias)
+                    <TableHead className="text-center">
+                      Prescrição ({effectiveDays}D)
                     </TableHead>
-                    <TableHead className="text-center w-36">Quantidade a Pedir</TableHead>
+                    {effectiveMargem > 0 && (
+                      <TableHead className="text-center bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold">
+                        Com Margem (+{effectiveMargem}%)
+                      </TableHead>
+                    )}
                     <TableHead className="text-center">Estoque Satélite</TableHead>
+                    <TableHead className="text-center bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-300 font-bold w-40">
+                      Quantidade a Pedir
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {calculoNecessidade.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-10 text-slate-500">
+                      <TableCell colSpan={effectiveMargem > 0 ? 7 : 6} className="text-center py-10 text-slate-500">
                         Nenhuma necessidade calculada para esta Ala e Período.
                       </TableCell>
                     </TableRow>
                   ) : (
                     calculoNecessidade.map(item => {
-                      const currentVal = customQuantities[item.medicamentoId] !== undefined 
+                      const isCustom = customQuantities[item.medicamentoId] !== undefined;
+                      const currentVal = isCustom 
                         ? customQuantities[item.medicamentoId] 
-                        : item.qtdCalculada;
+                        : item.qtdSugerida;
 
                       return (
                         <TableRow key={item.medicamentoId} className="hover:bg-slate-50/80">
@@ -454,23 +665,49 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                           <TableCell className="text-center font-mono font-semibold">
                             {item.qtdDiaria} un/dia
                           </TableCell>
-                          <TableCell className="text-center font-mono font-black text-blue-700 dark:text-blue-400 text-base bg-blue-50/30 dark:bg-blue-950/20">
+                          <TableCell className="text-center font-mono font-bold text-slate-700 dark:text-slate-300">
                             {item.qtdCalculada} un
                           </TableCell>
-                          <TableCell className="text-center">
-                            <Input
-                              type="number"
-                              min="1"
-                              value={currentVal}
-                              onChange={(e) => setCustomQuantities({
-                                ...customQuantities,
-                                [item.medicamentoId]: e.target.value
-                              })}
-                              className="w-24 text-center font-bold font-mono mx-auto h-8 text-sm bg-white"
-                            />
-                          </TableCell>
+                          {effectiveMargem > 0 && (
+                            <TableCell className="text-center font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20">
+                              <span>{item.qtdComMargem} un</span>
+                              <span className="text-[10px] text-emerald-600 block">(+{item.qtdMargemExtra})</span>
+                            </TableCell>
+                          )}
                           <TableCell className="text-center font-mono font-bold text-slate-600">
-                            {item.estoqueSatelite} un
+                            <div>{item.estoqueSatelite} un</div>
+                            {descontarEstoque && (
+                              <span className="text-[10px] text-blue-600 font-semibold block">
+                                -{Math.min(item.estoqueSatelite, item.qtdComMargem)} abatido
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center bg-blue-50/20 dark:bg-blue-950/10">
+                            <div className="flex flex-col items-center">
+                              <Input
+                                type="number"
+                                min="0"
+                                value={currentVal}
+                                onChange={(e) => setCustomQuantities({
+                                  ...customQuantities,
+                                  [item.medicamentoId]: e.target.value
+                                })}
+                                className={cn(
+                                  "w-24 text-center font-bold font-mono mx-auto h-8 text-sm bg-white",
+                                  isCustom && "border-amber-500 focus:ring-amber-500 text-amber-900"
+                                )}
+                              />
+                              {isCustom && (
+                                <span className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                                  Ajustado manual (Sugestão: {item.qtdSugerida})
+                                </span>
+                              )}
+                              {!isCustom && currentVal === 0 && (
+                                <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                  (Estoque suficiente)
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -572,7 +809,19 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                       <TableCell className="text-xs text-slate-600">
                         {p.data_solicitacao ? format(new Date(p.data_solicitacao), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
                       </TableCell>
-                      <TableCell className="text-center font-mono font-bold">{p.dias_calculados}D</TableCell>
+                      <TableCell className="text-center font-mono">
+                        <div className="font-bold">{p.dias_calculados}D</div>
+                        {p.margem_seguranca > 0 && (
+                          <span className="inline-block mt-0.5 px-1 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                            +{p.margem_seguranca}%
+                          </span>
+                        )}
+                        {p.descontar_estoque === 1 && (
+                          <span className="block text-[9px] text-blue-600 font-semibold">
+                            Est. Abatido
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-center font-mono">{itensArr.length} item(s)</TableCell>
                       <TableCell className="text-center">{getStatusBadge(p.status)}</TableCell>
                       <TableCell className="text-right">
@@ -608,11 +857,12 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           onOpenChange={setModalOpen}
           pedido={selectedPedido}
           mode={mode}
-          onUpdateStatus={(newStatus, updatedItens) => {
+          onUpdateStatus={(newStatus, updatedItens, motivoCancelamento) => {
             updatePedidoMutation.mutate({
               pedido: selectedPedido,
               newStatus,
-              updatedItens
+              updatedItens,
+              motivoCancelamento
             });
           }}
           isPending={updatePedidoMutation.isPending}
@@ -623,7 +873,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 }
 
 // ─── SUBCOMPONENTE MODAL DE DETALHES & CONFERÊNCIA ───────────────────────────
-function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending }) {
+export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending }) {
   const [itensState, setItensState] = useState(() => {
     const rawItens = pedido.itens || [];
     return rawItens.map(i => ({
@@ -631,6 +881,10 @@ function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, i
       qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida
     }));
   });
+
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [motivoPreset, setMotivoPreset] = useState("Medicamento em falta / Desabastecimento na Central");
+  const [motivoCustom, setMotivoCustom] = useState("");
 
   const handleToggleCheck = (index, field) => {
     const next = [...itensState];
@@ -675,17 +929,47 @@ function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, i
                 <PackageCheck className="w-5 h-5 text-indigo-600" />
                 Pedido {pedido.codigo} — {pedido.ala_nome}
               </DialogTitle>
-              <DialogDescription className="text-xs">
-                Solicitado em {pedido.data_solicitacao ? format(new Date(pedido.data_solicitacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "-"} para {pedido.dias_calculados} dia(s).
+              <DialogDescription className="text-xs flex flex-wrap items-center gap-2 mt-1">
+                <span>Solicitado em {pedido.data_solicitacao ? format(new Date(pedido.data_solicitacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "-"} para {pedido.dias_calculados} dia(s).</span>
+                {pedido.margem_seguranca > 0 && (
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 font-bold py-0.5">
+                    +{pedido.margem_seguranca}% Margem de Segurança
+                  </Badge>
+                )}
+                {pedido.descontar_estoque === 1 && (
+                  <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-300 font-semibold py-0.5">
+                    Estoque Satélite Abatido
+                  </Badge>
+                )}
+                {pedido.observacao && (
+                  <span className="text-slate-500 font-medium ml-1">Obs: {pedido.observacao}</span>
+                )}
               </DialogDescription>
             </div>
-            <Badge variant="outline" className="text-sm font-bold">
+            <Badge variant="outline" className={`text-sm font-bold ${pedido.status === 'Cancelado' ? 'border-red-400 bg-red-50 text-red-700' : ''}`}>
               Status: {pedido.status}
             </Badge>
           </div>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
+          {/* Banner de Pedido Cancelado */}
+          {pedido.status === "Cancelado" && (
+            <div className="bg-red-50 border border-red-200 p-3.5 rounded-xl text-xs text-red-900 flex items-start gap-2.5 shadow-sm">
+              <Ban className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-sm text-red-800">Pedido Cancelado</p>
+                <p className="text-red-700">
+                  <strong>Motivo:</strong> {pedido.motivo_cancelamento || "Cancelado pelo Estoque Central."}
+                </p>
+                {pedido.data_cancelamento && (
+                  <p className="text-[11px] text-red-500">
+                    Cancelado em {format(new Date(pedido.data_cancelamento), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           {/* Central Workflow Instructions */}
           {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") && (
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex justify-between items-center text-xs text-blue-900">
@@ -755,6 +1039,21 @@ function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, i
                   <TableCell>
                     <p className="font-bold text-slate-900">{item.medicamento_nome}</p>
                     <p className="text-xs text-slate-500">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
+                    {item.qtd_prescrita !== undefined && (
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Prescrição: <span className="font-semibold">{item.qtd_prescrita} un</span>
+                        {item.margem_percentual > 0 && (
+                          <span className="text-emerald-600 font-bold ml-1">
+                            (+{item.margem_percentual}% margem: +{item.qtd_margem_extra || Math.ceil(item.qtd_prescrita * (item.margem_percentual / 100))} un)
+                          </span>
+                        )}
+                        {item.descontou_estoque === 1 && (
+                          <span className="text-blue-600 font-medium ml-1">
+                            (-{item.estoque_satelite_momento || 0} em estoque)
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </TableCell>
 
                   <TableCell className="text-center font-mono font-bold text-slate-700">
@@ -819,10 +1118,25 @@ function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, i
           </Table>
         </div>
 
-        <DialogFooter className="border-t pt-3 flex justify-between items-center w-full">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Fechar
-          </Button>
+        <DialogFooter className="border-t pt-3 flex flex-wrap justify-between items-center w-full gap-2">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Fechar
+            </Button>
+
+            {/* BOTAO CANCELAR PEDIDO */}
+            {pedido.status !== "Concluido" && pedido.status !== "Cancelado" && (
+              <Button
+                variant="outline"
+                onClick={() => setIsCancelDialogOpen(true)}
+                disabled={isPending}
+                className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold gap-1.5"
+              >
+                <Ban className="w-4 h-4" />
+                Cancelar Pedido
+              </Button>
+            )}
+          </div>
 
           <div className="flex gap-2">
             {/* CENTRAL ACTIONS */}
@@ -881,6 +1195,93 @@ function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, i
             )}
           </div>
         </DialogFooter>
+
+        {/* DIALOG DE CONFIRMAÇÃO E MOTIVO DE CANCELAMENTO */}
+        <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+          <DialogContent className="max-w-md bg-white">
+            <DialogHeader>
+              <DialogTitle className="text-red-700 flex items-center gap-2 text-base font-bold">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                Cancelar Pedido {pedido.codigo}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Informe o motivo do cancelamento deste pedido. Uma notificação será enviada imediatamente para a Farmácia Satélite.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Motivo do Cancelamento *</Label>
+                <Select value={motivoPreset} onValueChange={setMotivoPreset}>
+                  <SelectTrigger className="text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Medicamento em falta / Desabastecimento na Central">
+                      Medicamento em falta / Desabastecimento na Central
+                    </SelectItem>
+                    <SelectItem value="Lote com validade próxima / Divergência de estoque">
+                      Lote com validade próxima / Divergência de estoque
+                    </SelectItem>
+                    <SelectItem value="Prescrição médica suspensa / Paciente em alta">
+                      Prescrição médica suspensa / Paciente em alta
+                    </SelectItem>
+                    <SelectItem value="Pedido duplicado / Solicitado incorretamente">
+                      Pedido duplicado / Solicitado incorretamente
+                    </SelectItem>
+                    <SelectItem value="Substituição terapêutica indicada pelo RT">
+                      Substituição terapêutica indicada pelo RT
+                    </SelectItem>
+                    <SelectItem value="Outro">
+                      Outro motivo (especificar abaixo)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">
+                  {motivoPreset === "Outro" ? "Descreva o motivo detalhado *" : "Observação / Justificativa adicional (opcional)"}
+                </Label>
+                <Textarea
+                  placeholder="Detalhes adicionais para a equipe da farmácia..."
+                  value={motivoCustom}
+                  onChange={(e) => setMotivoCustom(e.target.value)}
+                  className="text-xs min-h-[80px] bg-white"
+                  required={motivoPreset === "Outro"}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCancelDialogOpen(false)}
+              >
+                Voltar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || (motivoPreset === "Outro" && !motivoCustom.trim())}
+                onClick={() => {
+                  const motivoFinal = motivoPreset === "Outro" 
+                    ? motivoCustom.trim() 
+                    : (motivoCustom.trim() ? `${motivoPreset} - ${motivoCustom.trim()}` : motivoPreset);
+                  
+                  onUpdateStatus("Cancelado", itensState, motivoFinal);
+                  setIsCancelDialogOpen(false);
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold gap-1.5 shadow-sm"
+              >
+                <Ban className="w-4 h-4" />
+                Confirmar Cancelamento
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

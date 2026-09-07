@@ -91,7 +91,7 @@ export const PAGES = {
   "Satelite": Satelite,
   "SateliteMovimentacoes": SateliteMovimentacoes,
   "ResponsavelTecnico": ResponsavelTecnico,
-  "SatelitePortaria": SatelitePortaria,
+  "SatelitePortaria": LivroRegistro,
   "SateliteEstoque": SateliteEstoque,
   "CarrinhoParada": CarrinhoParada,
   "PacientesMedicao": PacientesMedicao,

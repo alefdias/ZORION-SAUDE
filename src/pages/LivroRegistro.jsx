@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,13 +25,15 @@ import {
   Building,
   Calendar,
   RefreshCw,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Filter,
+  CreditCard
 } from "lucide-react";
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
+import { isPsicotropico, getPortaria344List, getPortaria344CategoryKey } from "@/utils/mavUtils";
 
 export default function LivroRegistro() {
   const location = useLocation();
@@ -42,6 +44,9 @@ export default function LivroRegistro() {
 
   // Active Main Tab: 'livro_diario' | 'bmpo_bspo' | 'rastreabilidade'
   const [activeTab, setActiveTab] = useState("livro_diario");
+
+  // Filtro de Categoria da Portaria 344 para o Livro: 'psicotropicos' | 'controle_especial' | 'entorpecentes' | 'imunossupressores' | 'adiantamento' | 'todos'
+  const [filtroCategoria344, setFiltroCategoria344] = useState("psicotropicos");
 
   // Selected Medication for Tab 1 (Livro Diário)
   const [selectedLivroMedId, setSelectedLivroMedId] = useState(initialMedId);
@@ -65,103 +70,219 @@ export default function LivroRegistro() {
   const [searchLoteQuery, setSearchLoteQuery] = useState("");
   const [selectedLoteNumero, setSelectedLoteNumero] = useState("");
 
-  // Current logged user
-  const storedUser = JSON.parse(localStorage.getItem("pharma_user") || "null");
-  const currentUser = storedUser || { full_name: "Farmacêutico Responsável", crf: "CRF-SP 45.291" };
+  // Current logged user safely parsed
+  let currentUser = { full_name: "Farmacêutico Responsável", crf: "CRF-SP 45.291" };
+  try {
+    const rawUser = localStorage.getItem("pharma_user");
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed && typeof parsed === "object") {
+        currentUser = {
+          full_name: parsed.full_name || parsed.nome || parsed.login || "Farmacêutico Responsável",
+          crf: parsed.crf || "CRF-SP 45.291"
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("Erro ao ler pharma_user:", e);
+  }
 
-  // Hospital info from localStorage or defaults
+  // Hospital info - Dados oficiais CAIS Clemente Ferreira (Secretaria de Estado da Saúde)
+  const rawHospitalCnpj = localStorage.getItem("hospital_cnpj");
+  const hospitalCnpj = (rawHospitalCnpj && !rawHospitalCnpj.includes("12.345.678"))
+    ? rawHospitalCnpj
+    : "46.374.500/0054-04";
+
   const hospitalInfo = {
-    nome: localStorage.getItem("hospital_nome") || "HOSPITAL SANTA ISABEL / REDE ZORION",
-    cnpj: localStorage.getItem("hospital_cnpj") || "12.345.678/0001-90",
+    nome: "CAIS CLEMENTE FERREIRA",
+    razao_social: "SECRETARIA DE ESTADO DA SAÚDE",
+    nome_fantasia: "CAIS-CLEMENTE FERREIRA",
+    cnpj: hospitalCnpj,
     unidade: "FARMÁCIA CENTRAL & SATÉLITE",
-    cidade: localStorage.getItem("hospital_cidade") || "São Paulo - SP",
+    cidade: "Lins - SP",
+    natureza_juridica: "Órgão Público do Poder Executivo Estadual (102-3)",
+    situacao: "ATIVA",
+    data_abertura: "26/04/1985",
+    tipo_unidade: "FILIAL",
     rt_nome: currentUser.full_name,
     rt_crf: currentUser.crf || "45.291-SP",
-    diretor_nome: localStorage.getItem("hospital_diretor_nome") || "Dr. Roberto Silveira Martins",
-    diretor_crm: localStorage.getItem("hospital_diretor_crm") || "CRM-SP 102.482"
+    diretor_nome: localStorage.getItem("hospital_diretor_nome") || "Diretoria Técnica de Saúde",
+    diretor_crm: localStorage.getItem("hospital_diretor_crm") || "CRM-SP"
+  };
+
+  // Garante atualização dos dados reais no localStorage
+  useEffect(() => {
+    localStorage.setItem("hospital_nome", "CAIS CLEMENTE FERREIRA");
+    localStorage.setItem("hospital_cnpj", "46.374.500/0054-04");
+    localStorage.setItem("hospital_razao_social", "Secretaria de Estado da Saúde");
+    localStorage.setItem("hospital_cidade", "Lins - SP");
+  }, []);
+
+  // Safe date helper
+  const safeFormatDate = (dateVal, formatPattern = "dd/MM/yyyy HH:mm", fallback = "-") => {
+    if (!dateVal) return fallback;
+    try {
+      let d;
+      if (dateVal instanceof Date) {
+        d = dateVal;
+      } else {
+        d = parseISO(String(dateVal));
+        if (isNaN(d.getTime())) {
+          d = new Date(dateVal);
+        }
+      }
+      if (isNaN(d.getTime())) return String(dateVal);
+      return format(d, formatPattern, { locale: ptBR });
+    } catch (e) {
+      return String(dateVal) || fallback;
+    }
+  };
+
+  const getSafeDateObj = (dateVal) => {
+    if (!dateVal) return new Date();
+    try {
+      let d = parseISO(String(dateVal));
+      if (isNaN(d.getTime())) {
+        d = new Date(dateVal);
+      }
+      if (isNaN(d.getTime())) return new Date();
+      return d;
+    } catch {
+      return new Date();
+    }
   };
 
   // Queries
-  const { data: medicamentos = [] } = useQuery({
+  const { data: medicamentosRaw = [] } = useQuery({
     queryKey: ['medicamentos'],
     queryFn: () => db.entities.Medicamento.list(),
   });
 
-  const { data: saidasLivro = [] } = useQuery({
+  const { data: saidasLivroRaw = [] } = useQuery({
     queryKey: ['saidas', 'livro344'],
     queryFn: () => db.entities.Saida.list('-created_date'),
+    refetchInterval: 3000
   });
 
-  const { data: entradasLivro = [] } = useQuery({
+  const { data: entradasLivroRaw = [] } = useQuery({
     queryKey: ['entradas', 'livro344'],
     queryFn: () => db.entities.Entrada.list('-created_date'),
+    refetchInterval: 3000
   });
 
-  const { data: lotes = [] } = useQuery({
+  const { data: lotesRaw = [] } = useQuery({
     queryKey: ['lotes', 'livro344'],
     queryFn: () => db.entities.Lote.list('-created_date'),
   });
 
+  const medicamentos = useMemo(() => Array.isArray(medicamentosRaw) ? medicamentosRaw : [], [medicamentosRaw]);
+  const saidasLivro = useMemo(() => Array.isArray(saidasLivroRaw) ? saidasLivroRaw : [], [saidasLivroRaw]);
+  const entradasLivro = useMemo(() => Array.isArray(entradasLivroRaw) ? entradasLivroRaw : [], [entradasLivroRaw]);
+  const lotes = useMemo(() => Array.isArray(lotesRaw) ? lotesRaw : [], [lotesRaw]);
+
+  // Formatação padrão brasileira (separador de milhar com ponto: 28.774, 300.000, 2.000, etc.)
+  const formatQtd = (val) => {
+    if (val === undefined || val === null || val === '') return '0';
+    const num = Number(val);
+    if (isNaN(num)) return String(val);
+    return num.toLocaleString('pt-BR');
+  };
+
+  // Helper rigoroso para checar se o medicamento está ativo como Adiantamento
+  const isAdiantamentoMed = (m) => {
+    if (!m) return false;
+    const val = m.is_adiantamento;
+    return val === true || val === 1 || val === "1" || val === "true" || m.origem === "Adiantamento";
+  };
+
   // Filter only controlled/psychotropic medications
   const medicamentosControlados = useMemo(() => {
-    return medicamentos.filter(m => isPsicotropico(m) || m.portaria_344);
+    return medicamentos.filter(m => m && (isPsicotropico(m) || m.portaria_344));
   }, [medicamentos]);
 
-  // Set default selected medication if none selected yet
-  const effectiveSelectedMedId = selectedLivroMedId || (medicamentosControlados.length > 0 ? medicamentosControlados[0].id : "");
-  const selectedMed = medicamentos.find(m => m.id === effectiveSelectedMedId);
+  // Contagens de medicamentos por categoria
+  const contagensCategorias = useMemo(() => {
+    const counts = {
+      psicotropicos: 0,
+      controle_especial: 0,
+      entorpecentes: 0,
+      imunossupressores: 0,
+      adiantamento: 0,
+      todos: medicamentosControlados.length
+    };
+    medicamentosControlados.forEach(m => {
+      if (!m) return;
+      const cat = getPortaria344CategoryKey(m);
+      if (counts[cat] !== undefined) counts[cat]++;
+      if (isAdiantamentoMed(m)) counts.adiantamento++;
+    });
+    return counts;
+  }, [medicamentosControlados]);
+
+  // Medicamentos filtrados pela categoria selecionada
+  const medicamentosFiltrados = useMemo(() => {
+    let list = medicamentosControlados;
+    if (filtroCategoria344 === "psicotropicos") {
+      list = medicamentosControlados.filter(m => getPortaria344CategoryKey(m) === "psicotropicos");
+    } else if (filtroCategoria344 === "controle_especial") {
+      list = medicamentosControlados.filter(m => getPortaria344CategoryKey(m) === "controle_especial");
+    } else if (filtroCategoria344 === "entorpecentes") {
+      list = medicamentosControlados.filter(m => getPortaria344CategoryKey(m) === "entorpecentes");
+    } else if (filtroCategoria344 === "imunossupressores") {
+      list = medicamentosControlados.filter(m => getPortaria344CategoryKey(m) === "imunossupressores");
+    } else if (filtroCategoria344 === "adiantamento") {
+      list = medicamentosControlados.filter(isAdiantamentoMed);
+    }
+    return [...list].sort((a, b) => (a?.nome || "").localeCompare(b?.nome || ""));
+  }, [medicamentosControlados, filtroCategoria344]);
+
+  // Set default selected medication if none selected yet or if current is not in filtered list
+  const effectiveSelectedMedId = useMemo(() => {
+    if (selectedLivroMedId && medicamentosFiltrados.some(m => String(m.id) === String(selectedLivroMedId))) {
+      return String(selectedLivroMedId);
+    }
+    return medicamentosFiltrados.length > 0 && medicamentosFiltrados[0]?.id ? String(medicamentosFiltrados[0].id) : "";
+  }, [selectedLivroMedId, medicamentosFiltrados]);
+
+  const selectedMed = useMemo(() => {
+    return medicamentos.find(m => String(m.id) === String(effectiveSelectedMedId)) || null;
+  }, [medicamentos, effectiveSelectedMedId]);
 
   // Movements for Tab 1 (Livro Diário Específico)
   const historicoMovimentos = useMemo(() => {
     if (!effectiveSelectedMedId) return [];
 
     const entradas = entradasLivro
-      .filter(e => e.medicamento_id === effectiveSelectedMedId && (e.quantidade || 0) > 0)
-      .map(e => {
-        let parsedDate = new Date();
-        try {
-          const dateStr = e.data_entrada || e.created_at || new Date().toISOString();
-          parsedDate = parseISO(dateStr);
-          if (isNaN(parsedDate)) parsedDate = new Date();
-        } catch {
-          parsedDate = new Date();
-        }
-        return {
-          ...e,
-          tipo: 'ENTRADA',
-          dataObj: parsedDate
-        };
-      });
+      .filter(e => String(e.medicamento_id) === String(effectiveSelectedMedId) && (Number(e.quantidade) || 0) > 0)
+      .map(e => ({
+        ...e,
+        tipo: 'ENTRADA',
+        dataObj: getSafeDateObj(e.data_entrada || e.created_at)
+      }));
 
     const saidas = saidasLivro
-      .filter(s => s.medicamento_id === effectiveSelectedMedId && (s.quantidade || 0) > 0)
+      .filter(s => String(s.medicamento_id) === String(effectiveSelectedMedId) && (Number(s.quantidade) || 0) > 0)
       .map(s => {
-        let parsedDate = new Date();
-        try {
-          const dateStr = s.data_saida || s.created_at || new Date().toISOString();
-          parsedDate = parseISO(dateStr);
-          if (isNaN(parsedDate)) parsedDate = new Date();
-        } catch {
-          parsedDate = new Date();
-        }
-        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra') || (s.motivo || '').toLowerCase().includes('perda');
+        const motivoStr = String(s.motivo || "").toLowerCase();
+        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
         return {
           ...s,
           tipo: isPerda ? 'PERDA' : 'SAIDA',
-          dataObj: parsedDate
+          dataObj: getSafeDateObj(s.data_saida || s.created_at)
         };
       });
 
     const todos = [...entradas, ...saidas].sort((a, b) => {
-      const timeA = a.dataObj.getTime();
-      const timeB = b.dataObj.getTime();
+      const timeA = a.dataObj?.getTime?.() || 0;
+      const timeB = b.dataObj?.getTime?.() || 0;
       return timeA - timeB;
     });
 
     let saldoAtual = 0;
     return todos.map(mov => {
-      if (mov.tipo === 'ENTRADA') saldoAtual += (mov.quantidade || 0);
-      else saldoAtual -= (mov.quantidade || 0);
+      const qtd = Number(mov.quantidade) || 0;
+      if (mov.tipo === 'ENTRADA') saldoAtual += qtd;
+      else saldoAtual -= qtd;
       return { ...mov, saldo: saldoAtual };
     });
   }, [effectiveSelectedMedId, entradasLivro, saidasLivro]);
@@ -194,6 +315,7 @@ export default function LivroRegistro() {
     // Iterate through all controlled medications
     return medicamentosControlados
       .filter(med => {
+        if (!med) return false;
         if (bmpoListaFiltro === "TODAS") return true;
         const lista = getPortaria344List(med);
         return lista.includes(bmpoListaFiltro);
@@ -201,44 +323,46 @@ export default function LivroRegistro() {
       .map(med => {
         // Entradas no período
         const entradasNoPeriodo = entradasLivro.filter(e => {
-          if (e.medicamento_id !== med.id) return false;
-          const dt = parseISO(e.data_entrada || e.created_at || "");
+          if (String(e.medicamento_id) !== String(med.id)) return false;
+          const dt = getSafeDateObj(e.data_entrada || e.created_at);
           const t = dt.getTime();
-          return !isNaN(t) && t >= startTs && t <= endTs;
+          return t >= startTs && t <= endTs;
         });
-        const qtdEntradas = entradasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+        const qtdEntradas = entradasNoPeriodo.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
         // Saídas comuns no período
         const saidasNoPeriodo = saidasLivro.filter(s => {
-          if (s.medicamento_id !== med.id) return false;
-          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra');
+          if (String(s.medicamento_id) !== String(med.id)) return false;
+          const motivoStr = String(s.motivo || "").toLowerCase();
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
           if (isPerda) return false;
-          const dt = parseISO(s.data_saida || s.created_at || "");
+          const dt = getSafeDateObj(s.data_saida || s.created_at);
           const t = dt.getTime();
-          return !isNaN(t) && t >= startTs && t <= endTs;
+          return t >= startTs && t <= endTs;
         });
-        const qtdSaidas = saidasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+        const qtdSaidas = saidasNoPeriodo.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
         // Perdas no período
         const perdasNoPeriodo = saidasLivro.filter(s => {
-          if (s.medicamento_id !== med.id) return false;
-          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra');
+          if (String(s.medicamento_id) !== String(med.id)) return false;
+          const motivoStr = String(s.motivo || "").toLowerCase();
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
           if (!isPerda) return false;
-          const dt = parseISO(s.data_saida || s.created_at || "");
+          const dt = getSafeDateObj(s.data_saida || s.created_at);
           const t = dt.getTime();
-          return !isNaN(t) && t >= startTs && t <= endTs;
+          return t >= startTs && t <= endTs;
         });
-        const qtdPerdas = perdasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+        const qtdPerdas = perdasNoPeriodo.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
         // Saldo final atual e cálculo do estoque inicial
-        const estoqueFinal = (med.estoque_atual || 0) + (med.estoque_satelite || 0);
+        const estoqueFinal = (Number(med.estoque_atual) || 0) + (Number(med.estoque_satelite) || 0);
         // Estoque Inicial = Estoque Final - Entradas + Saídas + Perdas
         const estoqueInicial = Math.max(0, estoqueFinal - qtdEntradas + qtdSaidas + qtdPerdas);
 
         return {
           id: med.id,
           codigo: med.codigo || "P344",
-          nome: med.nome,
+          nome: med.nome || "Sem Nome",
           concentracao: med.concentracao || "-",
           apresentacao: med.apresentacao || med.unidade_medida || "UN",
           lista: getPortaria344List(med),
@@ -255,10 +379,13 @@ export default function LivroRegistro() {
   // All unique batch numbers available in system
   const allBatchNumbers = useMemo(() => {
     const lotesSet = new Set();
-    lotes.forEach(l => { if (l.numero_lote) lotesSet.add(l.numero_lote); });
-    entradasLivro.forEach(e => { if (e.numero_lote) lotesSet.add(e.numero_lote); });
-    saidasLivro.forEach(s => { if (s.numero_lote && s.numero_lote !== "ALTA" && s.numero_lote !== "DESCARTE") lotesSet.add(s.numero_lote); });
-    return Array.from(lotesSet).sort();
+    lotes.forEach(l => { if (l?.numero_lote) lotesSet.add(String(l.numero_lote).trim()); });
+    entradasLivro.forEach(e => { if (e?.numero_lote) lotesSet.add(String(e.numero_lote).trim()); });
+    saidasLivro.forEach(s => {
+      const n = String(s?.numero_lote || "").trim();
+      if (n && n !== "ALTA" && n !== "DESCARTE") lotesSet.add(n);
+    });
+    return Array.from(lotesSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [lotes, entradasLivro, saidasLivro]);
 
   const activeLoteNumber = selectedLoteNumero || (allBatchNumbers.length > 0 ? allBatchNumbers[0] : "");
@@ -266,42 +393,58 @@ export default function LivroRegistro() {
   const loteTraceData = useMemo(() => {
     if (!activeLoteNumber) return null;
 
-    const loteObj = lotes.find(l => l.numero_lote === activeLoteNumber);
-    const entradas = entradasLivro.filter(e => e.numero_lote === activeLoteNumber);
-    const saidas = saidasLivro.filter(s => s.numero_lote === activeLoteNumber);
+    const activeLoteStr = String(activeLoteNumber).trim();
+    const loteObj = lotes.find(l => String(l.numero_lote || "").trim() === activeLoteStr);
+    const entradas = entradasLivro.filter(e => String(e.numero_lote || "").trim() === activeLoteStr);
+    const saidas = saidasLivro.filter(s => String(s.numero_lote || "").trim() === activeLoteStr);
 
     // Associated medication
     const medId = loteObj?.medicamento_id || entradas[0]?.medicamento_id || saidas[0]?.medicamento_id;
-    const med = medicamentos.find(m => m.id === medId) || { nome: entradas[0]?.medicamento_nome || saidas[0]?.medicamento_nome || "Medicamento" };
+    const med = medicamentos.find(m => String(m.id) === String(medId)) || {
+      nome: entradas[0]?.medicamento_nome || saidas[0]?.medicamento_nome || "Medicamento"
+    };
 
     // Total purchased/entered
-    const totalEntrada = entradas.reduce((acc, cur) => acc + (cur.quantidade || 0), 0) || (loteObj?.quantidade_inicial || 0);
+    const totalEntrada = entradas.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0) || (Number(loteObj?.quantidade_inicial) || 0);
 
     // Internal transfers (Central -> Satélite)
-    const transferencias = saidas.filter(s => s.motivo === "Transferência de Estoque" || s.destino === "Farmácia Satélite");
-    const totalTransferido = transferencias.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+    const transferencias = saidas.filter(s =>
+      s.motivo === "Transferência de Estoque" ||
+      s.destino === "Farmácia Satélite" ||
+      String(s.destino || "").includes("Satélite")
+    );
+    const totalTransferido = transferencias.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
     // Patient administrations
-    const dispensacoesPacientes = saidas.filter(s => 
-      s.motivo !== "Transferência de Estoque" && 
-      s.destino !== "Farmácia Satélite" && 
-      s.destino !== "Perda" &&
-      s.destino !== "Descarte Especial SNGPC" &&
-      !s.destino?.includes("Geral")
-    );
-    const totalDispensado = dispensacoesPacientes.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+    const dispensacoesPacientes = saidas.filter(s => {
+      const dest = String(s.destino || "");
+      const motivo = String(s.motivo || "").toLowerCase();
+      return (
+        s.motivo !== "Transferência de Estoque" && 
+        s.destino !== "Farmácia Satélite" && 
+        s.destino !== "Perda" &&
+        s.destino !== "Descarte Especial SNGPC" &&
+        !dest.includes("Geral") &&
+        !motivo.includes("quebra") &&
+        !motivo.includes("perda")
+      );
+    });
+    const totalDispensado = dispensacoesPacientes.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
     // Losses & Discards
-    const perdasEDescartes = saidas.filter(s => 
-      s.destino === "Perda" || 
-      s.motivo === "Perda" || 
-      s.destino === "Descarte Especial SNGPC" ||
-      (s.motivo || "").toLowerCase().includes("quebra") ||
-      (s.motivo || "").toLowerCase().includes("perda")
-    );
-    const totalPerdas = perdasEDescartes.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+    const perdasEDescartes = saidas.filter(s => {
+      const motivo = String(s.motivo || "").toLowerCase();
+      return (
+        s.destino === "Perda" || 
+        s.motivo === "Perda" || 
+        s.destino === "Descarte Especial SNGPC" ||
+        motivo.includes("quebra") ||
+        motivo.includes("perda")
+      );
+    });
+    const totalPerdas = perdasEDescartes.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
-    const saldoAtual = loteObj?.quantidade_atual !== undefined ? loteObj.quantidade_atual : Math.max(0, totalEntrada - totalDispensado - totalPerdas);
+    const saldoAtual = loteObj?.quantidade_atual !== undefined ? Number(loteObj.quantidade_atual) : Math.max(0, totalEntrada - totalDispensado - totalPerdas);
 
     return {
       numero_lote: activeLoteNumber,
@@ -376,14 +519,6 @@ export default function LivroRegistro() {
       {/* Top Action Bar (No-Print) */}
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 no-print">
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => navigate("/SatelitePortaria")}
-            className="gap-2 bg-white hover:bg-slate-100 text-slate-700 shadow-sm border-slate-300 font-semibold"
-          >
-            <ArrowRight className="w-4 h-4 rotate-180" />
-            Portaria 344
-          </Button>
           <div>
             <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
               <ShieldCheck className="w-6 h-6 text-indigo-600" />
@@ -440,22 +575,133 @@ export default function LivroRegistro() {
       {/* ─── TAB 1: FOLHA DIÁRIA DE REGISTRO ESPECÍFICO ───────────────────────────── */}
       {activeTab === "livro_diario" && (
         <div className="max-w-6xl mx-auto space-y-4">
+          {/* Category Filter Bar (No-Print) */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm no-print">
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+                <Filter className="w-3.5 h-3.5 text-indigo-600" />
+                Filtrar Livro por Categoria Portaria 344/98:
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium">
+                {medicamentosFiltrados.length} medicamento(s) nesta lista
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={filtroCategoria344 === "psicotropicos" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltroCategoria344("psicotropicos")}
+                className={`h-8 text-xs font-bold gap-1.5 transition-all ${
+                  filtroCategoria344 === "psicotropicos"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                }`}
+              >
+                🧠 Psicotrópicos (B1, B2, A3)
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] bg-white/20 text-current">
+                  {contagensCategorias.psicotropicos}
+                </Badge>
+              </Button>
+
+              <Button
+                type="button"
+                variant={filtroCategoria344 === "controle_especial" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltroCategoria344("controle_especial")}
+                className={`h-8 text-xs font-bold gap-1.5 transition-all ${
+                  filtroCategoria344 === "controle_especial"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                }`}
+              >
+                📋 Controle Especial (C1, C2, C4, C5)
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] bg-white/20 text-current">
+                  {contagensCategorias.controle_especial}
+                </Badge>
+              </Button>
+
+              <Button
+                type="button"
+                variant={filtroCategoria344 === "entorpecentes" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltroCategoria344("entorpecentes")}
+                className={`h-8 text-xs font-bold gap-1.5 transition-all ${
+                  filtroCategoria344 === "entorpecentes"
+                    ? "bg-rose-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-rose-50 hover:text-rose-700"
+                }`}
+              >
+                🔴 Entorpecentes (A1, A2)
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] bg-white/20 text-current">
+                  {contagensCategorias.entorpecentes}
+                </Badge>
+              </Button>
+
+              <Button
+                type="button"
+                variant={filtroCategoria344 === "adiantamento" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltroCategoria344("adiantamento")}
+                className={`h-8 text-xs font-bold gap-1.5 transition-all ${
+                  filtroCategoria344 === "adiantamento"
+                    ? "bg-amber-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-amber-50 hover:text-amber-700"
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                💳 Adiantamento (Drogaria)
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] bg-white/20 text-current">
+                  {contagensCategorias.adiantamento}
+                </Badge>
+              </Button>
+
+              <Button
+                type="button"
+                variant={filtroCategoria344 === "todos" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltroCategoria344("todos")}
+                className={`h-8 text-xs font-bold gap-1.5 transition-all ${
+                  filtroCategoria344 === "todos"
+                    ? "bg-slate-800 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Todos ({contagensCategorias.todos})
+              </Button>
+            </div>
+          </div>
+
           {/* Medication Selector (No-Print) */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between no-print">
             <div className="flex-1 w-full sm:w-auto">
               <Label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                Selecione o Medicamento Controlado para o Livro:
+                Selecione o Medicamento Controlado para o Livro ({medicamentosFiltrados.length} nesta categoria):
               </Label>
-              <Select value={effectiveSelectedMedId} onValueChange={setSelectedLivroMedId}>
+              <Select
+                value={effectiveSelectedMedId ? String(effectiveSelectedMedId) : undefined}
+                onValueChange={(val) => {
+                  if (val && val !== "__none__") setSelectedLivroMedId(val);
+                }}
+              >
                 <SelectTrigger className="w-full bg-slate-50 border-slate-300 font-semibold">
-                  <SelectValue placeholder="Escolha um medicamento psicotrópico..." />
+                  <SelectValue placeholder="Escolha um medicamento..." />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
-                  {medicamentosControlados.map(med => (
-                    <SelectItem key={med.id} value={med.id}>
-                      {med.nome} {med.concentracao ? `- ${med.concentracao}` : ""} ({getPortaria344List(med)})
+                  {medicamentosFiltrados.length === 0 ? (
+                    <SelectItem value="__none__" disabled>
+                      Nenhum medicamento nesta categoria
                     </SelectItem>
-                  ))}
+                  ) : (
+                    medicamentosFiltrados
+                      .filter(med => med && med.id)
+                      .map(med => (
+                        <SelectItem key={String(med.id)} value={String(med.id)}>
+                          {med.nome || "Sem nome"} {med.concentracao ? `- ${med.concentracao}` : ""} ({getPortaria344List(med)})
+                          {isAdiantamentoMed(med) ? " 💳 [Adiantamento / Drogaria]" : ""}
+                        </SelectItem>
+                      ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -463,16 +709,50 @@ export default function LivroRegistro() {
               <div className="text-right">
                 <span className="text-[11px] text-slate-500 font-medium block">Estoque Atual Total</span>
                 <span className="text-lg font-black text-indigo-700">
-                  {((selectedMed?.estoque_atual || 0) + (selectedMed?.estoque_satelite || 0))} {selectedMed?.unidade_medida || "UN"}
+                  {formatQtd((Number(selectedMed?.estoque_atual) || 0) + (Number(selectedMed?.estoque_satelite) || 0))} {selectedMed?.unidade_medida || "UN"}
                 </span>
               </div>
             </div>
           </div>
 
+          {/* Card Explicativo de Compra por Adiantamento / Drogaria (No-Print) */}
+          {selectedMed && isAdiantamentoMed(selectedMed) && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3.5 shadow-sm flex items-start gap-3 no-print">
+              <div className="p-2 rounded-lg bg-amber-500 text-white shrink-0 mt-0.5">
+                <CreditCard className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                    Medicamento Adquirido via Adiantamento (Compra Direta em Drogaria / Cartão do Estado)
+                  </span>
+                  <Badge className="bg-amber-600 text-white text-[10px] font-bold">Adiantamento</Badge>
+                </div>
+                <p className="text-xs text-amber-800 mt-1">
+                  Este controlado foi adquirido em drogaria externa fora do fluxo ordinário de compra pública. No livro oficial, as entradas são identificadas com a origem da Drogaria e comprovante fiscal.
+                </p>
+                <div className="flex flex-wrap gap-4 mt-2 text-xs font-semibold text-amber-900 bg-white/70 p-2 rounded-lg border border-amber-200">
+                  <span>🏪 Drogaria / Fornecedor: <strong className="text-slate-900">{selectedMed.fornecedor_nome || "Drogaria Externa"}</strong></span>
+                  {selectedMed.nota_fiscal && <span>📄 NF / Cupom: <strong className="text-slate-900">{selectedMed.nota_fiscal}</strong></span>}
+                  {selectedMed.valor_compra && (
+                    <span>
+                      💰 Valor Compra: <strong className="text-slate-900">
+                        R$ {Number(String(selectedMed.valor_compra).replace(',', '.')).toFixed(2)}
+                      </strong>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Folha do Livro Print Area */}
           <div id="livro-print-area" className="border border-slate-200 shadow-xl bg-white p-4 sm:p-8 rounded-sm">
             <div className="text-center mb-6">
-              <p className="text-xs font-black uppercase text-slate-500 tracking-widest">{hospitalInfo.nome}</p>
+              <p className="text-xs font-black uppercase text-slate-600 tracking-widest">{hospitalInfo.nome}</p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                {hospitalInfo.razao_social} • CNPJ: {hospitalInfo.cnpj} • {hospitalInfo.cidade}
+              </p>
               <h1 className="text-xl sm:text-2xl font-black uppercase underline mt-1 mb-2 text-slate-900">
                 FOLHA DO LIVRO DE REGISTRO ESPECÍFICO
               </h1>
@@ -485,6 +765,16 @@ export default function LivroRegistro() {
               <p className="text-[11px] text-slate-500 font-semibold">
                 Unidade: {hospitalInfo.unidade} • Farmacêutico RT: {hospitalInfo.rt_nome} ({hospitalInfo.rt_crf})
               </p>
+
+              {/* Tag oficial de aquisição se for Adiantamento */}
+              {isAdiantamentoMed(selectedMed) && (
+                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-400 rounded text-amber-900 text-[11px] font-black uppercase tracking-wide">
+                  <span>★ AQUISIÇÃO: COMPRA EM DROGARIA (VERBA DE ADIANTAMENTO ESTADUAL)</span>
+                  {selectedMed.fornecedor_nome ? ` • FORNECEDOR: ${selectedMed.fornecedor_nome}` : ''}
+                  {selectedMed.nota_fiscal ? ` • NF: ${selectedMed.nota_fiscal}` : ''}
+                  <span>★</span>
+                </div>
+              )}
             </div>
 
             <Table className="border-collapse w-full border border-slate-300">
@@ -516,19 +806,31 @@ export default function LivroRegistro() {
                 ) : (
                   historicoMovimentos.map((mov, idx) => {
                     const d = mov.dataObj;
+                    const isAdiantamentoEntrada = mov.tipo === 'ENTRADA' && isAdiantamentoMed(selectedMed);
+
                     return (
                       <TableRow key={idx} className="hover:bg-slate-50">
                         <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getDate()).padStart(2, '0')}</TableCell>
                         <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getMonth() + 1).padStart(2, '0')}</TableCell>
                         <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{d.getFullYear()}</TableCell>
                         <TableCell className="font-semibold text-slate-800 uppercase text-xs border border-slate-300 pl-2">
-                          {mov.tipo === 'ENTRADA' ? (mov.fornecedor_nome || 'Almoxarifado Central') :
-                            (mov.tipo === 'PERDA' ? 'PERDA / QUEBRA DECLARADA' : (mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente'))}
+                          {mov.tipo === 'ENTRADA' ? (
+                            isAdiantamentoEntrada ? (
+                              <span className="text-amber-900 font-bold">
+                                COMPRA DROGARIA (ADIANTAMENTO)
+                                {mov.fornecedor_nome ? ` - ${mov.fornecedor_nome}` : (selectedMed?.fornecedor_nome ? ` - ${selectedMed.fornecedor_nome}` : '')}
+                              </span>
+                            ) : (
+                              mov.fornecedor_nome || 'Almoxarifado Central'
+                            )
+                          ) : (
+                            mov.tipo === 'PERDA' ? 'PERDA / QUEBRA DECLARADA' : (mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente')
+                          )}
                         </TableCell>
-                        <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">{mov.tipo === 'ENTRADA' ? mov.quantidade : '-'}</TableCell>
-                        <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">{mov.tipo === 'SAIDA' ? mov.quantidade : '-'}</TableCell>
-                        <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? mov.quantidade : '-'}</TableCell>
-                        <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{mov.saldo}</TableCell>
+                        <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">{mov.tipo === 'ENTRADA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">{mov.tipo === 'SAIDA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{formatQtd(mov.saldo)}</TableCell>
                         <TableCell className="border border-slate-300 p-0 align-middle text-center">
                           <div className="flex flex-col items-center justify-center w-full py-1">
                             <span className="text-[9px] font-bold text-slate-800 uppercase print:text-[8px]">
@@ -540,7 +842,13 @@ export default function LivroRegistro() {
                           </div>
                         </TableCell>
                         <TableCell className="text-[10px] text-slate-600 min-w-[150px] border border-slate-300 px-2 break-words whitespace-normal">
-                          Lote: <span className="font-semibold text-slate-800">{mov.numero_lote || mov.lote || "-"}</span> {mov.motivo ? `| ${mov.motivo}` : ''}
+                          Lote: <span className="font-semibold text-slate-800">{mov.numero_lote || mov.lote || "-"}</span>
+                          {isAdiantamentoEntrada && (
+                            <span className="block text-amber-800 font-semibold mt-0.5">
+                              [Compra Drogaria / Adiantamento{selectedMed?.nota_fiscal ? ` NF: ${selectedMed.nota_fiscal}` : ""}]
+                            </span>
+                          )}
+                          {mov.motivo ? ` | ${mov.motivo}` : ''}
                         </TableCell>
                       </TableRow>
                     );
@@ -692,22 +1000,26 @@ export default function LivroRegistro() {
               </div>
 
               {/* Informações do Estabelecimento */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-200 text-xs text-slate-700">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-200 text-xs text-slate-700">
                 <div>
                   <span className="font-bold text-slate-900 block">ESTABELECIMENTO:</span>
-                  {hospitalInfo.nome}
+                  <span className="font-black text-slate-900 block">{hospitalInfo.nome}</span>
+                  <span className="text-[10px] text-slate-500 block font-semibold">{hospitalInfo.razao_social}</span>
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 block">CNPJ:</span>
-                  {hospitalInfo.cnpj}
+                  <span className="font-mono font-black text-slate-900 block">{hospitalInfo.cnpj}</span>
+                  <span className="text-[10px] text-slate-500 block">Situação: {hospitalInfo.situacao} ({hospitalInfo.tipo_unidade})</span>
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 block">UNIDADE / LOCAL:</span>
-                  {hospitalInfo.unidade}
+                  <span className="font-semibold text-slate-800 block">{hospitalInfo.unidade}</span>
+                  <span className="text-[10px] text-slate-500 block">Desde {hospitalInfo.data_abertura}</span>
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 block">CIDADE / UF:</span>
-                  {hospitalInfo.cidade}
+                  <span className="font-semibold text-slate-800 block">{hospitalInfo.cidade}</span>
+                  <span className="text-[10px] text-slate-500 block">{hospitalInfo.natureza_juridica}</span>
                 </div>
               </div>
             </div>
@@ -744,11 +1056,11 @@ export default function LivroRegistro() {
                       </TableCell>
                       <TableCell className="text-center text-[10px] font-semibold border border-slate-400">{item.lista}</TableCell>
                       <TableCell className="text-center text-[11px] border border-slate-400">{item.apresentacao}</TableCell>
-                      <TableCell className="text-center font-bold border border-slate-400">{item.estoqueInicial}</TableCell>
-                      <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/30 border border-slate-400">{item.entradas}</TableCell>
-                      <TableCell className="text-center font-bold text-blue-700 bg-blue-50/30 border border-slate-400">{item.saidas}</TableCell>
-                      <TableCell className="text-center font-bold text-red-700 bg-red-50/30 border border-slate-400">{item.perdas}</TableCell>
-                      <TableCell className="text-center font-black text-slate-900 bg-slate-100 border border-slate-400 text-sm">{item.estoqueFinal}</TableCell>
+                      <TableCell className="text-center font-bold border border-slate-400">{formatQtd(item.estoqueInicial)}</TableCell>
+                      <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/30 border border-slate-400">{formatQtd(item.entradas)}</TableCell>
+                      <TableCell className="text-center font-bold text-blue-700 bg-blue-50/30 border border-slate-400">{formatQtd(item.saidas)}</TableCell>
+                      <TableCell className="text-center font-bold text-red-700 bg-red-50/30 border border-slate-400">{formatQtd(item.perdas)}</TableCell>
+                      <TableCell className="text-center font-black text-slate-900 bg-slate-100 border border-slate-400 text-sm">{formatQtd(item.estoqueFinal)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -804,9 +1116,10 @@ export default function LivroRegistro() {
                     placeholder="Ex: LOTE2026-A, ABC1234..."
                     value={searchLoteQuery}
                     onChange={e => {
-                      setSearchLoteQuery(e.target.value);
-                      if (e.target.value) {
-                        const found = allBatchNumbers.find(b => b.toLowerCase().includes(e.target.value.toLowerCase()));
+                      const val = e.target.value;
+                      setSearchLoteQuery(val);
+                      if (val) {
+                        const found = allBatchNumbers.find(b => String(b || "").toLowerCase().includes(val.toLowerCase()));
                         if (found) setSelectedLoteNumero(found);
                       }
                     }}
@@ -819,19 +1132,30 @@ export default function LivroRegistro() {
                 <Label className="text-xs font-bold text-slate-700 mb-1.5 block">
                   Lotes Cadastrados no Sistema:
                 </Label>
-                <Select value={activeLoteNumber} onValueChange={(val) => {
-                  setSelectedLoteNumero(val);
-                  setSearchLoteQuery(val);
-                }}>
+                <Select
+                  value={activeLoteNumber ? String(activeLoteNumber) : undefined}
+                  onValueChange={(val) => {
+                    if (val && val !== "__none__") {
+                      setSelectedLoteNumero(val);
+                      setSearchLoteQuery(val);
+                    }
+                  }}
+                >
                   <SelectTrigger className="font-mono bg-slate-50 font-bold">
                     <SelectValue placeholder="Selecione um lote..." />
                   </SelectTrigger>
                   <SelectContent className="max-h-72">
-                    {allBatchNumbers.map(loteNum => (
-                      <SelectItem key={loteNum} value={loteNum} className="font-mono">
-                        {loteNum}
+                    {allBatchNumbers.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        Nenhum lote registrado
                       </SelectItem>
-                    ))}
+                    ) : (
+                      allBatchNumbers.map(loteNum => (
+                        <SelectItem key={String(loteNum)} value={String(loteNum)} className="font-mono">
+                          {loteNum}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -852,7 +1176,7 @@ export default function LivroRegistro() {
                       Lote: <span className="font-mono text-amber-400 bg-amber-400/10 px-3 py-0.5 rounded-lg border border-amber-400/30">{loteTraceData.numero_lote}</span>
                     </h2>
                     <p className="text-sm text-slate-300 mt-1 font-semibold">
-                      Medicamento: {loteTraceData.medicamento?.nome} {loteTraceData.medicamento?.concentracao ? `(${loteTraceData.medicamento?.concentracao})` : ""}
+                      Medicamento: {loteTraceData.medicamento?.nome || "Medicamento"} {loteTraceData.medicamento?.concentracao ? `(${loteTraceData.medicamento?.concentracao})` : ""}
                     </p>
                   </div>
 
@@ -861,7 +1185,7 @@ export default function LivroRegistro() {
                       Validade: {loteTraceData.data_validade || "Sem data"}
                     </Badge>
                     <Badge className="bg-blue-500/20 text-blue-300 border border-blue-500/40 text-xs px-3 py-1 font-bold">
-                      NF: {loteTraceData.nota_fiscal}
+                      NF: {loteTraceData.nota_fiscal || "-"}
                     </Badge>
                   </div>
                 </div>
@@ -870,23 +1194,23 @@ export default function LivroRegistro() {
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-center">
                   <div className="bg-white/5 p-3 rounded-xl border border-white/10">
                     <span className="text-[10px] text-slate-400 uppercase font-bold block">1. Entrada / Comprado</span>
-                    <span className="text-xl font-black text-emerald-400">{loteTraceData.totalEntrada} un</span>
+                    <span className="text-xl font-black text-emerald-400">{formatQtd(loteTraceData.totalEntrada)} un</span>
                   </div>
                   <div className="bg-white/5 p-3 rounded-xl border border-white/10">
                     <span className="text-[10px] text-slate-400 uppercase font-bold block">2. Transferido Satélite</span>
-                    <span className="text-xl font-black text-cyan-400">{loteTraceData.totalTransferido} un</span>
+                    <span className="text-xl font-black text-cyan-400">{formatQtd(loteTraceData.totalTransferido)} un</span>
                   </div>
                   <div className="bg-white/5 p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">3. Doses a Pacientes</span>
-                    <span className="text-xl font-black text-indigo-300">{loteTraceData.totalDispensado} un</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">3. Ministrado a Pacientes</span>
+                    <span className="text-xl font-black text-indigo-300">{formatQtd(loteTraceData.totalDispensado)} un</span>
                   </div>
                   <div className="bg-white/5 p-3 rounded-xl border border-white/10">
                     <span className="text-[10px] text-slate-400 uppercase font-bold block">4. Perdas / Descartes</span>
-                    <span className="text-xl font-black text-red-400">{loteTraceData.totalPerdas} un</span>
+                    <span className="text-xl font-black text-red-400">{formatQtd(loteTraceData.totalPerdas)} un</span>
                   </div>
                   <div className="bg-white/10 p-3 rounded-xl border border-indigo-400/40 col-span-2 sm:col-span-1">
                     <span className="text-[10px] text-amber-300 uppercase font-bold block">Saldo Remanescente</span>
-                    <span className="text-xl font-black text-amber-300">{loteTraceData.saldoAtual} un</span>
+                    <span className="text-xl font-black text-amber-300">{formatQtd(loteTraceData.saldoAtual)} un</span>
                   </div>
                 </div>
               </div>
@@ -908,7 +1232,7 @@ export default function LivroRegistro() {
                           <div key={idx} className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
                             <div>
                               <span className="text-slate-400 font-semibold block">Data Entrada:</span>
-                              <span className="font-mono font-bold text-slate-800">{ent.data_entrada || ent.created_at ? format(parseISO(ent.data_entrada || ent.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                              <span className="font-mono font-bold text-slate-800">{safeFormatDate(ent.data_entrada || ent.created_at)}</span>
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Fornecedor:</span>
@@ -920,7 +1244,7 @@ export default function LivroRegistro() {
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Quantidade Recebida:</span>
-                              <span className="font-bold text-emerald-700">{ent.quantidade} unidades</span>
+                              <span className="font-bold text-emerald-700">{formatQtd(ent.quantidade)} unidades</span>
                             </div>
                           </div>
                         ))}
@@ -944,7 +1268,7 @@ export default function LivroRegistro() {
                           <div key={idx} className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
                             <div>
                               <span className="text-slate-400 font-semibold block">Data Movimento:</span>
-                              <span className="font-mono font-bold text-slate-800">{tr.data_saida || tr.created_at ? format(parseISO(tr.data_saida || tr.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                              <span className="font-mono font-bold text-slate-800">{safeFormatDate(tr.data_saida || tr.created_at)}</span>
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Destino:</span>
@@ -952,7 +1276,7 @@ export default function LivroRegistro() {
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Quantidade Transferida:</span>
-                              <span className="font-bold text-cyan-700">{tr.quantidade} unidades</span>
+                              <span className="font-bold text-cyan-700">{formatQtd(tr.quantidade)} unidades</span>
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Responsável:</span>
@@ -974,7 +1298,7 @@ export default function LivroRegistro() {
                         Etapa 3: Pacientes que Receberam Doses Deste Lote Exato ({loteTraceData.dispensacoesPacientes.length})
                       </div>
                       <Badge className="bg-indigo-100 text-indigo-800 border-none font-bold text-xs">
-                        Total Ministrado: {loteTraceData.totalDispensado} un
+                        Total Ministrado: {formatQtd(loteTraceData.totalDispensado)} un
                       </Badge>
                     </div>
 
@@ -997,7 +1321,7 @@ export default function LivroRegistro() {
                             {loteTraceData.dispensacoesPacientes.map((disp, idx) => (
                               <TableRow key={idx} className="hover:bg-slate-50">
                                 <TableCell className="font-mono text-slate-600 whitespace-nowrap">
-                                  {disp.data_saida || disp.created_at ? format(parseISO(disp.data_saida || disp.created_at), "dd/MM/yyyy HH:mm") : "-"}
+                                  {safeFormatDate(disp.data_saida || disp.created_at)}
                                 </TableCell>
                                 <TableCell className="font-bold text-slate-900">
                                   {disp.paciente_nome || disp.destino?.replace("Paciente ", "") || "Paciente"}
@@ -1006,7 +1330,7 @@ export default function LivroRegistro() {
                                   {disp.ala_nome || "Ala Geral"}
                                 </TableCell>
                                 <TableCell className="text-center font-bold text-indigo-700 bg-indigo-50/50">
-                                  {disp.quantidade} un
+                                  {formatQtd(disp.quantidade)} un
                                 </TableCell>
                                 <TableCell className="text-slate-600 max-w-xs truncate" title={disp.motivo || disp.observacao}>
                                   {disp.motivo || disp.observacao || "Prescrição regular"}
@@ -1038,7 +1362,7 @@ export default function LivroRegistro() {
                           <div key={idx} className="bg-red-50/50 p-3 rounded-lg border border-red-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
                             <div>
                               <span className="text-red-400 font-semibold block">Data do Registro:</span>
-                              <span className="font-mono font-bold text-slate-800">{p.data_saida || p.created_at ? format(parseISO(p.data_saida || p.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                              <span className="font-mono font-bold text-slate-800">{safeFormatDate(p.data_saida || p.created_at)}</span>
                             </div>
                             <div>
                               <span className="text-red-400 font-semibold block">Motivo Declarado:</span>
@@ -1046,7 +1370,7 @@ export default function LivroRegistro() {
                             </div>
                             <div>
                               <span className="text-red-400 font-semibold block">Quantidade Perdida:</span>
-                              <span className="font-bold text-red-700">{p.quantidade} unidades</span>
+                              <span className="font-bold text-red-700">{formatQtd(p.quantidade)} unidades</span>
                             </div>
                             <div>
                               <span className="text-red-400 font-semibold block">Responsável:</span>

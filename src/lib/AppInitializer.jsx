@@ -167,6 +167,19 @@ export function AppInitializer({ children }) {
             farmacia_satelite: "#/Satelite",
             responsavel_tecnico: "#/ResponsavelTecnico"
           };
+
+          const sectionMap = {
+            carrinho_enfermagem: "carrinho",
+            carrinho_farmacia: "carrinho",
+            carrinho_parada: "carrinho",
+            estoque_farmacia: "estoque",
+            pacientes_medicao: "satelite",
+            farmacia_satelite: "satelite",
+            responsavel_tecnico: "rt"
+          };
+          if (sectionMap[modKey]) {
+            try { sessionStorage.setItem("zorion_active_section", sectionMap[modKey]); } catch (e) {}
+          }
           
           if (routeMap[modKey]) {
             window.location.hash = routeMap[modKey];

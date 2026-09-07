@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
+import { ComboboxFornecedor } from "@/components/ui/combobox-fornecedor";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2 } from "lucide-react";
 import { differenceInDays, parseISO } from "date-fns";
@@ -74,16 +75,21 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
     };
 
     const selectedMed = medicamentos.find((m) => m.id === form.medicamento_id);
-    const isAdiantamento = selectedMed ? Boolean(selectedMed.is_adiantamento) : false;
+    const isAdiantamento = selectedMed ? (selectedMed.is_adiantamento === true || selectedMed.is_adiantamento === 1 || selectedMed.is_adiantamento === "1" || selectedMed.is_adiantamento === "true") : false;
 
     const handleToggleAdiantamento = async () => {
         if (!selectedMed) return;
-        const novoStatus = !selectedMed.is_adiantamento;
+        const isCurrent = selectedMed.is_adiantamento === true || selectedMed.is_adiantamento === 1 || selectedMed.is_adiantamento === "1" || selectedMed.is_adiantamento === "true";
+        const novoStatus = isCurrent ? 0 : 1;
         try {
             await db.entities.Medicamento.update(selectedMed.id, {
-                is_adiantamento: novoStatus
+                is_adiantamento: novoStatus,
+                nota_fiscal: novoStatus ? (selectedMed.nota_fiscal || "") : "",
+                valor_compra: novoStatus ? (selectedMed.valor_compra || "") : "",
+                fornecedor_nome: novoStatus ? (selectedMed.fornecedor_nome || "") : ""
             });
             selectedMed.is_adiantamento = novoStatus;
+            queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
             await db.logAction(
                 "ALTERACAO_STATUS_ADIANTAMENTO",
                 "Medicamento",
@@ -269,18 +275,13 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
 
                     {/* Fornecedor */}
                     <div>
-                        <Label htmlFor="fornecedor-select">Fornecedor</Label>
-                        <Select value={form.fornecedor_id || "__none__"} onValueChange={handleFornecedor}>
-                            <SelectTrigger id="fornecedor-select">
-                                <SelectValue placeholder="Selecione o fornecedor..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__none__">— Nenhum —</SelectItem>
-                                {fornecedores.map((f) => (
-                                    <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <Label htmlFor="fornecedor-select">Fornecedor / Distribuidora</Label>
+                        <ComboboxFornecedor
+                            fornecedores={fornecedores}
+                            value={form.fornecedor_id}
+                            onChange={handleFornecedor}
+                            placeholder="Selecione ou busque a distribuidora..."
+                        />
                     </div>
 
                     <div>

@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { 
     Plus, Search, PackageMinus, Trash2, FileText, Printer, Edit, 
     AlertTriangle, Settings2,
-    Calendar as CalendarIcon, User
+    Calendar as CalendarIcon, User, Building2, ArrowDownRight, X, Sparkles, Clock, CheckCircle2, ShieldAlert
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -302,13 +302,14 @@ export default function Saidas({ isTab = false }) {
   }, [medicamentos]);
 
   const counts = useMemo(() => {
-    let todos = 0, pacientes = 0, geral = 0, perdas = 0;
+    let todos = 0, pacientes = 0, geral = 0, perdas = 0, totalUnidades = 0;
     (saidas || []).forEach(s => {
       if (s.motivo === "Transferência de Estoque") return;
       const isLog = (s.medicamento_nome && s.medicamento_nome.includes("[LOG")) || (s.tipo && s.tipo.includes("Log"));
       if (isLog) return; // Logs são exibidos exclusivamente no painel RT
 
       todos++;
+      totalUnidades += (Number(s.quantidade) || 0);
       const isPac = !!s.paciente_nome || (s.destino && s.destino.toLowerCase().includes("paciente")) || (s.motivo && s.motivo.toLowerCase().includes("paciente")) || (s.tipo && s.tipo.toLowerCase().includes("paciente"));
       const isPerda = s.destino === "Perda" || (s.motivo && s.motivo.toLowerCase().includes("perda"));
 
@@ -316,7 +317,7 @@ export default function Saidas({ isTab = false }) {
       else if (isPac) pacientes++;
       else geral++;
     });
-    return { todos, pacientes, geral, perdas };
+    return { todos, pacientes, geral, perdas, totalUnidades };
   }, [saidas]);
 
   const filteredSaidas = useMemo(() => {
@@ -480,27 +481,34 @@ export default function Saidas({ isTab = false }) {
   );
 
   const actionButtons = (
-    <div className="flex gap-2 justify-end">
-      <Button onClick={() => setReportOpen(true)} variant="outline">
-        <FileText className="w-4 h-4 mr-2" />
+    <div className="flex flex-wrap items-center gap-2">
+      <Button 
+        onClick={() => setReportOpen(true)} 
+        variant="outline" 
+        className="h-9 text-xs font-semibold border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-xs gap-1.5"
+      >
+        <FileText className="w-3.5 h-3.5 text-slate-500" />
         Relatório
       </Button>
-      <Button onClick={() => { setEditData(null); setFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700">
-        <Plus className="w-4 h-4 mr-2" />
+      <Button 
+        onClick={() => { setEditData(null); setFormOpen(true); }} 
+        className="h-9 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 gap-1.5"
+      >
+        <Plus className="w-4 h-4" />
         Nova Saída
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="ml-auto">
-            <Settings2 className="w-4 h-4 mr-2" />
+          <Button variant="outline" className="h-9 text-xs font-semibold border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-xs ml-auto gap-1.5">
+            <Settings2 className="w-3.5 h-3.5 text-slate-500" />
             Colunas
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-48 bg-white shadow-lg border-slate-200">
           {Object.keys(visibleColumns).map((col) => (
             <DropdownMenuCheckboxItem
               key={col}
-              className="capitalize"
+              className="text-xs capitalize"
               checked={visibleColumns[col]}
               onCheckedChange={(checked) =>
                 setVisibleColumns((prev) => ({ ...prev, [col]: checked }))
@@ -525,80 +533,208 @@ export default function Saidas({ isTab = false }) {
       {!isTab ? (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Saídas</h1>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">Registro de saída de medicamentos</p>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <PackageMinus className="w-6 h-6 text-blue-600" />
+              Saídas & Dispensação
+            </h1>
+            <p className="text-slate-500 text-xs font-medium mt-0.5">
+              Registro, baixa de estoque e dispensação de medicamentos na Farmácia Satélite
+            </p>
           </div>
           {actionButtons}
         </div>
       ) : (
-        actionButtons
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <PackageMinus className="w-5 h-5 text-blue-600" />
+            <span className="font-bold text-sm text-slate-800">Histórico de Saídas da Satélite</span>
+          </div>
+          {actionButtons}
+        </div>
       )}
 
+      {/* KPI Stats Summary Bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Card 1: Total Saídas */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Saídas</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-slate-800 dark:text-white">{counts.todos}</span>
+              <span className="text-[10px] text-slate-400 font-medium">({counts.totalUnidades} un)</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600">
+            <PackageMinus className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Card 2: Saídas por Pacientes */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Por Pacientes</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{counts.pacientes}</span>
+              <span className="text-[10px] text-slate-400 font-medium">leitos / alas</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600">
+            <User className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Card 3: Saídas Gerais / Avulsas */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gerais / Avulsas</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{counts.geral}</span>
+              <span className="text-[10px] text-slate-400 font-medium">setores internos</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600">
+            <Building2 className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Card 4: Histórico de Perdas */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perdas & Descartes</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-rose-600 dark:text-rose-400">{counts.perdas}</span>
+              <span className="text-[10px] text-slate-400 font-medium">avarias / quebras</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600">
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+        </div>
+      </div>
+
       {/* Category Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2 bg-slate-200/60 dark:bg-slate-900/60 p-1.5 rounded-xl">
-        <Button
-          variant={activeCategory === "todos" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveCategory("todos")}
-          className={cn("h-8 rounded-lg text-xs font-semibold gap-1.5 transition-all", activeCategory === "todos" ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-white/50")}
-        >
-          <PackageMinus className="w-3.5 h-3.5 text-blue-500" />
-          Todas as Saídas ({counts.todos})
-        </Button>
-        <Button
-          variant={activeCategory === "pacientes" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveCategory("pacientes")}
-          className={cn("h-8 rounded-lg text-xs font-semibold gap-1.5 transition-all", activeCategory === "pacientes" ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-white/50")}
-        >
-          <User className="w-3.5 h-3.5 text-blue-200" />
-          Saídas por Pacientes ({counts.pacientes})
-        </Button>
-        <Button
-          variant={activeCategory === "geral" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveCategory("geral")}
-          className={cn("h-8 rounded-lg text-xs font-semibold gap-1.5 transition-all", activeCategory === "geral" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-white/50")}
-        >
-          <PackageMinus className="w-3.5 h-3.5 text-emerald-200" />
-          Saídas Gerais / Avulsas ({counts.geral})
-        </Button>
-        <Button
-          variant={activeCategory === "perdas" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveCategory("perdas")}
-          className={cn("h-8 rounded-lg text-xs font-semibold gap-1.5 transition-all", activeCategory === "perdas" ? "bg-red-600 text-white shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-white/50")}
-        >
-          <AlertTriangle className="w-3.5 h-3.5 text-red-200" />
-          Histórico de Perdas ({counts.perdas})
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("todos")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "todos" 
+                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs ring-1 ring-slate-200/80" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <PackageMinus className="w-3.5 h-3.5 text-blue-600" />
+            Todas as Saídas
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "todos" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-600"
+            )}>
+              {counts.todos}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("pacientes")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "pacientes" 
+                ? "bg-indigo-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <User className="w-3.5 h-3.5 text-indigo-300" />
+            Saídas por Pacientes
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "pacientes" ? "bg-indigo-700 text-indigo-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {counts.pacientes}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("geral")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "geral" 
+                ? "bg-emerald-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <Building2 className="w-3.5 h-3.5 text-emerald-300" />
+            Saídas Gerais / Avulsas
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "geral" ? "bg-emerald-700 text-emerald-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {counts.geral}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("perdas")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "perdas" 
+                ? "bg-rose-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-300" />
+            Histórico de Perdas
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "perdas" ? "bg-rose-700 text-rose-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {counts.perdas}
+            </span>
+          </Button>
+        </div>
+
+        <div className="text-xs text-slate-500 font-medium">
+          Exibindo <strong>{Math.min(filteredSaidas.length, displayCount)}</strong> de <strong>{filteredSaidas.length}</strong> registro(s)
+        </div>
       </div>
 
       {/* Search and Date Filter */}
-      <Card className="p-4 border-0 shadow-sm">
-        <div className="flex flex-col md:flex-row gap-4 items-center">
+      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
           <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <Input
-              placeholder="Buscar por medicamento ou lote..."
+              placeholder="Buscar por medicamento, lote, paciente ou ala..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 h-11"
+              className="pl-10 pr-9 h-9.5 bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:bg-white transition-all"
             />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded-full"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center">
+          <div className="flex items-center gap-2 shrink-0">
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   id="date"
                   variant="outline"
                   className={cn(
-                    "w-[260px] justify-start text-left font-normal border-slate-200 h-11 shadow-sm",
+                    "w-[230px] justify-start text-left font-normal border-slate-200 dark:border-slate-700 h-9.5 shadow-xs text-xs rounded-lg",
                     !dateRange?.from && "text-muted-foreground"
                   )}
                 >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  <CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />
                   {dateRange?.from ? (
                     dateRange.to ? (
                       <>
@@ -636,140 +772,217 @@ export default function Saidas({ isTab = false }) {
                 </div>
               </PopoverContent>
             </Popover>
+
+            {(search || dateRange?.from) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setDateRange({ from: undefined, to: undefined });
+                }}
+                className="h-9.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                Limpar
+              </Button>
+            )}
           </div>
         </div>
-      </Card>
+      </div>
 
-      {/* Table */}
-      <Card className="border-0 shadow-sm relative h-[calc(100vh-280px)]">
-        <Table className="min-w-[1200px] w-full" containerClassName="absolute inset-0 border-0">
-          <TableHeader className="sticky top-0 z-20 shadow-sm bg-white">
-            <TableRow className="bg-slate-50 hover:bg-slate-50">
-              {visibleColumns.codigo && <TableHead className="w-20">Cód.</TableHead>}
-              {visibleColumns.medicamento && <TableHead>Medicamento</TableHead>}
-              {visibleColumns.lote && <TableHead>Lote</TableHead>}
-              {visibleColumns.dataSaida && <TableHead>Data Saída</TableHead>}
-              {visibleColumns.qtd && <TableHead className="text-center">Qtd</TableHead>}
-              {visibleColumns.ala && <TableHead>Ala</TableHead>}
-              {visibleColumns.paciente && <TableHead>Paciente</TableHead>}
-              {visibleColumns.observacao && <TableHead>Observação</TableHead>}
-              {visibleColumns.acoes && <TableHead className="text-center">Ações</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array(5).fill(0).map((_, i) => (
-                <TableRow key={i}>
-                  {Array(7).fill(0).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : filteredSaidas.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-12">
-                  <PackageMinus className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-500 dark:text-slate-400">Nenhuma saída encontrada</p>
-                </TableCell>
+      {/* Table Container */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex-1 min-h-[300px] overflow-hidden flex flex-col relative">
+        <div className="overflow-auto flex-1">
+          <Table className="min-w-[1200px] w-full">
+            <TableHeader className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800">
+              <TableRow className="hover:bg-transparent">
+                {visibleColumns.codigo && <TableHead className="w-20 text-[11px] font-bold uppercase tracking-wider text-slate-600">Cód.</TableHead>}
+                {visibleColumns.medicamento && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Medicamento</TableHead>}
+                {visibleColumns.lote && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lote</TableHead>}
+                {visibleColumns.dataSaida && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Data Saída</TableHead>}
+                {visibleColumns.qtd && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Qtd</TableHead>}
+                {visibleColumns.ala && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Ala / Destino</TableHead>}
+                {visibleColumns.paciente && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Paciente</TableHead>}
+                {visibleColumns.observacao && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Observação / Motivo</TableHead>}
+                {visibleColumns.acoes && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Ações</TableHead>}
               </TableRow>
-            ) : (
-              filteredSaidas.slice(0, displayCount).map((saida, index) => {
-                const isLastElement = index === Math.min(filteredSaidas.length, displayCount) - 1;
-                return (
-                <TableRow ref={isLastElement ? lastElementRef : null} key={saida.id} className="hover:bg-slate-50/50">
-                  {visibleColumns.codigo && (
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                        {medicamentosMap[saida.medicamento_id]?.codigo || "S/C"}
-                      </Badge>
-                    </TableCell>
-                  )}
-                  {visibleColumns.medicamento && (() => {
-                    const med = medicamentosMap[saida.medicamento_id];
-                    return (
-                      <TableCell className={cn("font-medium text-slate-800", isMav(saida.medicamento_nome) && "text-red-900 font-bold")}>
-                        {saida.medicamento_nome} {isMav(saida.medicamento_nome) && "(MAV)"}
-                        {med && isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
-                        <div className="flex gap-2 items-center text-xs mt-1">
-                          <span className="text-slate-500 font-medium">
-                            {med?.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
-                          </span>
-                          {med?.apresentacao && (
-                            <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
-                              {med.apresentacao}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                    );
-                  })()}
-                  {visibleColumns.lote && (
-                    <TableCell>
-                      <Badge variant="outline">{saida.numero_lote}</Badge>
-                    </TableCell>
-                  )}
-                  {visibleColumns.dataSaida && (
-                    <TableCell className="text-slate-600">
-                      {saida.data_saida && safeFormatDate(saida.data_saida)}
-                    </TableCell>
-                  )}
-                  {visibleColumns.qtd && (
-                    <TableCell className="text-center">
-                      <Badge className="bg-red-100 text-red-700">-{saida.quantidade}</Badge>
-                    </TableCell>
-                  )}
-                  {visibleColumns.ala && (
-                    <TableCell>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                        {saida.ala_nome || "-"}
-                      </Badge>
-                    </TableCell>
-                  )}
-                  {visibleColumns.paciente && (
-                    <TableCell className="font-medium text-slate-800 uppercase text-xs max-w-[200px] truncate">
-                      {saida.paciente_nome || "-"}
-                    </TableCell>
-                  )}
-                  {visibleColumns.observacao && (
-                    <TableCell className="text-slate-500 text-sm max-w-xs truncate">
-                      {saida.observacao || "-"}
-                    </TableCell>
-                  )}
-                  {visibleColumns.acoes && (
-                    <TableCell className="text-center">
-                      <div className="flex justify-center items-center gap-1">
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(saida)}
-                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteId(saida.id)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array(5).fill(0).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array(7).fill(0).map((_, j) => (
+                      <TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : filteredSaidas.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-16">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-3.5 ring-8 ring-blue-50/50 dark:ring-blue-950/20">
+                        <PackageMinus className="w-7 h-7" />
                       </div>
-                    </TableCell>
-                  )}
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">Nenhuma saída encontrada</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                        {search || dateRange?.from 
+                          ? "Não foram encontrados registros para os filtros selecionados." 
+                          : "Nenhuma saída de medicamento foi registrada ainda nesta categoria."}
+                      </p>
+                      {search || dateRange?.from ? (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => { setSearch(""); setDateRange({ from: undefined, to: undefined }); }}
+                          className="text-xs font-semibold"
+                        >
+                          Limpar Filtros
+                        </Button>
+                      ) : (
+                        <Button 
+                          size="sm"
+                          onClick={() => { setEditData(null); setFormOpen(true); }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 gap-1.5 h-8"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Registrar Nova Saída
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                filteredSaidas.slice(0, displayCount).map((saida, index) => {
+                  const isLastElement = index === Math.min(filteredSaidas.length, displayCount) - 1;
+                  const med = medicamentosMap[saida.medicamento_id];
+                  const mav = isMav(saida.medicamento_nome);
+                  const p344 = med && isPsicotropico(med.grupo_terapeutico);
+
+                  return (
+                    <TableRow 
+                      ref={isLastElement ? lastElementRef : null} 
+                      key={saida.id} 
+                      className="hover:bg-blue-50/40 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/60"
+                    >
+                      {visibleColumns.codigo && (
+                        <TableCell>
+                          <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {med?.codigo || "S/C"}
+                          </span>
+                        </TableCell>
+                      )}
+                      {visibleColumns.medicamento && (
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={cn("font-bold text-xs text-slate-800 dark:text-slate-100", mav && "text-red-700 dark:text-red-400")}>
+                              {saida.medicamento_nome}
+                            </span>
+                            {mav && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-red-100 text-red-700 border border-red-200">
+                                <AlertTriangle className="w-2.5 h-2.5" /> MAV
+                              </span>
+                            )}
+                            {p344 && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-purple-100 text-purple-700 border border-purple-200">
+                                <ShieldAlert className="w-2.5 h-2.5" /> P344
+                              </span>
+                            )}
+                          </div>
+                          {(med?.unidade_medida || med?.apresentacao) && (
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-medium">
+                              {med?.unidade_medida && <span>{med.unidade_medida}</span>}
+                              {med?.unidade_medida && med?.apresentacao && <span>•</span>}
+                              {med?.apresentacao && <span>{med.apresentacao}</span>}
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.lote && (
+                        <TableCell>
+                          <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {saida.numero_lote || "-"}
+                          </span>
+                        </TableCell>
+                      )}
+                      {visibleColumns.dataSaida && (
+                        <TableCell className="text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                          {saida.data_saida && safeFormatDate(saida.data_saida)}
+                        </TableCell>
+                      )}
+                      {visibleColumns.qtd && (
+                        <TableCell className="text-center">
+                          <span className="inline-flex items-center gap-1 font-bold text-xs bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 px-2.5 py-0.5 rounded-full">
+                            <ArrowDownRight className="w-3 h-3 text-rose-600" />
+                            {saida.quantidade} un
+                          </span>
+                        </TableCell>
+                      )}
+                      {visibleColumns.ala && (
+                        <TableCell>
+                          {saida.ala_nome ? (
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] font-semibold">
+                              {saida.ala_nome}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400 text-xs">-</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.paciente && (
+                        <TableCell>
+                          {saida.paciente_nome ? (
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase max-w-[220px] truncate">
+                              <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                              <span className="truncate">{saida.paciente_nome}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.observacao && (
+                        <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-[200px] truncate">
+                          {saida.observacao || saida.motivo || "—"}
+                        </TableCell>
+                      )}
+                      {visibleColumns.acoes && (
+                        <TableCell className="text-center">
+                          <div className="flex justify-center items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Editar saída"
+                              onClick={() => handleEdit(saida)}
+                              className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Excluir saída"
+                              onClick={() => setDeleteId(saida.id)}
+                              className="h-7 w-7 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
         {filteredSaidas.length > displayCount && (
-          <div className="py-3 text-center text-sm text-slate-500 border-t border-slate-200 bg-slate-50">
-            Carregando mais itens...
+          <div className="py-2 text-center text-xs text-slate-500 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80">
+            Carregando mais saídas ao rolar...
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Form Modal */}
       <SaidaForm

@@ -78,7 +78,8 @@ const CONTROLADOS_C1 = [
     "OXCARBAZEPINA", "VALPROATO", "VALPROICO", "DIVALPROATO", "LAMOTRIGINA",
     "TOPIRAMATO", "GABAPENTINA", "PREGABALINA", "LEVETIRACETAM", "VIGABATRINA",
     "PRIMIDONA", "KETAMINA", "CETAMINA", "LITIO", "LÍTIO", "MEMANTINA",
-    "DONEPEZILA", "RIVASTIGMINA", "PROPOFOL"
+    "DONEPEZILA", "RIVASTIGMINA", "PROPOFOL", "BIPERIDENO", "TRIEXIFENIDIL",
+    "AMANTADINA", "SELEGILINA", "GALANTAMINA"
 ];
 
 /**
@@ -140,14 +141,37 @@ export function getPortaria344List(medOrName) {
     }
 
     // 3. Psicotrópicos (Listas A3, B1 e B2)
-    if (PSICOTROPICOS_B.some(m => n.includes(m)) || grupo.includes("PSICOTRÓPICO") || grupo.includes("PSICOTROPICO")) {
+    if (PSICOTROPICOS_B.some(m => n.includes(m)) || grupo.includes("PSICOTRÓPICO") || grupo.includes("PSICOTROPICO") || grupo.includes("B1") || grupo.includes("B2") || grupo.includes("A3")) {
         return "Psicotrópicos (Listas A3, B1 e B2)";
     }
 
     // 4. Controle Especial (Listas C1, C2, C4 e C5)
-    if (CONTROLADOS_C1.some(m => n.includes(m)) || RETINOIDES_C2.some(m => n.includes(m)) || ANTIRRETROVIRAIS_C4.some(m => n.includes(m)) || ANABOLIZANTES_C5.some(m => n.includes(m))) {
+    if (CONTROLADOS_C1.some(m => n.includes(m)) || RETINOIDES_C2.some(m => n.includes(m)) || ANTIRRETROVIRAIS_C4.some(m => n.includes(m)) || ANABOLIZANTES_C5.some(m => n.includes(m)) || grupo.includes("C1") || grupo.includes("CONTROLE ESPECIAL")) {
         return "Controle Especial (Listas C1, C2, C4 e C5)";
     }
 
     return "Outros Controlados";
 }
+
+/**
+ * Retorna uma chave curta de agrupamento da Portaria 344/98
+ * @param {string|object} medOrName
+ * @returns {"psicotropicos"|"controle_especial"|"entorpecentes"|"imunossupressores"|"outros"}
+ */
+export function getPortaria344CategoryKey(medOrName) {
+    const list = getPortaria344List(medOrName);
+    if (list.includes("Psicotrópicos") || list.includes("A3, B1 e B2")) {
+        return "psicotropicos";
+    }
+    if (list.includes("Controle Especial") || list.includes("C1, C2, C4 e C5")) {
+        return "controle_especial";
+    }
+    if (list.includes("Entorpecentes") || list.includes("A1 e A2")) {
+        return "entorpecentes";
+    }
+    if (list.includes("Imunossupressores") || list.includes("C3")) {
+        return "imunossupressores";
+    }
+    return "outros";
+}
+

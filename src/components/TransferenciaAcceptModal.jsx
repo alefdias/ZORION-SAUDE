@@ -13,22 +13,28 @@ export function TransferenciaAcceptModal({ activeSection }) {
   const { data: pendingTransfers = [], isLoading } = useQuery({
     queryKey: ['transferencias_pendentes', activeSection?.id],
     queryFn: async () => {
-      const all = await db.entities.TransferenciaPendente.list();
-      return all.filter(t => {
-        if (t.status !== "Pendente") return false;
-        
-        if (t.direcao === "para_satelite" && activeSection?.id !== "satelite") return false;
-        if (t.direcao === "para_estoque" && activeSection?.id !== "estoque") return false;
-        if (t.direcao === "para_carrinho_parada" && activeSection?.id !== "carrinho") return false;
-        
-        return true;
-      });
+      try {
+        const all = await db.entities.TransferenciaPendente.list();
+        if (!Array.isArray(all)) return [];
+        return all.filter(t => {
+          if (!t || t.status !== "Pendente") return false;
+          
+          if (t.direcao === "para_satelite" && activeSection?.id !== "satelite") return false;
+          if (t.direcao === "para_estoque" && activeSection?.id !== "estoque") return false;
+          if (t.direcao === "para_carrinho_parada" && activeSection?.id !== "carrinho") return false;
+          
+          return true;
+        });
+      } catch (e) {
+        console.warn("[TransferenciaAcceptModal] Falha ao carregar transferências pendentes:", e);
+        return [];
+      }
     },
     refetchInterval: 10000 // poll every 10 seconds
   });
 
   useEffect(() => {
-    if (pendingTransfers.length > 0) {
+    if (Array.isArray(pendingTransfers) && pendingTransfers.length > 0) {
       setOpen(true);
     } else {
       setOpen(false);
