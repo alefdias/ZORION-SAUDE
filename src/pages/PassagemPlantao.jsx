@@ -699,7 +699,7 @@ export default function PassagemPlantao({ isTab = false }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleGoToToday}
+            onClick={handleResetToCurrentShift}
             className="text-xs text-purple-600 font-semibold hover:bg-purple-50 h-8.5 px-2.5"
           >
             Hoje
