@@ -120,12 +120,17 @@ export default function Saidas({ isTab = false }) {
         const saida = await db.entities.Saida.create(saidaData);
         createdSaidas.push(saida);
 
+        // Registrar na trilha de auditoria
+        await db.logAction(
+          "BAIXA_MANUAL_ESTOQUE",
+          "Saida",
+          saida?.id || item.medicamento_id,
+          `Baixa manual de ${item.quantidade} un do medicamento '${item.medicamento_nome}' (Lote: ${item.numero_lote || 'N/I'}). Destino: ${saidaData.destino || 'Não especificado'}, Motivo: ${saidaData.motivo || 'Manual'}`
+        );
+
         // 3. Atualizar estoque do medicamento (Apenas Satélite)
         const medicamento = medicamentos.find(m => m.id === saidaData.medicamento_id);
         if (medicamento) {
-          // A saída por padrão agora subtrai do estoque da satélite, MAS se for só central... 
-          // O usuário não especificou se a saída deveria deduzir da central caso não haja na satélite.
-          // Vou continuar deduzindo da satélite conforme lógica original, com Math.max para não ficar negativo
           await db.entities.Medicamento.update(medicamento.id, {
             estoque_satelite: Math.max(0, (medicamento.estoque_satelite || 0) - saidaData.quantidade),
           });

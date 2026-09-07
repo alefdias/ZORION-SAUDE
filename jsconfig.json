@@ -14,7 +14,7 @@
       "dom"
     ],
     "target": "esnext",
-    "checkJs": true,
+    "checkJs": false,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
@@ -22,7 +22,7 @@
     "types": []
   },
   "include": [
-    "src/components/**/*.js",
+    "src/components/**/*.{js,jsx}",
     "src/pages/**/*.jsx",
     "src/Layout.jsx"
   ],

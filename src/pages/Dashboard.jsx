@@ -110,19 +110,36 @@ export default function Dashboard() {
     });
   }
 
-  // Dados para gráfico de categorias
-  const grupoData = [];
+  // Dados para gráfico de categorias (ordenados e com Top 5 + Outros para evitar poluição visual)
   const gruposContados = {};
+  const origensContadas = {};
   medicamentos.forEach(m => {
-    if (m.grupo_terapeutico) {
-      gruposContados[m.grupo_terapeutico] = (gruposContados[m.grupo_terapeutico] || 0) + (m.estoque_atual || 0);
+    const qtd = m.estoque_atual || 0;
+    if (qtd > 0) {
+      const grupo = m.grupo_terapeutico?.trim() || "Outros";
+      gruposContados[grupo] = (gruposContados[grupo] || 0) + qtd;
+
+      const origem = m.origem?.trim() || "Outros";
+      origensContadas[origem] = (origensContadas[origem] || 0) + qtd;
     }
   });
-  Object.entries(gruposContados).forEach(([categoria, value]) => {
-    if (value > 0) {
-      grupoData.push({ categoria, value });
+
+  const sortedGrupos = Object.entries(gruposContados).sort((a, b) => b[1] - a[1]);
+  const grupoData = [];
+  if (sortedGrupos.length <= 6) {
+    sortedGrupos.forEach(([categoria, value]) => grupoData.push({ categoria, value }));
+  } else {
+    const top5 = sortedGrupos.slice(0, 5);
+    const outrosSoma = sortedGrupos.slice(5).reduce((acc, curr) => acc + curr[1], 0);
+    top5.forEach(([categoria, value]) => grupoData.push({ categoria, value }));
+    if (outrosSoma > 0) {
+      grupoData.push({ categoria: "Outros", value: outrosSoma });
     }
-  });
+  }
+
+  const origemData = Object.entries(origensContadas)
+    .map(([categoria, value]) => ({ categoria, value }))
+    .sort((a, b) => b.value - a.value);
 
   // Total entradas do mês
   const inicioMes = startOfMonth(hoje);
@@ -241,7 +258,7 @@ export default function Dashboard() {
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <MovimentacaoChart data={chartData} />
-        <GrupoChart data={grupoData} />
+        <GrupoChart data={grupoData} origemData={origemData} />
       </div>
 
       {/* Footer */}

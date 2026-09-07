@@ -56,6 +56,12 @@ export function TransferenciaAcceptModal({ activeSection }) {
             motivo: "Transferência de Estoque",
             observacao: "Transferido do Estoque Geral para Farmácia Satélite"
           });
+          await db.logAction(
+            "TRANSFERENCIA_ESTOQUE_ACEITA",
+            "TransferenciaPendente",
+            transfer.id,
+            `Transferência de ${transfer.quantidade} un do medicamento '${med.nome}' (Lote: ${lote.numero_lote}) aceita para Farmácia Satélite.`
+          );
         } else if (transfer.direcao === "para_estoque") {
           await db.entities.Medicamento.update(med.id, {
             estoque_atual: (med.estoque_atual || 0) + transfer.quantidade
@@ -75,6 +81,12 @@ export function TransferenciaAcceptModal({ activeSection }) {
             motivo: "Transferência de Estoque",
             observacao: "Devolvido da Farmácia Satélite para o Estoque Geral"
           });
+          await db.logAction(
+            "TRANSFERENCIA_ESTOQUE_ACEITA",
+            "TransferenciaPendente",
+            transfer.id,
+            `Devolução de ${transfer.quantidade} un do medicamento '${med.nome}' (Lote: ${lote.numero_lote}) aceita para Estoque Geral.`
+          );
         } else if (transfer.direcao === "para_carrinho_parada") {
           const centralStock = await db.entities.CarrinhoEstoqueCentral.list();
           const existingCentral = centralStock.find(c => c.medicamento_id === med.id && c.lote_id === lote.id);

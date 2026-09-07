@@ -1,34 +1,87 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Printer, AlertTriangle } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { useLocation } from "react-router-dom";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import {
+  Printer,
+  AlertTriangle,
+  Book,
+  FileCheck2,
+  Search,
+  CheckCircle2,
+  Package,
+  Layers,
+  ArrowRight,
+  User,
+  ShieldCheck,
+  Building,
+  Calendar,
+  RefreshCw,
+  FileSpreadsheet
+} from "lucide-react";
+import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
 
 export default function LivroRegistro() {
   const location = useLocation();
+  const navigate = useNavigate();
   const searchParams = new URLSearchParams(location.search);
-  const selectedLivroMedId = searchParams.get("medId");
+  const initialMedId = searchParams.get("medId") || "";
   const queryClient = useQueryClient();
 
-  // Loss state
+  // Active Main Tab: 'livro_diario' | 'bmpo_bspo' | 'rastreabilidade'
+  const [activeTab, setActiveTab] = useState("livro_diario");
+
+  // Selected Medication for Tab 1 (Livro Diário)
+  const [selectedLivroMedId, setSelectedLivroMedId] = useState(initialMedId);
+
+  // Modal Perda
   const [isPerdaModalOpen, setIsPerdaModalOpen] = useState(false);
   const [perdaQtd, setPerdaQtd] = useState("");
   const [perdaMotivoPreset, setPerdaMotivoPreset] = useState("");
   const [perdaMotivoCustom, setPerdaMotivoCustom] = useState("");
   const [perdaLote, setPerdaLote] = useState("");
 
-  // Puxar usuário logado do localStorage ou usar padrão
-  const storedUser = JSON.parse(localStorage.getItem("pharma_user") || "null");
-  const currentUser = storedUser || { full_name: "Administrador", crf: "_______" };
+  // Tab 2 (BMPO/BSPO) filters
+  const [bmpoTipo, setBmpoTipo] = useState("BMPO"); // 'BMPO' | 'BSPO'
+  const [bmpoPeriodicidade, setBmpoPeriodicidade] = useState("mensal"); // 'mensal' | 'trimestral' | 'anual'
+  const [bmpoAno, setBmpoAno] = useState(new Date().getFullYear().toString());
+  const [bmpoMes, setBmpoMes] = useState((new Date().getMonth() + 1).toString());
+  const [bmpoTrimestre, setBmpoTrimestre] = useState("1");
+  const [bmpoListaFiltro, setBmpoListaFiltro] = useState("TODAS");
 
+  // Tab 3 (Rastreabilidade) search state
+  const [searchLoteQuery, setSearchLoteQuery] = useState("");
+  const [selectedLoteNumero, setSelectedLoteNumero] = useState("");
+
+  // Current logged user
+  const storedUser = JSON.parse(localStorage.getItem("pharma_user") || "null");
+  const currentUser = storedUser || { full_name: "Farmacêutico Responsável", crf: "CRF-SP 45.291" };
+
+  // Hospital info from localStorage or defaults
+  const hospitalInfo = {
+    nome: localStorage.getItem("hospital_nome") || "HOSPITAL SANTA ISABEL / REDE ZORION",
+    cnpj: localStorage.getItem("hospital_cnpj") || "12.345.678/0001-90",
+    unidade: "FARMÁCIA CENTRAL & SATÉLITE",
+    cidade: localStorage.getItem("hospital_cidade") || "São Paulo - SP",
+    rt_nome: currentUser.full_name,
+    rt_crf: currentUser.crf || "45.291-SP",
+    diretor_nome: localStorage.getItem("hospital_diretor_nome") || "Dr. Roberto Silveira Martins",
+    diretor_crm: localStorage.getItem("hospital_diretor_crm") || "CRM-SP 102.482"
+  };
+
+  // Queries
   const { data: medicamentos = [] } = useQuery({
     queryKey: ['medicamentos'],
     queryFn: () => db.entities.Medicamento.list(),
@@ -44,92 +97,272 @@ export default function LivroRegistro() {
     queryFn: () => db.entities.Entrada.list('-created_date'),
   });
 
-  const historicoMovimentos = (() => {
-    if (!selectedLivroMedId) return [];
+  const { data: lotes = [] } = useQuery({
+    queryKey: ['lotes', 'livro344'],
+    queryFn: () => db.entities.Lote.list('-created_date'),
+  });
 
-    const entradas = entradasLivro.filter(e => e.medicamento_id === selectedLivroMedId && (e.quantidade || 0) > 0).map(e => {
-      let parsedDate = new Date();
-      try {
-        const dateStr = e.data_entrada || e.created_at || new Date().toISOString();
-        parsedDate = parseISO(dateStr);
-        if (isNaN(parsedDate)) parsedDate = new Date();
-      } catch (err) {
-        parsedDate = new Date();
-      }
-      return {
-        ...e,
-        tipo: 'ENTRADA',
-        dataObj: parsedDate
-      };
-    });
-    
-      const saidas = saidasLivro
-      .filter(s => s.medicamento_id === selectedLivroMedId && s.motivo !== 'Transferência de Estoque' && (s.quantidade || 0) > 0)
+  // Filter only controlled/psychotropic medications
+  const medicamentosControlados = useMemo(() => {
+    return medicamentos.filter(m => isPsicotropico(m) || m.portaria_344);
+  }, [medicamentos]);
+
+  // Set default selected medication if none selected yet
+  const effectiveSelectedMedId = selectedLivroMedId || (medicamentosControlados.length > 0 ? medicamentosControlados[0].id : "");
+  const selectedMed = medicamentos.find(m => m.id === effectiveSelectedMedId);
+
+  // Movements for Tab 1 (Livro Diário Específico)
+  const historicoMovimentos = useMemo(() => {
+    if (!effectiveSelectedMedId) return [];
+
+    const entradas = entradasLivro
+      .filter(e => e.medicamento_id === effectiveSelectedMedId && (e.quantidade || 0) > 0)
+      .map(e => {
+        let parsedDate = new Date();
+        try {
+          const dateStr = e.data_entrada || e.created_at || new Date().toISOString();
+          parsedDate = parseISO(dateStr);
+          if (isNaN(parsedDate)) parsedDate = new Date();
+        } catch {
+          parsedDate = new Date();
+        }
+        return {
+          ...e,
+          tipo: 'ENTRADA',
+          dataObj: parsedDate
+        };
+      });
+
+    const saidas = saidasLivro
+      .filter(s => s.medicamento_id === effectiveSelectedMedId && (s.quantidade || 0) > 0)
       .map(s => {
         let parsedDate = new Date();
         try {
           const dateStr = s.data_saida || s.created_at || new Date().toISOString();
           parsedDate = parseISO(dateStr);
           if (isNaN(parsedDate)) parsedDate = new Date();
-        } catch (e) {
+        } catch {
           parsedDate = new Date();
         }
+        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra') || (s.motivo || '').toLowerCase().includes('perda');
         return {
           ...s,
-          tipo: s.destino === 'Perda' || s.motivo === 'Perda' ? 'PERDA' : 'SAIDA',
+          tipo: isPerda ? 'PERDA' : 'SAIDA',
           dataObj: parsedDate
         };
       });
-    
+
     const todos = [...entradas, ...saidas].sort((a, b) => {
-      const dayA = format(a.dataObj, 'yyyy-MM-dd');
-      const dayB = format(b.dataObj, 'yyyy-MM-dd');
-      if (dayA !== dayB) return dayA.localeCompare(dayB);
-      const createdA = new Date(a.created_at || 0).getTime();
-      const createdB = new Date(b.created_at || 0).getTime();
-      return createdA - createdB;
+      const timeA = a.dataObj.getTime();
+      const timeB = b.dataObj.getTime();
+      return timeA - timeB;
     });
-    
+
     let saldoAtual = 0;
     return todos.map(mov => {
       if (mov.tipo === 'ENTRADA') saldoAtual += (mov.quantidade || 0);
       else saldoAtual -= (mov.quantidade || 0);
       return { ...mov, saldo: saldoAtual };
     });
-  })();
+  }, [effectiveSelectedMedId, entradasLivro, saidasLivro]);
 
+  // Tab 2 (BMPO/BSPO) Calculations
+  const bmpoData = useMemo(() => {
+    // Determine date range
+    let start, end;
+    const ano = parseInt(bmpoAno, 10) || new Date().getFullYear();
+
+    if (bmpoPeriodicidade === "mensal") {
+      const mes = (parseInt(bmpoMes, 10) || 1) - 1;
+      start = startOfMonth(new Date(ano, mes, 1));
+      end = endOfMonth(new Date(ano, mes, 1));
+    } else if (bmpoPeriodicidade === "trimestral") {
+      const tri = parseInt(bmpoTrimestre, 10) || 1;
+      const startMonth = (tri - 1) * 3;
+      const endMonth = startMonth + 2;
+      start = startOfMonth(new Date(ano, startMonth, 1));
+      end = endOfMonth(new Date(ano, endMonth, 1));
+    } else {
+      // anual
+      start = new Date(ano, 0, 1);
+      end = new Date(ano, 11, 31, 23, 59, 59);
+    }
+
+    const startTs = start.getTime();
+    const endTs = end.getTime();
+
+    // Iterate through all controlled medications
+    return medicamentosControlados
+      .filter(med => {
+        if (bmpoListaFiltro === "TODAS") return true;
+        const lista = getPortaria344List(med);
+        return lista.includes(bmpoListaFiltro);
+      })
+      .map(med => {
+        // Entradas no período
+        const entradasNoPeriodo = entradasLivro.filter(e => {
+          if (e.medicamento_id !== med.id) return false;
+          const dt = parseISO(e.data_entrada || e.created_at || "");
+          const t = dt.getTime();
+          return !isNaN(t) && t >= startTs && t <= endTs;
+        });
+        const qtdEntradas = entradasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+        // Saídas comuns no período
+        const saidasNoPeriodo = saidasLivro.filter(s => {
+          if (s.medicamento_id !== med.id) return false;
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra');
+          if (isPerda) return false;
+          const dt = parseISO(s.data_saida || s.created_at || "");
+          const t = dt.getTime();
+          return !isNaN(t) && t >= startTs && t <= endTs;
+        });
+        const qtdSaidas = saidasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+        // Perdas no período
+        const perdasNoPeriodo = saidasLivro.filter(s => {
+          if (s.medicamento_id !== med.id) return false;
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || (s.motivo || '').toLowerCase().includes('quebra');
+          if (!isPerda) return false;
+          const dt = parseISO(s.data_saida || s.created_at || "");
+          const t = dt.getTime();
+          return !isNaN(t) && t >= startTs && t <= endTs;
+        });
+        const qtdPerdas = perdasNoPeriodo.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+        // Saldo final atual e cálculo do estoque inicial
+        const estoqueFinal = (med.estoque_atual || 0) + (med.estoque_satelite || 0);
+        // Estoque Inicial = Estoque Final - Entradas + Saídas + Perdas
+        const estoqueInicial = Math.max(0, estoqueFinal - qtdEntradas + qtdSaidas + qtdPerdas);
+
+        return {
+          id: med.id,
+          codigo: med.codigo || "P344",
+          nome: med.nome,
+          concentracao: med.concentracao || "-",
+          apresentacao: med.apresentacao || med.unidade_medida || "UN",
+          lista: getPortaria344List(med),
+          estoqueInicial,
+          entradas: qtdEntradas,
+          saidas: qtdSaidas,
+          perdas: qtdPerdas,
+          estoqueFinal
+        };
+      });
+  }, [medicamentosControlados, entradasLivro, saidasLivro, bmpoAno, bmpoMes, bmpoTrimestre, bmpoPeriodicidade, bmpoListaFiltro]);
+
+  // Tab 3 (Rastreabilidade por Lote) Calculations
+  // All unique batch numbers available in system
+  const allBatchNumbers = useMemo(() => {
+    const lotesSet = new Set();
+    lotes.forEach(l => { if (l.numero_lote) lotesSet.add(l.numero_lote); });
+    entradasLivro.forEach(e => { if (e.numero_lote) lotesSet.add(e.numero_lote); });
+    saidasLivro.forEach(s => { if (s.numero_lote && s.numero_lote !== "ALTA" && s.numero_lote !== "DESCARTE") lotesSet.add(s.numero_lote); });
+    return Array.from(lotesSet).sort();
+  }, [lotes, entradasLivro, saidasLivro]);
+
+  const activeLoteNumber = selectedLoteNumero || (allBatchNumbers.length > 0 ? allBatchNumbers[0] : "");
+
+  const loteTraceData = useMemo(() => {
+    if (!activeLoteNumber) return null;
+
+    const loteObj = lotes.find(l => l.numero_lote === activeLoteNumber);
+    const entradas = entradasLivro.filter(e => e.numero_lote === activeLoteNumber);
+    const saidas = saidasLivro.filter(s => s.numero_lote === activeLoteNumber);
+
+    // Associated medication
+    const medId = loteObj?.medicamento_id || entradas[0]?.medicamento_id || saidas[0]?.medicamento_id;
+    const med = medicamentos.find(m => m.id === medId) || { nome: entradas[0]?.medicamento_nome || saidas[0]?.medicamento_nome || "Medicamento" };
+
+    // Total purchased/entered
+    const totalEntrada = entradas.reduce((acc, cur) => acc + (cur.quantidade || 0), 0) || (loteObj?.quantidade_inicial || 0);
+
+    // Internal transfers (Central -> Satélite)
+    const transferencias = saidas.filter(s => s.motivo === "Transferência de Estoque" || s.destino === "Farmácia Satélite");
+    const totalTransferido = transferencias.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+    // Patient administrations
+    const dispensacoesPacientes = saidas.filter(s => 
+      s.motivo !== "Transferência de Estoque" && 
+      s.destino !== "Farmácia Satélite" && 
+      s.destino !== "Perda" &&
+      s.destino !== "Descarte Especial SNGPC" &&
+      !s.destino?.includes("Geral")
+    );
+    const totalDispensado = dispensacoesPacientes.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+    // Losses & Discards
+    const perdasEDescartes = saidas.filter(s => 
+      s.destino === "Perda" || 
+      s.motivo === "Perda" || 
+      s.destino === "Descarte Especial SNGPC" ||
+      (s.motivo || "").toLowerCase().includes("quebra") ||
+      (s.motivo || "").toLowerCase().includes("perda")
+    );
+    const totalPerdas = perdasEDescartes.reduce((acc, cur) => acc + (cur.quantidade || 0), 0);
+
+    const saldoAtual = loteObj?.quantidade_atual !== undefined ? loteObj.quantidade_atual : Math.max(0, totalEntrada - totalDispensado - totalPerdas);
+
+    return {
+      numero_lote: activeLoteNumber,
+      loteObj,
+      medicamento: med,
+      data_validade: loteObj?.data_validade || entradas[0]?.data_validade || "-",
+      fornecedor: loteObj?.fornecedor || entradas[0]?.fornecedor_nome || "Fornecedor Padrão / Distribuidora",
+      nota_fiscal: loteObj?.nota_fiscal || entradas[0]?.numero_nota_fiscal || "NF-E Central",
+      totalEntrada,
+      totalTransferido,
+      totalDispensado,
+      totalPerdas,
+      saldoAtual,
+      entradas,
+      transferencias,
+      dispensacoesPacientes,
+      perdasEDescartes
+    };
+  }, [activeLoteNumber, lotes, entradasLivro, saidasLivro, medicamentos]);
+
+  // Handle registering Loss in Tab 1
   const handleRegistrarPerda = async (e) => {
     e.preventDefault();
     const finalMotivo = perdaMotivoPreset === "Outro" ? perdaMotivoCustom : perdaMotivoPreset;
-    
+
     if (!perdaQtd || !finalMotivo || !perdaLote) {
       toast.error("Preencha todos os campos obrigatórios.");
       return;
     }
     try {
-      await db.entities.Saida.create({
-        medicamento_id: selectedLivroMedId,
-        quantidade: parseInt(perdaQtd, 10),
+      const qtdInt = parseInt(perdaQtd, 10);
+      const saidaRes = await db.entities.Saida.create({
+        medicamento_id: effectiveSelectedMedId,
+        medicamento_nome: selectedMed?.nome || "Controlado",
+        quantidade: qtdInt,
         destino: "Perda",
         motivo: finalMotivo,
         responsavel: currentUser.full_name,
         numero_lote: perdaLote,
         data_saida: new Date().toISOString()
       });
-      
-      const med = medicamentos.find(m => m.id === selectedLivroMedId);
-      if (med) {
-        await db.entities.Medicamento.update(med.id, {
-          estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - parseInt(perdaQtd, 10))
+
+      if (selectedMed) {
+        await db.entities.Medicamento.update(selectedMed.id, {
+          estoque_satelite: Math.max(0, (selectedMed.estoque_satelite || 0) - qtdInt)
         });
       }
 
-      toast.success("Perda registrada com sucesso e estoque deduzido.");
+      await db.logAction(
+        "PERDA_REGISTRADA_344",
+        "Saida",
+        saidaRes?.id || effectiveSelectedMedId,
+        `Perda registrada no Livro 344: ${qtdInt} un de '${selectedMed?.nome}' (Lote: ${perdaLote}). Motivo: ${finalMotivo}`
+      );
+
+      toast.success("Perda registrada com sucesso e lançada na auditoria.");
       setIsPerdaModalOpen(false);
       setPerdaQtd(""); setPerdaMotivoPreset(""); setPerdaMotivoCustom(""); setPerdaLote("");
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
-    } catch (err) {
+    } catch {
       toast.error("Erro ao registrar perda.");
     }
   };
@@ -138,132 +371,721 @@ export default function LivroRegistro() {
     window.print();
   };
 
-  const medicamento = medicamentos.find(m => m.id === selectedLivroMedId);
-
-  if (!selectedLivroMedId || medicamentos.length === 0) {
-    return <div className="p-12 text-center text-slate-500 font-medium">Carregando livro...</div>;
-  }
-
   return (
     <div className="bg-slate-50 min-h-screen p-4 sm:p-8 font-sans">
-      <div className="max-w-5xl mx-auto flex justify-between items-center mb-6 no-print">
-        <Button 
-          variant="outline" 
-          onClick={() => window.history.back()}
-          className="gap-2 bg-white hover:bg-slate-100 text-slate-700 shadow-sm border-slate-300 font-semibold"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          Voltar para Portaria
-        </Button>
-        <div className="flex gap-2">
-          <Button 
-            onClick={() => setIsPerdaModalOpen(true)} 
+      {/* Top Action Bar (No-Print) */}
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 no-print">
+        <div className="flex items-center gap-3">
+          <Button
             variant="outline"
-            className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 shadow-sm font-semibold"
+            onClick={() => navigate("/SatelitePortaria")}
+            className="gap-2 bg-white hover:bg-slate-100 text-slate-700 shadow-sm border-slate-300 font-semibold"
           >
-            <AlertTriangle className="w-4 h-4" />
-            Registrar Perda
+            <ArrowRight className="w-4 h-4 rotate-180" />
+            Portaria 344
           </Button>
-          <Button onClick={handlePrint} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md font-semibold">
+          <div>
+            <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="w-6 h-6 text-indigo-600" />
+              Portaria 344/98 & Rastreabilidade Reversa
+            </h1>
+            <p className="text-xs text-slate-500">
+              Conformidade SNGPC, Livro de Registro, Balanço BMPO/BSPO e Trilha por Lote.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {activeTab === "livro_diario" && (
+            <Button
+              onClick={() => setIsPerdaModalOpen(true)}
+              variant="outline"
+              className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 shadow-sm font-semibold text-xs"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Registrar Quebra / Perda
+            </Button>
+          )}
+
+          <Button
+            onClick={handlePrint}
+            className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md font-semibold text-xs"
+          >
             <Printer className="w-4 h-4" />
-            Imprimir Livro
+            Imprimir Documento Oficial (A4)
           </Button>
         </div>
       </div>
 
-      <div id="livro-print-area" className="max-w-5xl mx-auto border border-slate-200 shadow-xl bg-white p-4 sm:p-8 rounded-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold uppercase underline mb-3 text-slate-900">FOLHA DO LIVRO DE REGISTRO ESPECÍFICO</h1>
-          <h2 className="text-xl font-bold text-slate-800">
-            Medicamento: {medicamento ? `${medicamento.nome} ${medicamento.unidade_medida && medicamento.unidade_medida.toLowerCase() !== 'un' ? `- ${medicamento.unidade_medida}` : ""} ${medicamento.apresentacao ? `- ${medicamento.apresentacao}` : ""}` : ""}
-          </h2>
-          <p className="text-base mt-2 text-slate-600 font-medium">Portaria SVS/MS nº 344/1998</p>
-          <p className="text-sm mt-1 text-slate-500 font-semibold">Unidade: Farmácia Satélite</p>
-        </div>
-
-        <Table className="border-collapse w-full border border-slate-300">
-          <TableHeader>
-            <TableRow className="bg-slate-100/80">
-              <TableHead className="font-bold text-slate-800 text-center border border-slate-300" colSpan={3}>DATA</TableHead>
-              <TableHead className="font-bold text-slate-800 border border-slate-300" rowSpan={2}>HISTÓRICO</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center border border-slate-300" colSpan={3}>MOVIMENTO</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center border border-slate-300" rowSpan={2}>ESTOQUE</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center border border-slate-300" rowSpan={2}>ASSINATURA DO RESP. TÉCNICO</TableHead>
-              <TableHead className="font-bold text-slate-800 border border-slate-300" rowSpan={2}>OBSERVAÇÕES</TableHead>
-            </TableRow>
-            <TableRow className="bg-slate-100/80">
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-10 px-1 border border-slate-300">Dia</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-10 px-1 border border-slate-300">Mês</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-12 px-1 border border-slate-300">Ano</TableHead>
-              
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300">Entrada</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300">Saída</TableHead>
-              <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300">Perdas</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {historicoMovimentos.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-slate-500 italic border border-slate-300">
-                    Nenhum registro encontrado para este medicamento.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                historicoMovimentos.map((mov) => {
-                  const d = mov.dataObj;
-                  return (
-                    <TableRow key={mov.id + mov.tipo} className="hover:bg-slate-50">
-                      <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getDate()).padStart(2, '0')}</TableCell>
-                      <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getMonth() + 1).padStart(2, '0')}</TableCell>
-                      <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{d.getFullYear()}</TableCell>
-                      
-                      <TableCell className="font-semibold text-slate-800 uppercase text-xs border border-slate-300 pl-2">
-                        {mov.tipo === 'ENTRADA' ? (mov.fornecedor_nome || 'Estoque Central') : 
-                          (mov.tipo === 'PERDA' ? 'PERDA / QUEBRA' : (mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente'))}
-                      </TableCell>
-                      
-                      <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">{mov.tipo === 'ENTRADA' ? mov.quantidade : '-'}</TableCell>
-                      <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">{mov.tipo === 'SAIDA' ? mov.quantidade : '-'}</TableCell>
-                      <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? mov.quantidade : '-'}</TableCell>
-                      
-                      <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{mov.saldo}</TableCell>
-                      <TableCell className="border border-slate-300 p-0 align-middle text-center">
-                        <div className="flex flex-col items-center justify-center w-full py-1">
-                          <span className="text-[9px] font-bold text-slate-800 uppercase print:text-[8px]">
-                            {currentUser.full_name}
-                          </span>
-                          <span className="text-[8px] text-slate-600 print:text-[7px]">
-                            CRF: {currentUser.crf || '_________'}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-[10px] text-slate-600 min-w-[150px] border border-slate-300 px-2 break-words whitespace-normal" title={`Lote: ${mov.numero_lote || mov.lote || '-'} | Resp: ${mov.responsavel || '-'}`}>
-                        Lote: {mov.numero_lote || mov.lote || "-"} {mov.motivo ? `| ${mov.motivo.replace(/ fixa/gi, '').replace(/Fixa/g, '').replace('1 dias', '1 dia')}` : ''}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-          </TableBody>
-        </Table>
+      {/* Main Tab Navigation (No-Print) */}
+      <div className="max-w-6xl mx-auto mb-6 no-print">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-1 md:grid-cols-3 bg-slate-200/80 p-1.5 rounded-xl h-auto gap-1">
+            <TabsTrigger value="livro_diario" className="gap-2 font-bold py-2.5 text-xs">
+              <Book className="w-4 h-4 text-indigo-600" />
+              1. Folha Diária de Registro Específico
+            </TabsTrigger>
+            <TabsTrigger value="bmpo_bspo" className="gap-2 font-bold py-2.5 text-xs">
+              <FileCheck2 className="w-4 h-4 text-emerald-600" />
+              2. Fechamento BMPO / BSPO (Anvisa)
+            </TabsTrigger>
+            <TabsTrigger value="rastreabilidade" className="gap-2 font-bold py-2.5 text-xs">
+              <Layers className="w-4 h-4 text-blue-600" />
+              3. Rastreabilidade Ponta a Ponta por Lote
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
-      
+
+      {/* ─── TAB 1: FOLHA DIÁRIA DE REGISTRO ESPECÍFICO ───────────────────────────── */}
+      {activeTab === "livro_diario" && (
+        <div className="max-w-6xl mx-auto space-y-4">
+          {/* Medication Selector (No-Print) */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between no-print">
+            <div className="flex-1 w-full sm:w-auto">
+              <Label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                Selecione o Medicamento Controlado para o Livro:
+              </Label>
+              <Select value={effectiveSelectedMedId} onValueChange={setSelectedLivroMedId}>
+                <SelectTrigger className="w-full bg-slate-50 border-slate-300 font-semibold">
+                  <SelectValue placeholder="Escolha um medicamento psicotrópico..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {medicamentosControlados.map(med => (
+                    <SelectItem key={med.id} value={med.id}>
+                      {med.nome} {med.concentracao ? `- ${med.concentracao}` : ""} ({getPortaria344List(med)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="text-right">
+                <span className="text-[11px] text-slate-500 font-medium block">Estoque Atual Total</span>
+                <span className="text-lg font-black text-indigo-700">
+                  {((selectedMed?.estoque_atual || 0) + (selectedMed?.estoque_satelite || 0))} {selectedMed?.unidade_medida || "UN"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Folha do Livro Print Area */}
+          <div id="livro-print-area" className="border border-slate-200 shadow-xl bg-white p-4 sm:p-8 rounded-sm">
+            <div className="text-center mb-6">
+              <p className="text-xs font-black uppercase text-slate-500 tracking-widest">{hospitalInfo.nome}</p>
+              <h1 className="text-xl sm:text-2xl font-black uppercase underline mt-1 mb-2 text-slate-900">
+                FOLHA DO LIVRO DE REGISTRO ESPECÍFICO
+              </h1>
+              <h2 className="text-base sm:text-lg font-bold text-slate-800">
+                Substância / Medicamento: {selectedMed ? `${selectedMed.nome} ${selectedMed.concentracao || ""} ${selectedMed.apresentacao || ""}` : "Selecione um Medicamento"}
+              </h2>
+              <p className="text-xs mt-1 text-slate-600 font-medium">
+                Portaria SVS/MS nº 344/1998 • Classificação: {selectedMed ? getPortaria344List(selectedMed) : "-"}
+              </p>
+              <p className="text-[11px] text-slate-500 font-semibold">
+                Unidade: {hospitalInfo.unidade} • Farmacêutico RT: {hospitalInfo.rt_nome} ({hospitalInfo.rt_crf})
+              </p>
+            </div>
+
+            <Table className="border-collapse w-full border border-slate-300">
+              <TableHeader>
+                <TableRow className="bg-slate-100/80">
+                  <TableHead className="font-bold text-slate-800 text-center border border-slate-300" colSpan={3}>DATA</TableHead>
+                  <TableHead className="font-bold text-slate-800 border border-slate-300" rowSpan={2}>HISTÓRICO / ORIGEM / DESTINO</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center border border-slate-300" colSpan={3}>MOVIMENTO</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center border border-slate-300" rowSpan={2}>ESTOQUE</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center border border-slate-300" rowSpan={2}>ASSINATURA DO RT</TableHead>
+                  <TableHead className="font-bold text-slate-800 border border-slate-300" rowSpan={2}>OBSERVAÇÕES & LOTE</TableHead>
+                </TableRow>
+                <TableRow className="bg-slate-100/80">
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-10 px-1 border border-slate-300">Dia</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-10 px-1 border border-slate-300">Mês</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-12 px-1 border border-slate-300">Ano</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300 text-emerald-700">Entrada</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300 text-blue-700">Saída</TableHead>
+                  <TableHead className="font-bold text-slate-800 text-center text-xs w-16 px-1 border border-slate-300 text-red-700">Perdas</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historicoMovimentos.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-10 text-slate-500 italic border border-slate-300">
+                      Nenhum registro de movimentação encontrado para este medicamento.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  historicoMovimentos.map((mov, idx) => {
+                    const d = mov.dataObj;
+                    return (
+                      <TableRow key={idx} className="hover:bg-slate-50">
+                        <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getDate()).padStart(2, '0')}</TableCell>
+                        <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{String(d.getMonth() + 1).padStart(2, '0')}</TableCell>
+                        <TableCell className="text-center font-mono text-xs px-1 border border-slate-300 text-slate-700">{d.getFullYear()}</TableCell>
+                        <TableCell className="font-semibold text-slate-800 uppercase text-xs border border-slate-300 pl-2">
+                          {mov.tipo === 'ENTRADA' ? (mov.fornecedor_nome || 'Almoxarifado Central') :
+                            (mov.tipo === 'PERDA' ? 'PERDA / QUEBRA DECLARADA' : (mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente'))}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">{mov.tipo === 'ENTRADA' ? mov.quantidade : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">{mov.tipo === 'SAIDA' ? mov.quantidade : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? mov.quantidade : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{mov.saldo}</TableCell>
+                        <TableCell className="border border-slate-300 p-0 align-middle text-center">
+                          <div className="flex flex-col items-center justify-center w-full py-1">
+                            <span className="text-[9px] font-bold text-slate-800 uppercase print:text-[8px]">
+                              {currentUser.full_name}
+                            </span>
+                            <span className="text-[8px] text-slate-600 print:text-[7px]">
+                              {currentUser.crf || 'CRF: _______'}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-[10px] text-slate-600 min-w-[150px] border border-slate-300 px-2 break-words whitespace-normal">
+                          Lote: <span className="font-semibold text-slate-800">{mov.numero_lote || mov.lote || "-"}</span> {mov.motivo ? `| ${mov.motivo}` : ''}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 2: FECHAMENTO BMPO / BSPO ────────────────────────────────────────── */}
+      {activeTab === "bmpo_bspo" && (
+        <div className="max-w-6xl mx-auto space-y-6">
+          {/* Controls Bar (No-Print) */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                  Configurar Fechamento de Balanço (Portaria 344)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Gere o BMPO ou BSPO consolidado pronto para aposição de assinaturas com CRM e CRF.
+                </p>
+              </div>
+              <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1">
+                Conformidade Anvisa & SNGPC
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 mb-1 block">Tipo de Relatório</Label>
+                <Select value={bmpoTipo} onValueChange={setBmpoTipo}>
+                  <SelectTrigger className="bg-slate-50 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BMPO">BMPO (Medicamentos)</SelectItem>
+                    <SelectItem value="BSPO">BSPO (Substâncias)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 mb-1 block">Periodicidade</Label>
+                <Select value={bmpoPeriodicidade} onValueChange={setBmpoPeriodicidade}>
+                  <SelectTrigger className="bg-slate-50 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mensal">Mensal</SelectItem>
+                    <SelectItem value="trimestral">Trimestral</SelectItem>
+                    <SelectItem value="anual">Anual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {bmpoPeriodicidade === "mensal" && (
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 mb-1 block">Mês de Referência</Label>
+                  <Select value={bmpoMes} onValueChange={setBmpoMes}>
+                    <SelectTrigger className="bg-slate-50 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Janeiro</SelectItem>
+                      <SelectItem value="2">Fevereiro</SelectItem>
+                      <SelectItem value="3">Março</SelectItem>
+                      <SelectItem value="4">Abril</SelectItem>
+                      <SelectItem value="5">Maio</SelectItem>
+                      <SelectItem value="6">Junho</SelectItem>
+                      <SelectItem value="7">Julho</SelectItem>
+                      <SelectItem value="8">Agosto</SelectItem>
+                      <SelectItem value="9">Setembro</SelectItem>
+                      <SelectItem value="10">Outubro</SelectItem>
+                      <SelectItem value="11">Novembro</SelectItem>
+                      <SelectItem value="12">Dezembro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {bmpoPeriodicidade === "trimestral" && (
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 mb-1 block">Trimestre</Label>
+                  <Select value={bmpoTrimestre} onValueChange={setBmpoTrimestre}>
+                    <SelectTrigger className="bg-slate-50 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1º Trimestre (Jan - Mar)</SelectItem>
+                      <SelectItem value="2">2º Trimestre (Abr - Jun)</SelectItem>
+                      <SelectItem value="3">3º Trimestre (Jul - Set)</SelectItem>
+                      <SelectItem value="4">4º Trimestre (Out - Dez)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 mb-1 block">Ano de Exercício</Label>
+                <Input
+                  type="number"
+                  value={bmpoAno}
+                  onChange={e => setBmpoAno(e.target.value)}
+                  className="bg-slate-50 text-xs"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 mb-1 block">Filtro de Lista 344</Label>
+                <Select value={bmpoListaFiltro} onValueChange={setBmpoListaFiltro}>
+                  <SelectTrigger className="bg-slate-50 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TODAS">Todas as Listas</SelectItem>
+                    <SelectItem value="A1">Lista A1 / A2 (Entorpecentes)</SelectItem>
+                    <SelectItem value="B1">Lista A3 / B1 / B2 (Psicotrópicos)</SelectItem>
+                    <SelectItem value="C1">Lista C1 (Controle Especial)</SelectItem>
+                    <SelectItem value="C3">Lista C3 (Imunossupressores)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Official Printable BMPO Document */}
+          <div className="bg-white p-6 sm:p-10 border border-slate-300 shadow-xl rounded-sm print:p-0 print:border-none print:shadow-none">
+            {/* Header Oficial Anvisa */}
+            <div className="border-b-2 border-slate-900 pb-4 mb-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-xl font-black uppercase text-slate-900 tracking-tight">
+                    {bmpoTipo === "BMPO" ? "BALANÇO DE MEDICAMENTOS PSICOTRÓPICOS E OUTROS (BMPO)" : "BALANÇO DE SUBSTÂNCIAS PSICOTRÓPICAS E OUTRAS (BSPO)"}
+                  </h1>
+                  <p className="text-xs text-slate-600 font-bold uppercase mt-0.5">
+                    Portaria SVS/MS nº 344/1998 • RDC ANVISA nº 22/2014
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block bg-slate-900 text-white font-mono text-xs font-bold px-2.5 py-1 rounded">
+                    {bmpoPeriodicidade === "mensal" ? `MÊS: ${String(bmpoMes).padStart(2, '0')}/${bmpoAno}` :
+                     bmpoPeriodicidade === "trimestral" ? `${bmpoTrimestre}º TRIMESTRE/${bmpoAno}` : `ANO: ${bmpoAno}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Informações do Estabelecimento */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-200 text-xs text-slate-700">
+                <div>
+                  <span className="font-bold text-slate-900 block">ESTABELECIMENTO:</span>
+                  {hospitalInfo.nome}
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900 block">CNPJ:</span>
+                  {hospitalInfo.cnpj}
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900 block">UNIDADE / LOCAL:</span>
+                  {hospitalInfo.unidade}
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900 block">CIDADE / UF:</span>
+                  {hospitalInfo.cidade}
+                </div>
+              </div>
+            </div>
+
+            {/* BMPO Table */}
+            <Table className="border-collapse w-full border border-slate-400 text-xs">
+              <TableHeader>
+                <TableRow className="bg-slate-100 font-black text-slate-900 border-b border-slate-400">
+                  <TableHead className="border border-slate-400 text-center w-12 py-2">Item</TableHead>
+                  <TableHead className="border border-slate-400 py-2">Substância / Nome Comercial</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-24">Lista 344</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-28">Apresentação</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-20">Est. Inicial</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-20 text-emerald-800">Entradas</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-20 text-blue-800">Saídas</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-20 text-red-800">Perdas</TableHead>
+                  <TableHead className="border border-slate-400 py-2 text-center w-24 bg-slate-200 font-black">Est. Final</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bmpoData.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-slate-500 italic border border-slate-400">
+                      Nenhuma substância controlada encontrada no período selecionado.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  bmpoData.map((item, idx) => (
+                    <TableRow key={item.id} className="border-b border-slate-300 hover:bg-slate-50">
+                      <TableCell className="text-center font-mono font-bold border border-slate-400">{idx + 1}</TableCell>
+                      <TableCell className="font-bold text-slate-900 uppercase border border-slate-400">
+                        {item.nome}
+                        <span className="text-[10px] text-slate-500 font-normal block">{item.concentracao}</span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] font-semibold border border-slate-400">{item.lista}</TableCell>
+                      <TableCell className="text-center text-[11px] border border-slate-400">{item.apresentacao}</TableCell>
+                      <TableCell className="text-center font-bold border border-slate-400">{item.estoqueInicial}</TableCell>
+                      <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/30 border border-slate-400">{item.entradas}</TableCell>
+                      <TableCell className="text-center font-bold text-blue-700 bg-blue-50/30 border border-slate-400">{item.saidas}</TableCell>
+                      <TableCell className="text-center font-bold text-red-700 bg-red-50/30 border border-slate-400">{item.perdas}</TableCell>
+                      <TableCell className="text-center font-black text-slate-900 bg-slate-100 border border-slate-400 text-sm">{item.estoqueFinal}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+
+            {/* Termo de Encerramento e Assinaturas (Pronto para Assinar) */}
+            <div className="mt-8 pt-6 border-t border-slate-300">
+              <p className="text-xs text-slate-600 text-justify leading-relaxed mb-8">
+                <strong>TERMO DE RESPONSABILIDADE:</strong> Declaramos sob as penas da lei que as informações constantes
+                deste balanço correspondem com fidelidade às movimentações físicas de estoque, prescrições e registros mantidos
+                sob nossa responsabilidade técnica durante o período indicado, em total obediência às determinações da Portaria
+                SVS/MS nº 344/1998 e normas complementares da ANVISA e Vigilância Sanitária local.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-12 text-center pt-8">
+                <div>
+                  <div className="w-4/5 mx-auto border-b border-slate-900 mb-2"></div>
+                  <p className="font-bold text-xs uppercase text-slate-900">{hospitalInfo.rt_nome}</p>
+                  <p className="text-[11px] text-slate-600 font-semibold">Farmacêutico(a) Responsável Técnico</p>
+                  <p className="text-[10px] text-slate-500 font-mono">CRF: {hospitalInfo.rt_crf}</p>
+                </div>
+
+                <div>
+                  <div className="w-4/5 mx-auto border-b border-slate-900 mb-2"></div>
+                  <p className="font-bold text-xs uppercase text-slate-900">{hospitalInfo.diretor_nome}</p>
+                  <p className="text-[11px] text-slate-600 font-semibold">Diretor(a) Clínico / Técnico do Hospital</p>
+                  <p className="text-[10px] text-slate-500 font-mono">CRM: {hospitalInfo.diretor_crm}</p>
+                </div>
+              </div>
+
+              <div className="mt-8 text-center text-[10px] text-slate-400 font-mono">
+                Emitido eletronicamente via Sistema ZORION SAÚDE em {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 3: RASTREABILIDADE REVERSA POR LOTE ──────────────────────────────── */}
+      {activeTab === "rastreabilidade" && (
+        <div className="max-w-6xl mx-auto space-y-6">
+          {/* Batch Search Box (No-Print) */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
+            <div className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="flex-1 w-full">
+                <Label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                  Digite ou Selecione o Número do Lote para Rastrear:
+                </Label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <Input
+                    placeholder="Ex: LOTE2026-A, ABC1234..."
+                    value={searchLoteQuery}
+                    onChange={e => {
+                      setSearchLoteQuery(e.target.value);
+                      if (e.target.value) {
+                        const found = allBatchNumbers.find(b => b.toLowerCase().includes(e.target.value.toLowerCase()));
+                        if (found) setSelectedLoteNumero(found);
+                      }
+                    }}
+                    className="pl-9 font-mono font-semibold uppercase bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="w-full md:w-72">
+                <Label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                  Lotes Cadastrados no Sistema:
+                </Label>
+                <Select value={activeLoteNumber} onValueChange={(val) => {
+                  setSelectedLoteNumero(val);
+                  setSearchLoteQuery(val);
+                }}>
+                  <SelectTrigger className="font-mono bg-slate-50 font-bold">
+                    <SelectValue placeholder="Selecione um lote..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {allBatchNumbers.map(loteNum => (
+                      <SelectItem key={loteNum} value={loteNum} className="font-mono">
+                        {loteNum}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Traceability Dashboard & Dossier */}
+          {loteTraceData ? (
+            <div className="space-y-6">
+              {/* Batch Metadata Header */}
+              <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl shadow-lg">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-indigo-900/60 pb-4 mb-4">
+                  <div>
+                    <span className="text-indigo-400 text-xs font-bold tracking-widest uppercase block mb-1">
+                      DOSSIÊ DE RASTREABILIDADE REVERSA
+                    </span>
+                    <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                      Lote: <span className="font-mono text-amber-400 bg-amber-400/10 px-3 py-0.5 rounded-lg border border-amber-400/30">{loteTraceData.numero_lote}</span>
+                    </h2>
+                    <p className="text-sm text-slate-300 mt-1 font-semibold">
+                      Medicamento: {loteTraceData.medicamento?.nome} {loteTraceData.medicamento?.concentracao ? `(${loteTraceData.medicamento?.concentracao})` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs px-3 py-1 font-bold">
+                      Validade: {loteTraceData.data_validade || "Sem data"}
+                    </Badge>
+                    <Badge className="bg-blue-500/20 text-blue-300 border border-blue-500/40 text-xs px-3 py-1 font-bold">
+                      NF: {loteTraceData.nota_fiscal}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-center">
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">1. Entrada / Comprado</span>
+                    <span className="text-xl font-black text-emerald-400">{loteTraceData.totalEntrada} un</span>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">2. Transferido Satélite</span>
+                    <span className="text-xl font-black text-cyan-400">{loteTraceData.totalTransferido} un</span>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">3. Doses a Pacientes</span>
+                    <span className="text-xl font-black text-indigo-300">{loteTraceData.totalDispensado} un</span>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">4. Perdas / Descartes</span>
+                    <span className="text-xl font-black text-red-400">{loteTraceData.totalPerdas} un</span>
+                  </div>
+                  <div className="bg-white/10 p-3 rounded-xl border border-indigo-400/40 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-amber-300 uppercase font-bold block">Saldo Remanescente</span>
+                    <span className="text-xl font-black text-amber-300">{loteTraceData.saldoAtual} un</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* End-to-End Timeline */}
+              <div className="space-y-4">
+                {/* 1. Entrada / Fornecedor */}
+                <Card className="border-l-4 border-l-emerald-500 shadow-sm">
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3 text-emerald-700 font-bold text-sm uppercase">
+                      <CheckCircle2 className="w-5 h-5" />
+                      Etapa 1: Origem & Entrada no Almoxarifado (NF de Compra)
+                    </div>
+                    {loteTraceData.entradas.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Entrada registrada via implantação inicial de lote.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {loteTraceData.entradas.map((ent, idx) => (
+                          <div key={idx} className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Data Entrada:</span>
+                              <span className="font-mono font-bold text-slate-800">{ent.data_entrada || ent.created_at ? format(parseISO(ent.data_entrada || ent.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Fornecedor:</span>
+                              <span className="font-bold text-slate-800">{ent.fornecedor_nome || loteTraceData.fornecedor}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Nota Fiscal (NF):</span>
+                              <span className="font-mono font-bold text-slate-800">{ent.numero_nota_fiscal || loteTraceData.nota_fiscal}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Quantidade Recebida:</span>
+                              <span className="font-bold text-emerald-700">{ent.quantidade} unidades</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* 2. Transferências Internas */}
+                <Card className="border-l-4 border-l-cyan-500 shadow-sm">
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3 text-cyan-700 font-bold text-sm uppercase">
+                      <RefreshCw className="w-5 h-5" />
+                      Etapa 2: Transferências Internas (Almoxarifado Geral → Farmácia Satélite)
+                    </div>
+                    {loteTraceData.transferencias.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Nenhuma transferência interna específica registrada para este lote.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {loteTraceData.transferencias.map((tr, idx) => (
+                          <div key={idx} className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Data Movimento:</span>
+                              <span className="font-mono font-bold text-slate-800">{tr.data_saida || tr.created_at ? format(parseISO(tr.data_saida || tr.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Destino:</span>
+                              <span className="font-bold text-cyan-800">{tr.destino || "Farmácia Satélite"}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Quantidade Transferida:</span>
+                              <span className="font-bold text-cyan-700">{tr.quantidade} unidades</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-semibold block">Responsável:</span>
+                              <span className="font-medium text-slate-700">{tr.responsavel || "Almoxarifado"}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* 3. Pacientes que Receberam Doses Deste Lote */}
+                <Card className="border-l-4 border-l-indigo-600 shadow-sm">
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 text-indigo-700 font-bold text-sm uppercase">
+                        <User className="w-5 h-5" />
+                        Etapa 3: Pacientes que Receberam Doses Deste Lote Exato ({loteTraceData.dispensacoesPacientes.length})
+                      </div>
+                      <Badge className="bg-indigo-100 text-indigo-800 border-none font-bold text-xs">
+                        Total Ministrado: {loteTraceData.totalDispensado} un
+                      </Badge>
+                    </div>
+
+                    {loteTraceData.dispensacoesPacientes.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Nenhum paciente recebeu doses deste lote até o momento.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table className="border-collapse w-full border border-slate-200 text-xs">
+                          <TableHeader>
+                            <TableRow className="bg-slate-100">
+                              <TableHead className="font-bold text-slate-800 py-2">Data/Hora</TableHead>
+                              <TableHead className="font-bold text-slate-800 py-2">Paciente</TableHead>
+                              <TableHead className="font-bold text-slate-800 py-2">Ala / Leito</TableHead>
+                              <TableHead className="font-bold text-slate-800 py-2 text-center">Dose / Qtd</TableHead>
+                              <TableHead className="font-bold text-slate-800 py-2">Motivo / Prescrição</TableHead>
+                              <TableHead className="font-bold text-slate-800 py-2">Responsável</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {loteTraceData.dispensacoesPacientes.map((disp, idx) => (
+                              <TableRow key={idx} className="hover:bg-slate-50">
+                                <TableCell className="font-mono text-slate-600 whitespace-nowrap">
+                                  {disp.data_saida || disp.created_at ? format(parseISO(disp.data_saida || disp.created_at), "dd/MM/yyyy HH:mm") : "-"}
+                                </TableCell>
+                                <TableCell className="font-bold text-slate-900">
+                                  {disp.paciente_nome || disp.destino?.replace("Paciente ", "") || "Paciente"}
+                                </TableCell>
+                                <TableCell className="font-semibold text-slate-700">
+                                  {disp.ala_nome || "Ala Geral"}
+                                </TableCell>
+                                <TableCell className="text-center font-bold text-indigo-700 bg-indigo-50/50">
+                                  {disp.quantidade} un
+                                </TableCell>
+                                <TableCell className="text-slate-600 max-w-xs truncate" title={disp.motivo || disp.observacao}>
+                                  {disp.motivo || disp.observacao || "Prescrição regular"}
+                                </TableCell>
+                                <TableCell className="text-slate-700 font-medium">
+                                  {disp.responsavel || currentUser.full_name}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* 4. Perdas, Quebras ou Descartes */}
+                <Card className="border-l-4 border-l-red-500 shadow-sm">
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3 text-red-700 font-bold text-sm uppercase">
+                      <AlertTriangle className="w-5 h-5" />
+                      Etapa 4: Ocorrências de Perdas, Quebras de Ampola ou Descartes
+                    </div>
+                    {loteTraceData.perdasEDescartes.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Nenhuma perda, quebra ou descarte registrado para este lote.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {loteTraceData.perdasEDescartes.map((p, idx) => (
+                          <div key={idx} className="bg-red-50/50 p-3 rounded-lg border border-red-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-2">
+                            <div>
+                              <span className="text-red-400 font-semibold block">Data do Registro:</span>
+                              <span className="font-mono font-bold text-slate-800">{p.data_saida || p.created_at ? format(parseISO(p.data_saida || p.created_at), "dd/MM/yyyy HH:mm") : "-"}</span>
+                            </div>
+                            <div>
+                              <span className="text-red-400 font-semibold block">Motivo Declarado:</span>
+                              <span className="font-bold text-red-800">{p.motivo || "Perda operacional"}</span>
+                            </div>
+                            <div>
+                              <span className="text-red-400 font-semibold block">Quantidade Perdida:</span>
+                              <span className="font-bold text-red-700">{p.quantidade} unidades</span>
+                            </div>
+                            <div>
+                              <span className="text-red-400 font-semibold block">Responsável:</span>
+                              <span className="font-medium text-slate-700">{p.responsavel || currentUser.full_name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white p-12 text-center rounded-2xl border border-dashed border-slate-300 text-slate-500">
+              <Layers className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+              <p className="font-semibold text-slate-700">Nenhum lote selecionado para rastreabilidade.</p>
+              <p className="text-xs text-slate-400 mt-1">Selecione ou digite um número de lote no campo acima.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Print Styles for Official A4 Pages */}
       <style>{`
         @media print {
           @page {
             size: A4 landscape;
-            margin: 10mm;
+            margin: 8mm;
           }
-          body, html, #root { 
+          body, html, #root {
             height: auto !important;
             min-height: auto !important;
             display: block !important;
             overflow: visible !important;
-            print-color-adjust: exact; 
-            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
             background-color: white !important;
           }
-          /* Fix for flex layouts causing blank prints */
           div, main {
             display: block !important;
             height: auto !important;
@@ -272,63 +1094,77 @@ export default function LivroRegistro() {
           }
           .no-print, nav, header, footer, button, aside { display: none !important; }
           .p-4, .sm\\:p-8 { padding: 0 !important; }
-          .max-w-5xl { max-w: none !important; border: none !important; box-shadow: none !important; margin: 0 !important; }
-          
+          .max-w-6xl { max-width: 100% !important; border: none !important; box-shadow: none !important; margin: 0 !important; }
           table { width: 100% !important; border-collapse: collapse !important; }
-          th, td { border: 1px solid #94a3b8 !important; }
-          .bg-slate-100\\/80 { background-color: #f1f5f9 !important; }
-          .bg-emerald-50\\/50 { background-color: #ecfdf5 !important; }
-          .bg-blue-50\\/50 { background-color: #eff6ff !important; }
+          th, td { border: 1px solid #64748b !important; }
+          .bg-slate-100 { background-color: #f1f5f9 !important; }
+          .bg-emerald-50\\/50, .bg-emerald-50\\/30 { background-color: #ecfdf5 !important; }
+          .bg-blue-50\\/50, .bg-blue-50\\/30 { background-color: #eff6ff !important; }
           .bg-red-50\\/50 { background-color: #fef2f2 !important; }
         }
       `}</style>
-      
+
+      {/* Dialog: Registrar Quebra / Perda */}
       <Dialog open={isPerdaModalOpen} onOpenChange={setIsPerdaModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Registrar Quebra / Perda</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Registrar Quebra / Perda (Portaria 344)
+            </DialogTitle>
             <DialogDescription>
-              Informe os dados da perda para ser registrada no Livro. O estoque será reduzido.
+              A perda será deduzida imediatamente do estoque e gravada na Trilha de Auditoria SNGPC.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleRegistrarPerda} className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Quantidade Perdida</Label>
+          <form onSubmit={handleRegistrarPerda} className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Quantidade Perdida</Label>
                 <Input type="number" min="1" value={perdaQtd} onChange={e => setPerdaQtd(e.target.value)} required />
               </div>
-              <div className="space-y-2">
-                <Label>Número do Lote</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Número do Lote</Label>
                 <Input value={perdaLote} onChange={e => setPerdaLote(e.target.value)} placeholder="Obrigatório" required />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Motivo da Perda</Label>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Motivo da Quebra / Perda</Label>
               <Select value={perdaMotivoPreset} onValueChange={setPerdaMotivoPreset} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o motivo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Quebra de ampola">Quebra de ampola</SelectItem>
-                  <SelectItem value="Vencimento">Vencimento</SelectItem>
+                  <SelectItem value="Quebra de ampola / frasco">Quebra de ampola / frasco</SelectItem>
+                  <SelectItem value="Vencimento / Descarte">Vencimento / Descarte</SelectItem>
                   <SelectItem value="Extravio">Extravio</SelectItem>
-                  <SelectItem value="Danificado">Danificado (Lote/Embalagem)</SelectItem>
-                  <SelectItem value="Furto">Furto</SelectItem>
-                  <SelectItem value="Outro">Outro...</SelectItem>
+                  <SelectItem value="Danificado / Embalagem rompida">Danificado / Embalagem rompida</SelectItem>
+                  <SelectItem value="Outro">Outro motivo...</SelectItem>
                 </SelectContent>
               </Select>
               {perdaMotivoPreset === "Outro" && (
-                <Input value={perdaMotivoCustom} onChange={e => setPerdaMotivoCustom(e.target.value)} placeholder="Especifique o motivo..." required className="mt-2" />
+                <Input
+                  value={perdaMotivoCustom}
+                  onChange={e => setPerdaMotivoCustom(e.target.value)}
+                  placeholder="Especifique o motivo exato..."
+                  required
+                  className="mt-2 text-xs"
+                />
               )}
             </div>
-            <div className="space-y-2">
-              <Label>Responsável (Farmacêutico)</Label>
-              <Input value={currentUser.full_name} disabled className="bg-slate-100 text-slate-500 font-medium" />
-              <p className="text-[10px] text-slate-500">O responsável é preenchido automaticamente com o usuário logado.</p>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Farmacêutico Responsável</Label>
+              <Input value={currentUser.full_name} disabled className="bg-slate-100 text-slate-600 text-xs" />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsPerdaModalOpen(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white">Salvar Registro</Button>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsPerdaModalOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold">
+                Confirmar e Gravar no Livro
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

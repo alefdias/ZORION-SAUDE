@@ -69,6 +69,8 @@ import CarrinhoParada from './pages/CarrinhoParada';
 import PacientesMedicao from './pages/PacientesMedicao';
 import LivroRegistro from './pages/LivroRegistro';
 import SateliteEvolucao from './pages/SateliteEvolucao';
+import SateliteAdiantamento from './pages/SateliteAdiantamento';
+import Compras from './pages/Compras';
 import __Layout from './Layout.jsx';
 
 
@@ -83,6 +85,7 @@ export const PAGES = {
   "Medicamentos": Medicamentos,
   "Movimentacoes": Movimentacoes,
   "Relatorios": Relatorios,
+  "Compras": Compras,
   "Saidas": Saidas,
   "Vencimentos": Vencimentos,
   "Satelite": Satelite,
@@ -94,6 +97,7 @@ export const PAGES = {
   "PacientesMedicao": PacientesMedicao,
   "LivroRegistro": LivroRegistro,
   "SateliteEvolucao": SateliteEvolucao,
+  "SateliteAdiantamento": SateliteAdiantamento,
 }
 
 export const pagesConfig = {

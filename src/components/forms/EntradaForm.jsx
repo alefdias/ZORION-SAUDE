@@ -6,9 +6,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2 } from "lucide-react";
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
+import { db } from "@/api/db";
 
 const getLocalDateString = () => {
     const d = new Date();
@@ -72,6 +73,34 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
         setForm((prev) => ({ ...prev, fornecedor_id: id, fornecedor_nome: forn?.nome || "" }));
     };
 
+    const selectedMed = medicamentos.find((m) => m.id === form.medicamento_id);
+    const isAdiantamento = selectedMed ? Boolean(selectedMed.is_adiantamento) : false;
+
+    const handleToggleAdiantamento = async () => {
+        if (!selectedMed) return;
+        const novoStatus = !selectedMed.is_adiantamento;
+        try {
+            await db.entities.Medicamento.update(selectedMed.id, {
+                is_adiantamento: novoStatus
+            });
+            selectedMed.is_adiantamento = novoStatus;
+            await db.logAction(
+                "ALTERACAO_STATUS_ADIANTAMENTO",
+                "Medicamento",
+                selectedMed.id,
+                `Medicamento '${selectedMed.nome}' teve status de adiantamento alterado para: ${novoStatus ? 'Adiantamento (Cartão do Estado)' : 'Compra Regular / Padronizado'}`
+            );
+            toast.success(
+                novoStatus
+                    ? `O medicamento '${selectedMed.nome}' foi marcado como Compra por Adiantamento!`
+                    : `O medicamento '${selectedMed.nome}' agora é Compra Regular (deixou de ser adiantamento)!`
+            );
+            setForm(prev => ({ ...prev }));
+        } catch (err) {
+            toast.error("Erro ao alternar status de adiantamento: " + err);
+        }
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
@@ -128,6 +157,50 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
                             value={form.medicamento_id}
                             onChange={handleMedicamento}
                         />
+
+                        {/* Banner Visual de Adiantamento / Compra Regular */}
+                        {selectedMed && (
+                            <div className={`mt-2.5 rounded-xl p-3 border transition-all text-xs ${
+                                isAdiantamento 
+                                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800" 
+                                    : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700"
+                            }`}>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className={`p-2 rounded-lg ${isAdiantamento ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300"}`}>
+                                            <CreditCard className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-1.5 font-bold">
+                                                <span className={isAdiantamento ? "text-amber-900 dark:text-amber-200" : "text-slate-800 dark:text-slate-200"}>
+                                                    {isAdiantamento ? "Compra por Adiantamento (Cartão do Estado)" : "Compra Regular / Pregão Hospitalar"}
+                                                </span>
+                                            </div>
+                                            <p className={`text-[11px] mt-0.5 ${isAdiantamento ? "text-amber-700/90 dark:text-amber-400/90" : "text-slate-500 dark:text-slate-400"}`}>
+                                                {isAdiantamento 
+                                                    ? "Esta entrada será contabilizada no Relatório de Adiantamento da Farmácia Satélite." 
+                                                    : "Entrada de fluxo de estoque padrão (sem vínculo com verba de adiantamento)."}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleToggleAdiantamento}
+                                        className={`h-7 text-xs font-semibold gap-1.5 shrink-0 shadow-sm ${
+                                            isAdiantamento 
+                                                ? "border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300" 
+                                                : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300"
+                                        }`}
+                                    >
+                                        <ArrowLeftRight className="w-3 h-3" />
+                                        {isAdiantamento ? "Deixar de ser Adiantamento (Tornar Regular)" : "Vincular a Adiantamento"}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

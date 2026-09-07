@@ -18,6 +18,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import EntradaForm from "@/components/forms/EntradaForm";
+import { normalizeApresentacao } from "@/components/forms/MedicamentoForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
@@ -591,19 +592,26 @@ export default function Entradas({ isTab = false }) {
                   )}
                   {visibleColumns.medicamento && (() => {
                     const med = medicamentosMap[entrada.medicamento_id];
+                    const apr = med?.apresentacao ? normalizeApresentacao(med.apresentacao) : "COMPRIMIDO";
                     return (
                       <TableCell className={cn("font-medium text-slate-800", isMav(entrada.medicamento_nome) && "text-red-900 font-bold")}>
-                        {entrada.medicamento_nome} {isMav(entrada.medicamento_nome) && "(MAV)"}
-                        {med && isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-2 text-indigo-600" title="Requer nome do paciente" />}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{entrada.medicamento_nome}</span>
+                          {isMav(entrada.medicamento_nome) && <Badge variant="destructive" className="text-[10px] py-0 px-1">MAV</Badge>}
+                          {med?.is_adiantamento && (
+                            <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-[10px] py-0 px-1.5">
+                              💳 Adiantamento
+                            </Badge>
+                          )}
+                          {med && isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 text-indigo-600" title="Requer nome do paciente" />}
+                        </div>
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
                             {med?.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
                           </span>
-                          {med?.apresentacao && (
-                            <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
-                              {med.apresentacao}
-                            </span>
-                          )}
+                          <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
+                            {apr}
+                          </span>
                         </div>
                       </TableCell>
                     );

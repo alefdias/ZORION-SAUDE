@@ -36,6 +36,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [customDias, setCustomDias] = useState("");
   const [customQuantities, setCustomQuantities] = useState({}); // medId -> custom quantity
   const [observacaoPedido, setObservacaoPedido] = useState("");
+  const [prioridadePedido, setPrioridadePedido] = useState("Normal"); // "Normal" | "Urgente" | "Emergência"
 
   // State for order view modal
   const [selectedPedido, setSelectedPedido] = useState(null);
@@ -178,12 +179,19 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         solicitante: "Farmácia Satélite",
         data_solicitacao: new Date().toISOString(),
         status: "Pendente",
+        prioridade: prioridadePedido || "Normal",
         itens_json: JSON.stringify(itens),
         observacao: observacaoPedido || "",
         created_at: new Date().toISOString()
       };
 
       await db.entities.PedidoSatelite.create(novoPedido);
+      await db.logAction("Pedido Satélite", "PedidoSatelite", novoPedido.id, {
+        codigo: novoPedido.codigo,
+        ala: novoPedido.ala_nome,
+        prioridade: novoPedido.prioridade,
+        itens: itens.length
+      });
       return novoPedido;
     },
     onSuccess: (data) => {
@@ -370,21 +378,42 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
           {/* Tabela de Cálculo da Necessidade */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                 <Package className="w-4 h-4 text-blue-600" />
-                Itens Necessários para {effectiveDays} Dia(s) ({calculoNecessidade.length} medicamentos)
+                Itens Necessários ({calculoNecessidade.length} medicamentos)
               </span>
 
               {calculoNecessidade.length > 0 && (
-                <Button
-                  onClick={() => criarPedidoMutation.mutate()}
-                  disabled={criarPedidoMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-md"
-                >
-                  <Send className="w-4 h-4" />
-                  {criarPedidoMutation.isPending ? "Enviando..." : "Fazer Pedido à Central"}
-                </Button>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-slate-600">Prioridade:</span>
+                    <select
+                      value={prioridadePedido}
+                      onChange={e => setPrioridadePedido(e.target.value)}
+                      className={`text-xs font-bold rounded-lg border px-2 py-1.5 outline-none ${
+                        prioridadePedido === "Emergência" 
+                          ? "bg-red-600 text-white border-red-700" 
+                          : prioridadePedido === "Urgente" 
+                            ? "bg-amber-500 text-white border-amber-600" 
+                            : "bg-white text-slate-700 border-slate-300"
+                      }`}
+                    >
+                      <option value="Normal">Normal</option>
+                      <option value="Urgente">⚠️ Urgente</option>
+                      <option value="Emergência">🚨 Emergência</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    onClick={() => criarPedidoMutation.mutate()}
+                    disabled={criarPedidoMutation.isPending}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-md"
+                  >
+                    <Send className="w-4 h-4" />
+                    {criarPedidoMutation.isPending ? "Enviando..." : "Fazer Pedido à Central"}
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -529,7 +558,16 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
                   return (
                     <TableRow key={p.id} className="hover:bg-slate-50">
-                      <TableCell className="font-mono font-bold text-xs text-indigo-600">{p.codigo}</TableCell>
+                      <TableCell className="font-mono font-bold text-xs text-indigo-600">
+                        {p.codigo}
+                        {p.prioridade && p.prioridade !== "Normal" && (
+                          <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                            p.prioridade === "Emergência" ? "bg-red-600 text-white animate-pulse" : "bg-amber-500 text-white"
+                          }`}>
+                            {p.prioridade}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="font-semibold text-slate-800">{p.ala_nome}</TableCell>
                       <TableCell className="text-xs text-slate-600">
                         {p.data_solicitacao ? format(new Date(p.data_solicitacao), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}

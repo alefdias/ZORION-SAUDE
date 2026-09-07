@@ -49,6 +49,52 @@ export function playNotificationChime() {
   }
 }
 
+export function playUrgentNotificationChime() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    // Pulse 1
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, ctx.currentTime);
+    gain1.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(ctx.currentTime);
+    osc1.stop(ctx.currentTime + 0.15);
+
+    // Pulse 2 (Higher)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.18);
+    gain2.gain.setValueAtTime(0.35, ctx.currentTime + 0.18);
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(ctx.currentTime + 0.18);
+    osc2.stop(ctx.currentTime + 0.35);
+
+    // Pulse 3
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.type = "sine";
+    osc3.frequency.setValueAtTime(1396.91, ctx.currentTime + 0.38);
+    gain3.gain.setValueAtTime(0.4, ctx.currentTime + 0.38);
+    gain3.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.65);
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    osc3.start(ctx.currentTime + 0.38);
+    osc3.stop(ctx.currentTime + 0.65);
+  } catch (e) {
+    console.warn("Urgent chime error:", e);
+  }
+}
+
 export function NotificationBell() {
   const prevCountRef = useRef(0);
   const hasPlayedOnLogin = useRef(false);
@@ -70,19 +116,25 @@ export function NotificationBell() {
   const readyPedidos = pedidos.filter(p => p.status === "Separado");
   const count = pendingPedidos.length + readyPedidos.length;
 
+  const hasUrgent = pendingPedidos.some(p => p.prioridade === "Emergência" || p.prioridade === "Urgente");
+
   // Sound alert on new orders or upon initial load/login if count > 0
   useEffect(() => {
     if (count > 0) {
       if (!hasPlayedOnLogin.current || count > prevCountRef.current) {
-        playNotificationChime();
+        if (hasUrgent) {
+          playUrgentNotificationChime();
+        } else {
+          playNotificationChime();
+        }
         hasPlayedOnLogin.current = true;
       }
     }
     prevCountRef.current = count;
-  }, [count]);
+  }, [count, hasUrgent]);
 
   const handleNavigateToCentral = () => {
-    window.location.hash = "#/Estoque?tab=pedidos_satelite";
+    window.location.hash = "#/Movimentacoes?tab=pedidos_satelite";
   };
 
   const handleNavigateToSatelite = () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck } from "lucide-react";
+import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { getLogs } from "../lib/logger";
 import { db } from "@/api/db";
@@ -8,9 +8,18 @@ import { useQuery } from "@tanstack/react-query";
 export default function ResponsavelTecnico() {
   const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState("usuarios"); // 'usuarios' | 'auditoria'
-  const [auditSubTab, setAuditSubTab] = useState("exclusoes"); // 'exclusoes' | 'acessos'
+  const [auditSubTab, setAuditSubTab] = useState("trilha"); // 'trilha' | 'exclusoes' | 'acessos'
+  const [auditAcaoFilter, setAuditAcaoFilter] = useState("TODAS");
+  const [auditPeriodoFilter, setAuditPeriodoFilter] = useState("todos");
+  const [auditSearchQuery, setAuditSearchQuery] = useState("");
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
+
+  const { data: acoesAuditoria = [] } = useQuery({
+    queryKey: ['auditoria_trilha'],
+    queryFn: () => db.entities.Auditoria.list('-created_at'),
+    refetchInterval: 5000
+  });
 
   const { data: saidalogs = [] } = useQuery({
     queryKey: ['saidas_auditoria'],
@@ -23,6 +32,69 @@ export default function ResponsavelTecnico() {
       (s.tipo && s.tipo.includes("Log"))
     ).sort((a, b) => (b.created_at || b.data_saida || "").localeCompare(a.created_at || a.data_saida || ""));
   }, [saidalogs]);
+
+  const filteredAuditAcoes = useMemo(() => {
+    let list = acoesAuditoria || [];
+    const now = new Date();
+
+    if (auditPeriodoFilter === "hoje") {
+      const todayStr = now.toISOString().split("T")[0];
+      list = list.filter(a => (a.data_hora || a.created_at || "").startsWith(todayStr));
+    } else if (auditPeriodoFilter === "7dias") {
+      const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).getTime();
+      list = list.filter(a => {
+        const t = new Date(a.data_hora || a.created_at || 0).getTime();
+        return t >= cutoff;
+      });
+    } else if (auditPeriodoFilter === "30dias") {
+      const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).getTime();
+      list = list.filter(a => {
+        const t = new Date(a.data_hora || a.created_at || 0).getTime();
+        return t >= cutoff;
+      });
+    }
+
+    if (auditAcaoFilter !== "TODAS") {
+      list = list.filter(a => a.acao === auditAcaoFilter || (a.acao || "").includes(auditAcaoFilter));
+    }
+
+    if (auditSearchQuery.trim()) {
+      const q = auditSearchQuery.toLowerCase();
+      list = list.filter(a => 
+        (a.usuario || "").toLowerCase().includes(q) ||
+        (a.acao || "").toLowerCase().includes(q) ||
+        (a.entidade || "").toLowerCase().includes(q) ||
+        (a.detalhes || "").toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [acoesAuditoria, auditAcaoFilter, auditPeriodoFilter, auditSearchQuery]);
+
+  const handleExportAuditCSV = () => {
+    if (filteredAuditAcoes.length === 0) {
+      toast.error("Nenhum registro para exportar.");
+      return;
+    }
+    const headers = ["Data/Hora", "Usuario", "Acao", "Entidade", "Detalhes"];
+    const rows = filteredAuditAcoes.map(a => [
+      `"${a.data_hora || a.created_at || ''}"`,
+      `"${a.usuario || ''}"`,
+      `"${a.acao || ''}"`,
+      `"${a.entidade || ''}"`,
+      `"${(a.detalhes || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `trilha_auditoria_rt_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Trilha de auditoria exportada com sucesso em CSV!");
+  };
   
   // form state
   const [editingId, setEditingId] = useState(null);
@@ -224,7 +296,18 @@ export default function ResponsavelTecnico() {
 
       {activeTab === "auditoria" ? (
         <div className="space-y-4">
-          <div className="flex gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+          <div className="flex flex-wrap gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setAuditSubTab("trilha")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                auditSubTab === "trilha" 
+                  ? "bg-white dark:bg-slate-900 text-blue-600 shadow-sm" 
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-indigo-600" />
+              Trilha de Auditoria Geral ({acoesAuditoria.length})
+            </button>
             <button
               onClick={() => setAuditSubTab("exclusoes")}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
@@ -234,7 +317,7 @@ export default function ResponsavelTecnico() {
               }`}
             >
               <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Logs de Exclusões & Altas Hospitalares ({dbAuditLogs.length})
+              Logs de Exclusões & Altas ({dbAuditLogs.length})
             </button>
             <button
               onClick={() => setAuditSubTab("acessos")}
@@ -249,7 +332,138 @@ export default function ResponsavelTecnico() {
             </button>
           </div>
 
-          {auditSubTab === "exclusoes" ? (
+          {auditSubTab === "trilha" ? (
+            <div className="space-y-4">
+              {/* Filtros e Ações */}
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 no-print">
+                <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+                  <div className="flex-1 w-full relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por usuário, ação, medicamento, paciente ou detalhes..."
+                      value={auditSearchQuery}
+                      onChange={e => setAuditSearchQuery(e.target.value)}
+                      className="pl-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                    <select
+                      value={auditAcaoFilter}
+                      onChange={e => setAuditAcaoFilter(e.target.value)}
+                      className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                    >
+                      <option value="TODAS">Todas as Ações Críticas</option>
+                      <option value="ALTERACAO_LOTE_VALIDADE">Alteração de Lote / Validade</option>
+                      <option value="BAIXA_MANUAL_ESTOQUE">Baixa Manual de Estoque</option>
+                      <option value="PERDA_REGISTRADA_344">Perda Portaria 344</option>
+                      <option value="EXCLUSAO_LOTE">Exclusão de Lote</option>
+                      <option value="ALTA_PACIENTE">Alta de Paciente</option>
+                      <option value="TRANSFERENCIA_ALA">Transferência de Ala (X → Y)</option>
+                      <option value="PRESCRICAO">Prescrições (Criação/Alteração/Suspensão)</option>
+                      <option value="CRIACAO_PEDIDO_URGENTE">Pedidos Urgentes Satélite</option>
+                      <option value="TRANSFERENCIA_ESTOQUE">Transferências Internas</option>
+                    </select>
+
+                    <select
+                      value={auditPeriodoFilter}
+                      onChange={e => setAuditPeriodoFilter(e.target.value)}
+                      className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                    >
+                      <option value="todos">Todo o Período</option>
+                      <option value="hoje">Apenas Hoje</option>
+                      <option value="7dias">Últimos 7 dias</option>
+                      <option value="30dias">Últimos 30 dias</option>
+                    </select>
+
+                    <button
+                      onClick={handleExportAuditCSV}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                      title="Exportar registros filtrados para CSV"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Exportar CSV
+                    </button>
+
+                    <button
+                      onClick={() => window.print()}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                      title="Imprimir relatório de auditoria"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Imprimir
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <span>Exibindo <strong>{filteredAuditAcoes.length}</strong> de <strong>{acoesAuditoria.length}</strong> eventos registrados.</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">Trilha Criptografada e Imutável</span>
+                </div>
+              </div>
+
+              {/* Tabela da Trilha */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-slate-600 dark:text-slate-400">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-3 font-bold w-40">Data / Hora</th>
+                        <th className="px-4 py-3 font-bold w-44">Usuário</th>
+                        <th className="px-4 py-3 font-bold w-52">Ação Auditada</th>
+                        <th className="px-4 py-3 font-bold w-32">Entidade</th>
+                        <th className="px-4 py-3 font-bold">Detalhes do Evento</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
+                      {filteredAuditAcoes.map((item) => {
+                        const isDanger = item.acao?.includes("EXCLUSAO") || item.acao?.includes("PERDA") || item.acao?.includes("URGENTE");
+                        const isWarning = item.acao?.includes("ALTERACAO") || item.acao?.includes("SUSPENSAO") || item.acao?.includes("BAIXA");
+                        const isInfo = !isDanger && !isWarning;
+
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-4 py-3 font-mono text-slate-500 whitespace-nowrap">
+                              {item.data_hora || item.created_at ? new Date(item.data_hora || item.created_at).toLocaleString('pt-BR') : "-"}
+                            </td>
+                            <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
+                              {item.usuario || "Administrador"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-[10px] tracking-wide uppercase ${
+                                isDanger
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                                  : isWarning
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                    : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                              }`}>
+                                {item.acao?.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400">
+                              {item.entidade || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium break-words leading-relaxed">
+                              {item.detalhes || "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {filteredAuditAcoes.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="text-center py-12 text-slate-400 italic">
+                            Nenhum registro de auditoria encontrado com os filtros selecionados.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : auditSubTab === "exclusoes" ? (
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
               <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-amber-500/5">
                 <div>

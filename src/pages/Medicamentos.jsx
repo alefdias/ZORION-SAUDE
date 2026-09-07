@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
-import MedicamentoForm from "@/components/forms/MedicamentoForm";
+import MedicamentoForm, { normalizeApresentacao } from "@/components/forms/MedicamentoForm";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
@@ -39,25 +39,27 @@ const APRESENTACAO_LABELS = {
   injetavel: "Injetável",
   pomada: "Pomada",
   creme: "Creme",
+  gel: "Gel",
   spray: "Spray",
+  solucao: "Solução",
+  suspensao: "Suspensão",
+  adesivo: "Adesivo",
   supositorio: "Supositório",
   envelope: "Envelope",
-  shampoo: "Shampoo",
-  ampola: "Ampola",
-  tubo: "Tubo",
   frasco: "Frasco",
-  seringa: "Seringa",
+  ampola: "Ampola",
   sache: "Sachê",
 };
 
 export function getApresentacaoEConcentracao(med) {
-  if (!med) return { apresentacao: "-", concentracao: "-" };
+  if (!med) return { apresentacao: "COMPRIMIDO", concentracao: "-" };
 
-  const apresentacao = (med.apresentacao || "-").trim();
+  const rawApresentacao = (med.apresentacao || "").trim();
+  const apresentacao = rawApresentacao ? normalizeApresentacao(rawApresentacao) : "COMPRIMIDO";
   const concentracao = (med.concentracao || med.unidade_medida || "-").trim();
 
   return {
-    apresentacao: apresentacao || "-",
+    apresentacao: apresentacao || "COMPRIMIDO",
     concentracao: (concentracao && !["un", "unidade", "unid", "-", ""].includes(concentracao.toLowerCase())) ? concentracao : "-"
   };
 }
@@ -124,6 +126,29 @@ export default function Medicamentos() {
     }
   };
 
+  const handleToggleAdiantamento = async (med) => {
+    const novoStatus = !med.is_adiantamento;
+    try {
+      await updateMutation.mutateAsync({
+        id: med.id,
+        data: { is_adiantamento: novoStatus }
+      });
+      await db.logAction(
+        novoStatus ? 'Marcar Adiantamento' : 'Remover Adiantamento',
+        'Medicamento',
+        med.id,
+        `Medicamento ${med.nome} alterado para ${novoStatus ? 'Adiantamento (Cartão do Estado)' : 'Compra Regular'}`
+      );
+      toast.success(
+        novoStatus 
+          ? `"${med.nome}" marcado como Adiantamento!` 
+          : `"${med.nome}" alterado para Compra Regular!`
+      );
+    } catch (err) {
+      toast.error("Erro ao alterar modalidade do medicamento: " + err.message);
+    }
+  };
+
   const handleEdit = (med) => {
     setEditingMed(med);
     setFormOpen(true);
@@ -138,41 +163,43 @@ export default function Medicamentos() {
     setDeleteConfirm({ open: false, id: null });
   };
 
+  // Contagens para as abas
+  const padronizadosCount = useMemo(() => medicamentos.filter(m => m.padronizado && !m.is_adiantamento).length, [medicamentos]);
+  const naoPadronizadosCount = useMemo(() => medicamentos.filter(m => !m.padronizado && !m.is_adiantamento).length, [medicamentos]);
+  const adiantamentoCount = useMemo(() => medicamentos.filter(m => Boolean(m.is_adiantamento)).length, [medicamentos]);
+
+  // Resumo financeiro e de estoque do adiantamento
+  const adiantamentoMeds = useMemo(() => medicamentos.filter(m => Boolean(m.is_adiantamento)), [medicamentos]);
+  const totalGastoCartao = useMemo(() => adiantamentoMeds.reduce((acc, m) => acc + (Number(m.valor_compra) || 0), 0), [adiantamentoMeds]);
+  const totalItensDisponiveis = useMemo(() => adiantamentoMeds.filter(m => (m.estoque_atual || 0) > 0).length, [adiantamentoMeds]);
+  const totalUnidadesAdiantamento = useMemo(() => adiantamentoMeds.reduce((acc, m) => acc + (m.estoque_atual || 0), 0), [adiantamentoMeds]);
+
   const filteredMeds = medicamentos.filter(m => {
     // Aba filter
-    if (activeTab === "padronizados" && !m.padronizado) return false;
-    if (activeTab === "nao_padronizados" && m.padronizado) return false;
+    if (activeTab === "padronizados" && (!m.padronizado || m.is_adiantamento)) return false;
+    if (activeTab === "nao_padronizados" && (m.padronizado || m.is_adiantamento)) return false;
+    if (activeTab === "adiantamento" && !m.is_adiantamento) return false;
     
     // Search filter
-    const searchLower = search.toLowerCase();
-    const searchableString = [
-        m.nome,
-        m.principio_ativo,
-        m.codigo,
-        m.codigo_barras,
-        m.grupo_terapeutico,
-        m.origem,
-        m.grupo_terapeutico,
-        m.forma_farmaceutica,
-        m.via_administracao,
-        m.apresentacao,
-        m.concentracao,
-        m.antimicrobiano ? "antimicrobiano" : "",
-        m.ccih ? "ccih" : "",
-        m.portaria_344 ? "portaria 344 port. 344 portaria344" : "",
-        (m.alto_risco_mav || m.is_mav) ? "mav alto risco" : ""
-    ].filter(Boolean).join(" ").toLowerCase();
-
-    return searchableString.includes(searchLower);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchNome = m.nome?.toLowerCase().includes(q);
+      const matchPrincipio = m.principio_ativo?.toLowerCase().includes(q);
+      const matchCodigo = m.codigo?.toLowerCase().includes(q);
+      const matchNF = m.nota_fiscal?.toLowerCase().includes(q);
+      const matchFornecedor = m.fornecedor_nome?.toLowerCase().includes(q);
+      return matchNome || matchPrincipio || matchCodigo || matchNF || matchFornecedor;
+    }
+    return true;
   }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
 
   return (
-    <div className="p-6 space-y-5 h-[calc(100vh)] overflow-hidden flex flex-col bg-slate-50/50">
+    <div className="space-y-4 p-4 max-w-[1600px] mx-auto">
       {/* Header & Main Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Catálogo de Medicamentos</h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Gerencie produtos, concentrações e padronização</p>
+          <p className="text-slate-500 text-sm font-medium mt-1">Gerencie medicamentos, concentrações e padronização</p>
         </div>
         <div className="flex items-center gap-2.5 no-print">
           <Button variant="outline" onClick={() => window.print()} className="gap-2 border-slate-300 hover:bg-slate-100 text-slate-700 shadow-sm transition-all">
@@ -210,20 +237,62 @@ export default function Medicamentos() {
           </DropdownMenu>
           <Button onClick={() => { setEditingMed(null); setFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 gap-2 transition-all">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline font-semibold">Novo Produto</span>
+            <span className="hidden sm:inline font-semibold">Novo Medicamento</span>
           </Button>
         </div>
       </div>
 
+      {/* Cards de Resumo para a Aba Adiantamento */}
+      {activeTab === "adiantamento" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-3.5 bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-orange-50/50 border border-amber-200/80 rounded-xl flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Gasto no Cartão do Estado</p>
+              <p className="text-xl font-black text-amber-950 mt-0.5 font-mono">
+                {totalGastoCartao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-lg shadow-inner">
+              💳
+            </div>
+          </Card>
+          <Card className="p-3.5 bg-gradient-to-br from-emerald-500/10 via-emerald-50/50 to-teal-50/50 border border-emerald-200/80 rounded-xl flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wider">Saldo em Estoque Central</p>
+              <p className="text-xl font-black text-emerald-950 mt-0.5 font-mono">
+                {totalUnidadesAdiantamento.toLocaleString("pt-BR")} <span className="text-xs font-semibold text-emerald-700">un. ({totalItensDisponiveis} itens)</span>
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-lg shadow-inner">
+              📦
+            </div>
+          </Card>
+          <Card className="p-3.5 bg-gradient-to-br from-blue-500/10 via-blue-50/50 to-indigo-50/50 border border-blue-200/80 rounded-xl flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider">Controle Físico Exclusivo</p>
+              <p className="text-xs text-blue-900 mt-0.5 font-medium leading-relaxed">
+                Separado da farmácia central. Baixa direta sob demanda da Satélite.
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg shadow-inner">
+              🏥
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Integrated Toolbar: Search & Tabs */}
       <Card className="p-1.5 border-slate-200 shadow-sm bg-white rounded-xl flex flex-col md:flex-row items-center justify-between gap-3">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
-          <TabsList className="grid w-full grid-cols-2 md:w-[320px] h-10 bg-slate-100/50 p-1 rounded-lg">
+          <TabsList className="grid w-full grid-cols-3 md:w-[460px] h-10 bg-slate-100/70 p-1 rounded-lg">
             <TabsTrigger value="padronizados" className="rounded-md font-semibold text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-700 transition-all">
-              Padronizados
+              Padronizados ({padronizadosCount})
             </TabsTrigger>
             <TabsTrigger value="nao_padronizados" className="rounded-md font-semibold text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-700 transition-all">
-              Não Padronizados
+              Não Padronizados ({naoPadronizadosCount})
+            </TabsTrigger>
+            <TabsTrigger value="adiantamento" className="rounded-md font-semibold text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-amber-700 transition-all">
+              💳 Adiantamento ({adiantamentoCount})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -231,7 +300,7 @@ export default function Medicamentos() {
         <div className="relative w-full md:w-[350px]">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
           <Input
-            placeholder="Buscar medicamento, princípio ou cód..."
+            placeholder="Buscar medicamento, NF ou princípio..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-slate-50 border-slate-200 hover:border-slate-300 focus:bg-white transition-colors h-10 rounded-lg text-sm"
@@ -293,6 +362,11 @@ export default function Medicamentos() {
                         <div className="flex items-center gap-1.5">
                           <p className={cn("font-medium text-slate-800 flex flex-wrap items-center gap-1.5", isMav(med) && "text-red-600 font-bold")}>
                             {med.nome}
+                            {med.is_adiantamento && (
+                              <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-[10px] py-0 px-1.5 ml-1">
+                                💳 Adiantamento
+                              </Badge>
+                            )}
                             {(isMav(med) || med.alto_risco_mav || med.is_mav) && <Badge variant="destructive" className="text-[10px] py-0 px-1 ml-1">MAV/Alto Risco</Badge>}
                             {isPsicotropico(med.grupo_terapeutico) && <User className="inline-block w-4 h-4 ml-1 text-indigo-600" title="Requer nome do paciente" />}
                             {med.portaria_344 && <Badge className="bg-indigo-600 hover:bg-indigo-700 text-[10px] py-0 px-1 ml-1">Port. 344</Badge>}
@@ -302,6 +376,15 @@ export default function Medicamentos() {
                         </div>
                         {med.principio_ativo && (
                           <p className="text-[10px] text-slate-500">{med.principio_ativo}</p>
+                        )}
+                        {med.is_adiantamento && (med.nota_fiscal || med.valor_compra || med.fornecedor_nome) && (
+                          <p className="text-[10px] text-amber-800/80 font-mono mt-0.5 flex items-center gap-1">
+                            {med.nota_fiscal && <span>NF: {med.nota_fiscal}</span>}
+                            {med.nota_fiscal && (med.valor_compra || med.fornecedor_nome) && <span>•</span>}
+                            {med.valor_compra && <span>R$ {Number(med.valor_compra).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
+                            {med.valor_compra && med.fornecedor_nome && <span>•</span>}
+                            {med.fornecedor_nome && <span>{med.fornecedor_nome}</span>}
+                          </p>
                         )}
                       </div>
                     </TableCell>
@@ -337,15 +420,27 @@ export default function Medicamentos() {
                   )}
                   {visibleColumns.estoque && (
                     <TableCell className="text-center">
-                      <Badge
-                        className={
-                          (med.estoque_atual || 0) <= (med.estoque_minimo || 0)
-                            ? "bg-red-100 text-red-700"
-                            : "bg-emerald-100 text-emerald-700"
-                        }
-                      >
-                        {med.estoque_atual || 0}
-                      </Badge>
+                      {med.is_adiantamento ? (
+                        (med.estoque_atual || 0) > 0 ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                            🟢 {med.estoque_atual || 0} un (Disponível)
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-slate-100 text-slate-500 font-medium border border-slate-200">
+                            ⚪ Esgotado
+                          </Badge>
+                        )
+                      ) : (
+                        <Badge
+                          className={
+                            (med.estoque_atual || 0) <= (med.estoque_minimo || 0)
+                              ? "bg-red-100 text-red-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          }
+                        >
+                          {med.estoque_atual || 0}
+                        </Badge>
+                      )}
                     </TableCell>
                   )}
                   {visibleColumns.acoes && (
@@ -360,6 +455,12 @@ export default function Medicamentos() {
                           <DropdownMenuItem onClick={() => handleEdit(med)}>
                             <Pencil className="w-4 h-4 mr-2" />
                             Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleToggleAdiantamento(med)}
+                            className="text-amber-700 focus:text-amber-700 font-medium cursor-pointer"
+                          >
+                            💳 {med.is_adiantamento ? "Mudar para Regular" : "Mudar para Adiantamento"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleDelete(med.id)}

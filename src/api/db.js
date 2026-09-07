@@ -54,10 +54,25 @@ const ensureTableQuery = {
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "unidade_medida" TEXT;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "localizacao" TEXT;
     ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "is_adiantamento" BOOLEAN DEFAULT false;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "nota_fiscal" TEXT;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "valor_compra" REAL;
+    ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "fornecedor_nome" TEXT;
     UPDATE "Medicamento" SET "grupo_terapeutico" = 'IMUNOSSUPRESSOR (PORTARIA 344)' WHERE UPPER("nome") ~* '(TALIDOMIDA|LENALIDOMIDA|CICLOSPORINA|TACROLIMO|SIROLIMO|EVEROLIMO|AZATIOPRINA|MICOFENOLATO|LEFLUNOMIDA|METOTREXATO)';
     UPDATE "Medicamento" SET "grupo_terapeutico" = 'PSICOTRÓPICO / CONTROLADO (PORTARIA 344)' WHERE UPPER("nome") ~* '(MORFINA|TRAMADOL|METADONA|FENTANILA|ALPRAZOLAM|BROMAZEPAM|CLONAZEPAM|DIAZEPAM|LORAZEPAM|MIDAZOLAM|ZOLPIDEM|FENOBARBITAL|METILFENIDATO|RISPERIDONA|HALOPERIDOL|QUETIAPINA|OLANZAPINA|AMITRIPTILINA|FLUOXETINA|SERTRALINA|ESCITALOPRAM|PAROXETINA|VENLAFAXINA|DULOXETINA|CARBAMAZEPINA|VALPROATO|LAMOTRIGINA|TOPIRAMATO|GABAPENTINA|PREGABALINA)';
     UPDATE "Medicamento" SET "grupo_terapeutico" = 'ANTIBIÓTICO / ANTIMICROBIANO' WHERE UPPER("nome") ~* '(AMOXICILINA|AMPICILINA|AZITROMICINA|CLARITROMICINA|CEFALEXINA|CEFTRIAXONA|CEFAZOLINA|CIPROFLOXACINO|LEVOFLOXACINO|METRONIDAZOL|VANCOMICINA|MEROPENEM|PIPERACILINA|GENTAMICINA|AMIKACINA|CLINDAMICINA|SULFAMETOXAZOL)' AND ("grupo_terapeutico" IS NULL OR "grupo_terapeutico" = '');
     UPDATE "Medicamento" SET "grupo_terapeutico" = 'CLÍNICOS - MUCOLÍTICO E EXPECTORANTE' WHERE UPPER("nome") ~* '(ACETILCISTEINA|ACETILCISTEÍNA|AMBROXOL|ACEBROFILINA|CARBOCISTEINA|BROMEXINA)';
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 10 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 10ML', 'AMPOLA 10 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 1 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 1ML', 'AMPOLA 1 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 2 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 2ML', 'AMPOLA 2 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 5 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 5ML', 'AMPOLA 5 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 20 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 20ML', 'AMPOLA 20 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 0,25 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 0.25 ML', 'AMPOLA 0,25ML', 'AMPOLA 0.25ML', 'AMPOLA 0,25 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 2,5 ML' WHERE UPPER("apresentacao") IN ('AMPOLA 2.5 ML', 'AMPOLA 2,5ML', 'AMPOLA 2.5ML', 'AMPOLA 2,5 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 100 ML' WHERE UPPER("apresentacao") IN ('FRASCO 100ML', 'FRASCO 100 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 5 ML' WHERE UPPER("apresentacao") IN ('FRASCO 5ML', 'FRASCO 5 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 10 ML' WHERE UPPER("apresentacao") IN ('FRASCO 10ML', 'FRASCO 10 ML');
+    UPDATE "Medicamento" SET "apresentacao" = 'COMPRIMIDO' WHERE "apresentacao" IS NULL OR TRIM("apresentacao") = '';
   `,
   Entrada: `
     CREATE TABLE IF NOT EXISTS "Entrada" (
@@ -110,6 +125,7 @@ const ensureTableQuery = {
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_entrega" TEXT;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_recebimento" TEXT;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "prioridade" TEXT DEFAULT 'Normal';
   `,
   TransferenciaPendente: `
     CREATE TABLE IF NOT EXISTS "TransferenciaPendente" (
@@ -179,6 +195,19 @@ const ensureTableQuery = {
         "created_at" TEXT,
         "deleted_at" TEXT
     );
+  `,
+  Auditoria: `
+    CREATE TABLE IF NOT EXISTS "Auditoria" (
+        "id" TEXT PRIMARY KEY,
+        "acao" TEXT,
+        "entidade" TEXT,
+        "entidade_id" TEXT,
+        "detalhes" TEXT,
+        "usuario" TEXT,
+        "data_hora" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
   `
 };
 
@@ -202,11 +231,41 @@ async function autoEnsureTable(entityName) {
   }
 }
 
+let hasSanitizedMedicamentos = false;
+async function sanitizeMedicamentosDb(ip, dbName, password) {
+  if (hasSanitizedMedicamentos) return;
+  hasSanitizedMedicamentos = true;
+  try {
+    const stmts = [
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 1 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 1ML', 'AMPOLA 1 ML', 'AMPOLA1ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 2 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 2ML', 'AMPOLA 2 ML', 'AMPOLA2ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 5 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 5ML', 'AMPOLA 5 ML', 'AMPOLA5ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 10 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 10ML', 'AMPOLA 10 ML', 'AMPOLA10ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 20 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 20ML', 'AMPOLA 20 ML', 'AMPOLA20ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 0,25 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 0.25 ML', 'AMPOLA 0,25ML', 'AMPOLA 0.25ML', 'AMPOLA 0,25 ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'AMPOLA 2,5 ML' WHERE UPPER(TRIM("apresentacao")) IN ('AMPOLA 2.5 ML', 'AMPOLA 2,5ML', 'AMPOLA 2.5ML', 'AMPOLA 2,5 ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 100 ML' WHERE UPPER(TRIM("apresentacao")) IN ('FRASCO 100ML', 'FRASCO 100 ML', 'FRASCO100ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 50 ML' WHERE UPPER(TRIM("apresentacao")) IN ('FRASCO 50ML', 'FRASCO 50 ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 10 ML' WHERE UPPER(TRIM("apresentacao")) IN ('FRASCO 10ML', 'FRASCO 10 ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'FRASCO 5 ML' WHERE UPPER(TRIM("apresentacao")) IN ('FRASCO 5ML', 'FRASCO 5 ML')`,
+      `UPDATE "Medicamento" SET "apresentacao" = 'COMPRIMIDO' WHERE "apresentacao" IS NULL OR TRIM("apresentacao") = ''`
+    ];
+    for (const q of stmts) {
+      await invoke("execute_postgres", { ip, dbName, password, query: q }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Erro ao higienizar apresentações no Postgres:", err);
+  }
+}
+
 // ─── Proxy de entidade - 100% Postgres ───────────────────────────────────
 
 const createEntityProxy = (entityName) => ({
   list: async (orderBy) => {
     const { ip, dbName, password } = getPgConfig();
+    if (entityName === "Medicamento" && !hasSanitizedMedicamentos) {
+      await sanitizeMedicamentosDb(ip, dbName, password);
+    }
     let query = `SELECT * FROM "${entityName}"`;
     
     const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario"];
@@ -227,11 +286,23 @@ const createEntityProxy = (entityName) => ({
     
     try {
       const data = await invoke("query_postgres", { ip, dbName, password, query });
+      if (entityName === "Medicamento" && Array.isArray(data)) {
+        return data.map(m => ({
+          ...m,
+          apresentacao: (m.apresentacao && m.apresentacao.trim()) ? m.apresentacao.trim() : "COMPRIMIDO"
+        }));
+      }
       return data;
     } catch (e) {
       await autoEnsureTable(entityName);
       try {
         const retryData = await invoke("query_postgres", { ip, dbName, password, query });
+        if (entityName === "Medicamento" && Array.isArray(retryData)) {
+          return retryData.map(m => ({
+            ...m,
+            apresentacao: (m.apresentacao && m.apresentacao.trim()) ? m.apresentacao.trim() : "COMPRIMIDO"
+          }));
+        }
         return retryData;
       } catch (retryErr) {
         console.error(`Erro ao listar ${entityName} do Postgres:`, retryErr, "Query:", query);
@@ -245,11 +316,27 @@ const createEntityProxy = (entityName) => ({
     const query = `SELECT * FROM "${entityName}" WHERE "id" = '${id}'`;
     try {
       const data = await invoke("query_postgres", { ip, dbName, password, query });
-      return data.length > 0 ? data[0] : null;
+      if (data.length === 0) return null;
+      const item = data[0];
+      if (entityName === "Medicamento" && item) {
+        return {
+          ...item,
+          apresentacao: (item.apresentacao && item.apresentacao.trim()) ? item.apresentacao.trim() : "COMPRIMIDO"
+        };
+      }
+      return item;
     } catch (e) {
       await autoEnsureTable(entityName);
       const data = await invoke("query_postgres", { ip, dbName, password, query });
-      return data.length > 0 ? data[0] : null;
+      if (data.length === 0) return null;
+      const item = data[0];
+      if (entityName === "Medicamento" && item) {
+        return {
+          ...item,
+          apresentacao: (item.apresentacao && item.apresentacao.trim()) ? item.apresentacao.trim() : "COMPRIMIDO"
+        };
+      }
+      return item;
     }
   },
 
@@ -389,7 +476,32 @@ const createEntityProxy = (entityName) => ({
 
 // ─── Exportações ──────────────────────────────────────────────────────────────
 
+export async function registrarAuditoria(acao, entidade, entidadeId, detalhes) {
+  try {
+    const user = JSON.parse(localStorage.getItem("pharma_user") || "null");
+    const userName = user ? (user.nome || user.login || "Sistema") : "Sistema";
+    const auditId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    let safeDetalhes = "";
+    if (typeof detalhes === "object") {
+      try { safeDetalhes = JSON.stringify(detalhes); } catch (e) { safeDetalhes = String(detalhes); }
+    } else {
+      safeDetalhes = detalhes || "";
+    }
+    const safeDetalhesEscaped = safeDetalhes.replace(/'/g, "''");
+    const { ip, dbName, password } = getPgConfig();
+    if (!ip || !dbName) return;
+    await autoEnsureTable("Auditoria");
+    const q = `INSERT INTO "Auditoria" ("id", "acao", "entidade", "entidade_id", "detalhes", "usuario", "data_hora", "created_at") 
+               VALUES ('${auditId}', '${acao}', '${entidade}', '${entidadeId || ''}', '${safeDetalhesEscaped}', '${userName}', '${now}', '${now}')`;
+    await invoke("execute_postgres", { ip, dbName, password, query: q });
+  } catch (e) {
+    console.warn("[db.js] Falha ao registrar auditoria:", e);
+  }
+}
+
 export const db = {
+  logAction: registrarAuditoria,
   entities: {
     Medicamento: createEntityProxy("Medicamento"),
     Lote: createEntityProxy("Lote"),

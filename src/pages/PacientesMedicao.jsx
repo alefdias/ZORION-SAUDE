@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -28,15 +29,16 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   PackageMinus, 
-  Bed, 
   Building2,
   RefreshCw,
-  Power,
   Eye,
   FileText,
   LogOut,
   Undo2,
-  User
+  User,
+  CreditCard,
+  ArrowLeftRight,
+  ArrowRight
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -68,6 +70,7 @@ const getDoseForHora = (horariosData, targetHora) => {
 };
 
 export default function PacientesMedicao() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [activeMainTab, setActiveMainTab] = useState("pacientes");
@@ -139,6 +142,15 @@ export default function PacientesMedicao() {
   const [devolucaoTipo, setDevolucaoTipo] = useState("Alta a Pedido");
   const [devolucaoMotivo, setDevolucaoMotivo] = useState("");
 
+  // Estados para Modal de Transferência de Ala (Ala X -> Ala Y)
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferOriginAlaId, setTransferOriginAlaId] = useState("all");
+  const [transferTargetAlaId, setTransferTargetAlaId] = useState("");
+  const [transferSelectedPatientIds, setTransferSelectedPatientIds] = useState([]);
+  const [transferLeitoStrategy, setTransferLeitoStrategy] = useState("keep"); // "keep" ou "define"
+  const [transferSingleLeito, setTransferSingleLeito] = useState("");
+  const [transferMotivo, setTransferMotivo] = useState("");
+
   // Queries
   const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
     queryKey: ['pacientes'],
@@ -193,12 +205,23 @@ export default function PacientesMedicao() {
   const savePatientMutation = useMutation({
     mutationFn: async (data) => {
       if (editingPatient) {
-        return db.entities.Paciente.update(editingPatient.id, data);
+        const res = await db.entities.Paciente.update(editingPatient.id, data);
+        if (data.alaNome !== editingPatient.alaNome || data.leito !== editingPatient.leito) {
+          const pacPrescs = prescricoes.filter(pr => (pr.pacienteId === editingPatient.id || pr.paciente_id === editingPatient.id) && pr.status === "Ativa");
+          for (const presc of pacPrescs) {
+            await db.entities.PrescricaoPaciente.update(presc.id, {
+              alaNome: data.alaNome,
+              leito: data.leito
+            });
+          }
+        }
+        return res;
       }
       return db.entities.Paciente.create(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       setPatientModalOpen(false);
       setEditingPatient(null);
       toast.success(editingPatient ? "Paciente atualizado com sucesso!" : "Paciente cadastrado com sucesso!");
@@ -251,10 +274,25 @@ export default function PacientesMedicao() {
         ])
       };
 
+      let result;
       if (editingPresc) {
-        return db.entities.PrescricaoPaciente.update(editingPresc.id, payload);
+        result = await db.entities.PrescricaoPaciente.update(editingPresc.id, payload);
+        await db.logAction(
+          "ALTERACAO_PRESCRICAO",
+          "PrescricaoPaciente",
+          editingPresc.id,
+          `Alteração na prescrição do paciente (ID: ${pacienteId || editingPresc.pacienteId}): Medicamento '${editingPresc.medicamentoNome || payload.medicamentoId}', status: ${payload.status}`
+        );
+      } else {
+        result = await db.entities.PrescricaoPaciente.create(payload);
+        await db.logAction(
+          "CRIACAO_PRESCRICAO",
+          "PrescricaoPaciente",
+          result?.id || pacienteId,
+          `Nova prescrição adicionada para paciente ID: ${pacienteId}: Medicamento ID: ${payload.medicamentoId}, via: ${payload.viaAdministracao || '-'}`
+        );
       }
-      return db.entities.PrescricaoPaciente.create(payload);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
@@ -268,7 +306,14 @@ export default function PacientesMedicao() {
   const togglePrescStatusMutation = useMutation({
     mutationFn: async ({ id, status }) => {
       const newStatus = status === "Ativa" ? "Suspensa" : "Ativa";
-      return db.entities.PrescricaoPaciente.update(id, { status: newStatus });
+      const res = await db.entities.PrescricaoPaciente.update(id, { status: newStatus });
+      await db.logAction(
+        newStatus === "Suspensa" ? "SUSPENSAO_PRESCRICAO" : "REATIVACAO_PRESCRICAO",
+        "PrescricaoPaciente",
+        id,
+        `Status da prescrição alterado de '${status}' para '${newStatus}'`
+      );
+      return res;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
@@ -277,7 +322,16 @@ export default function PacientesMedicao() {
   });
 
   const deletePrescMutation = useMutation({
-    mutationFn: (id) => db.entities.PrescricaoPaciente.delete(id),
+    mutationFn: async (id) => {
+      const res = await db.entities.PrescricaoPaciente.delete(id);
+      await db.logAction(
+        "EXCLUSAO_PRESCRICAO",
+        "PrescricaoPaciente",
+        id,
+        `Prescrição excluída permanentemente pelo usuário`
+      );
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       toast.success("Prescrição removida!");
@@ -718,6 +772,13 @@ export default function PacientesMedicao() {
         created_at: nowStr
       });
 
+      await db.logAction(
+        "ALTA_PACIENTE",
+        "Paciente",
+        pac.id,
+        `${tipo} concedida ao paciente '${pac.nome}' (Prontuário: ${pac.prontuario || 'N/A'}, Leito: ${pac.leito || '-'}). Prescrições ativas suspensas.`
+      );
+
       return { pac, tipo, dias, relatorioAlta };
     },
     onSuccess: (data) => {
@@ -749,6 +810,76 @@ export default function PacientesMedicao() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       toast.success("Paciente reativado! Os remédios antigos estão no histórico. Lembre-se de cadastrar as novas medicações.");
+    }
+  });
+
+  // Mutation de Transferência de Paciente(s) entre Alas (Ala X -> Ala Y)
+  const transferPatientMutation = useMutation({
+    mutationFn: async ({ patientIds, targetAlaId, leitoStrategy, singleLeito, motivo }) => {
+      const targetAla = alas.find(a => a.id === targetAlaId);
+      if (!targetAla) throw new Error("Selecione a ala de destino.");
+      if (!patientIds || patientIds.length === 0) throw new Error("Nenhum paciente selecionado para transferência.");
+
+      const now = new Date();
+      const timestamp = format(now, "dd/MM/yyyy HH:mm");
+      const transferNote = motivo?.trim() 
+        ? `Transferido para ${targetAla.nome} em ${timestamp} (${motivo.trim()})`
+        : `Transferido para ${targetAla.nome} em ${timestamp}`;
+
+      for (const pid of patientIds) {
+        const pac = pacientes.find(p => p.id === pid);
+        if (!pac) continue;
+
+        const newLeito = (patientIds.length === 1 && singleLeito !== undefined && singleLeito.trim() !== "")
+          ? singleLeito.trim()
+          : (leitoStrategy === "keep" ? (pac.leito || "") : (singleLeito?.trim() || pac.leito || ""));
+
+        const updatedObs = pac.observacoes 
+          ? `${pac.observacoes} | ${transferNote}`
+          : transferNote;
+
+        // 1. Atualiza dados do Paciente
+        await db.entities.Paciente.update(pid, {
+          alaId: targetAla.id,
+          alaNome: targetAla.nome,
+          leito: newLeito,
+          observacoes: updatedObs
+        });
+
+        // 2. Atualiza todas as prescrições médicas ativas do paciente para refletir a nova Ala e Leito
+        const pacPrescs = prescricoes.filter(pr => (pr.pacienteId === pid || pr.paciente_id === pid) && pr.status === "Ativa");
+        for (const presc of pacPrescs) {
+          await db.entities.PrescricaoPaciente.update(presc.id, {
+            alaNome: targetAla.nome,
+            leito: newLeito
+          });
+        }
+      }
+
+      return { count: patientIds.length, targetAlaNome: targetAla.nome };
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      toast.success(`${res.count} paciente(s) transferido(s) com sucesso para a ${res.targetAlaNome}!`);
+      setTransferModalOpen(false);
+      setSelectedPatientIds([]);
+      setTransferSelectedPatientIds([]);
+      if (viewPatientDetails) {
+        setViewPatientDetails(prev => {
+          if (!prev) return null;
+          const targetAla = alas.find(a => a.id === transferTargetAlaId);
+          return {
+            ...prev,
+            alaId: targetAla?.id || prev.alaId,
+            alaNome: targetAla?.nome || prev.alaNome,
+            leito: transferSingleLeito || prev.leito
+          };
+        });
+      }
+    },
+    onError: (err) => {
+      toast.error("Erro na transferência: " + (err?.message || (typeof err === "string" ? err : "Erro desconhecido")));
     }
   });
 
@@ -790,6 +921,47 @@ export default function PacientesMedicao() {
       alaId,
       alaNome: selectedAla ? selectedAla.nome : ""
     }));
+  };
+
+  const handleOpenTransferModal = (patientIds = []) => {
+    setTransferTargetAlaId("");
+    setTransferMotivo("");
+
+    if (patientIds.length === 1) {
+      const pac = pacientes.find(p => p.id === patientIds[0]);
+      setTransferSelectedPatientIds(patientIds);
+      setTransferOriginAlaId(pac?.alaId || "all");
+      setTransferSingleLeito(pac?.leito || "");
+      setTransferLeitoStrategy("define");
+    } else if (patientIds.length > 1) {
+      setTransferSelectedPatientIds(patientIds);
+      const firstPac = pacientes.find(p => p.id === patientIds[0]);
+      const sameAla = patientIds.every(id => pacientes.find(p => p.id === id)?.alaId === firstPac?.alaId);
+      setTransferOriginAlaId(sameAla ? (firstPac?.alaId || "all") : "all");
+      setTransferSingleLeito("");
+      setTransferLeitoStrategy("keep");
+    } else {
+      const initialAla = filterAla !== "all" ? filterAla : (alas[0]?.id || "all");
+      setTransferOriginAlaId(initialAla);
+      const pacsInAla = initialAla !== "all"
+        ? activePatients.filter(p => p.alaId === initialAla || p.alaNome === alas.find(a => a.id === initialAla)?.nome).map(p => p.id)
+        : [];
+      setTransferSelectedPatientIds(pacsInAla);
+      setTransferSingleLeito("");
+      setTransferLeitoStrategy("keep");
+    }
+    setTransferModalOpen(true);
+  };
+
+  const handleOriginAlaChange = (alaId) => {
+    setTransferOriginAlaId(alaId);
+    if (alaId === "all") {
+      setTransferSelectedPatientIds(activePatients.map(p => p.id));
+    } else {
+      const alaObj = alas.find(a => a.id === alaId);
+      const pacs = activePatients.filter(p => p.alaId === alaId || p.alaNome === alaObj?.nome).map(p => p.id);
+      setTransferSelectedPatientIds(pacs);
+    }
   };
 
   // Handlers Modal Prescrição
@@ -968,6 +1140,18 @@ export default function PacientesMedicao() {
     });
   }, [activePatients, searchPatient, filterAla]);
 
+  const candidatesForTransfer = useMemo(() => {
+    if (transferOriginAlaId === "all") {
+      return activePatients;
+    }
+    const alaObj = alas.find(a => a.id === transferOriginAlaId);
+    return activePatients.filter(p => p.alaId === transferOriginAlaId || p.alaNome === alaObj?.nome);
+  }, [activePatients, transferOriginAlaId, alas]);
+
+  const availableTargetAlas = useMemo(() => {
+    return alas.filter(a => a.id !== transferOriginAlaId);
+  }, [alas, transferOriginAlaId]);
+
   const filteredAltaPatients = useMemo(() => {
     const search = searchAltaPatient.toLowerCase();
     return dischargedPatients.filter(p => 
@@ -1001,7 +1185,24 @@ export default function PacientesMedicao() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto no-print">
+        <div className="flex items-center gap-2 w-full md:w-auto no-print flex-wrap">
+          <Button 
+            onClick={() => navigate('/SateliteAdiantamento')} 
+            variant="outline" 
+            className="border-amber-300 bg-amber-50/50 hover:bg-amber-100 text-amber-900 font-semibold"
+          >
+            <CreditCard className="w-4 h-4 mr-2 text-amber-600" />
+            Relatório Adiantamento
+          </Button>
+          <Button 
+            onClick={() => handleOpenTransferModal()} 
+            variant="outline" 
+            className="border-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 font-semibold"
+            title="Transferir pacientes da Ala X para Ala Y"
+          >
+            <ArrowLeftRight className="w-4 h-4 mr-2 text-indigo-600" />
+            Transferir Ala (X → Y)
+          </Button>
           <Button onClick={() => handleOpenNewPatient()} variant="outline" className="border-slate-300 dark:border-slate-700">
             <Users className="w-4 h-4 mr-2 text-blue-600" />
             Novo Paciente
@@ -1042,7 +1243,7 @@ export default function PacientesMedicao() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   onClick={() => setSelectedPatientIds([])}
                   variant="ghost"
@@ -1050,6 +1251,15 @@ export default function PacientesMedicao() {
                   className="text-slate-600 dark:text-slate-300 hover:text-slate-900"
                 >
                   Limpar Seleção
+                </Button>
+
+                <Button
+                  onClick={() => handleOpenTransferModal(selectedPatientIds)}
+                  variant="outline"
+                  className="border-indigo-300 bg-indigo-50 text-indigo-900 hover:bg-indigo-100 font-bold gap-2 shadow-sm"
+                >
+                  <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
+                  Transferir de Ala ({selectedPatientIds.length})
                 </Button>
 
                 <Button
@@ -1201,9 +1411,12 @@ export default function PacientesMedicao() {
                             {activePrescsCount} remédio(s)
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right space-x-1">
+                        <TableCell className="text-right space-x-1 whitespace-nowrap">
                           <Button size="sm" variant="ghost" onClick={() => setViewPatientDetails(p)} title="Ver Prontuário & Prescrições">
                             <Eye className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenTransferModal([p.id])} title="Transferir de Ala (Ala X para Y)">
+                            <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => handleOpenNewPresc(p.id)} title="Adicionar Medicação Fixa">
                             <Plus className="w-4 h-4 text-emerald-600" />
@@ -1481,11 +1694,21 @@ export default function PacientesMedicao() {
                    </div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-blue-200 text-sm mb-3">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
-                <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-6" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
-                   Editar Paciente
-                </Button>
+              <div className="text-right flex flex-col items-end gap-2">
+                <div className="text-blue-200 text-sm mb-1">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5" 
+                    onClick={() => handleOpenTransferModal([viewPatientDetails.id])}
+                  >
+                    <ArrowLeftRight className="w-4 h-4" />
+                    Transferir Ala
+                  </Button>
+                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
+                     Editar Paciente
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -2324,6 +2547,221 @@ export default function PacientesMedicao() {
             >
               <Undo2 className="w-4 h-4" />
               {efetuarDevolucaoMutation.isPending ? "Devolvendo..." : "Confirmar Devolução"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL: TRANSFERÊNCIA DE PACIENTES ENTRE ALAS (X → Y) ─────────── */}
+      <Dialog open={transferModalOpen} onOpenChange={setTransferModalOpen}>
+        <DialogContent className="sm:max-w-[620px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-white">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2.5 text-white">
+              <div className="p-2 bg-indigo-500/30 rounded-lg border border-indigo-400/30">
+                <ArrowLeftRight className="w-5 h-5 text-indigo-200" />
+              </div>
+              Transferência de Pacientes entre Alas
+            </DialogTitle>
+            <DialogDescription className="text-indigo-200 text-xs mt-1">
+              Transfira pacientes e atualize suas prescrições ativas da <strong>Ala de Origem (X)</strong> para a <strong>Ala de Destino (Y)</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Box de Seleção de Alas Origem e Destino */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                {/* Ala Origem (X) */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                    Ala de Origem (X)
+                  </Label>
+                  <Select value={transferOriginAlaId} onValueChange={handleOriginAlaChange}>
+                    <SelectTrigger className="bg-white dark:bg-slate-950 font-medium">
+                      <SelectValue placeholder="Selecione a ala de origem..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas as Alas (Geral)</SelectItem>
+                      {alas.map(a => (
+                        <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Ala Destino (Y) */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+                    Ala de Destino (Y) *
+                  </Label>
+                  <Select value={transferTargetAlaId} onValueChange={setTransferTargetAlaId}>
+                    <SelectTrigger className="bg-white dark:bg-slate-950 border-indigo-300 dark:border-indigo-700 font-bold text-indigo-900 dark:text-indigo-200">
+                      <SelectValue placeholder="Selecione a ala de destino..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableTargetAlas.map(a => (
+                        <SelectItem key={a.id} value={a.id} className="font-medium">{a.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* Seleção de Pacientes */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                  Pacientes a Transferir ({transferSelectedPatientIds.length} selecionado(s))
+                </Label>
+                {candidatesForTransfer.length > 1 && (
+                  <div className="space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setTransferSelectedPatientIds(candidatesForTransfer.map(p => p.id))}
+                      className="text-xs text-indigo-600 hover:underline font-semibold"
+                    >
+                      Selecionar Todos
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setTransferSelectedPatientIds([])}
+                      className="text-xs text-slate-500 hover:underline font-semibold"
+                    >
+                      Desmarcar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {candidatesForTransfer.length === 0 ? (
+                <div className="text-center py-6 border border-dashed rounded-xl bg-slate-50 dark:bg-slate-900 text-slate-400 text-sm">
+                  Nenhum paciente encontrado na ala de origem selecionada.
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-950">
+                  {candidatesForTransfer.map(p => {
+                    const checked = transferSelectedPatientIds.includes(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={cn(
+                          "flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors",
+                          checked && "bg-indigo-50/60 dark:bg-indigo-950/20"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setTransferSelectedPatientIds(prev => [...prev, p.id]);
+                              } else {
+                                setTransferSelectedPatientIds(prev => prev.filter(id => id !== p.id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{p.nome}</p>
+                            <p className="text-xs text-slate-500">
+                              Pront: {p.prontuario} • Ala: {p.alaNome || "Geral"} • Leito: {p.leito || "S/L"}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-[11px] font-mono">
+                          {p.leito || "S/L"}
+                        </Badge>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Gestão do Leito na Ala de Destino */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+              {transferSelectedPatientIds.length === 1 ? (
+                <div className="space-y-1.5">
+                  <Label className="font-bold text-xs text-slate-700 dark:text-slate-300">
+                    Novo Leito na Ala de Destino:
+                  </Label>
+                  <Input
+                    placeholder="Ex: Leito 10, Box 02..."
+                    value={transferSingleLeito}
+                    onChange={(e) => setTransferSingleLeito(e.target.value)}
+                    className="bg-white dark:bg-slate-950"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    O leito do paciente e de suas prescrições será atualizado para este valor.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="font-bold text-xs text-slate-700 dark:text-slate-300">
+                    Leito dos Pacientes no Destino:
+                  </Label>
+                  <div className="flex items-center gap-4 text-xs">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="leitoStrategy"
+                        value="keep"
+                        checked={transferLeitoStrategy === "keep"}
+                        onChange={() => setTransferLeitoStrategy("keep")}
+                        className="text-indigo-600"
+                      />
+                      <span>Manter os leitos atuais de cada paciente</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Motivo da Transferência */}
+            <div className="space-y-1.5">
+              <Label className="font-bold text-xs text-slate-700 dark:text-slate-300">
+                Motivo / Observação da Transferência (Opcional):
+              </Label>
+              <Input
+                placeholder="Ex: Transferência clínica, alta da UTI para enfermaria, isolamento..."
+                value={transferMotivo}
+                onChange={(e) => setTransferMotivo(e.target.value)}
+                className="bg-white dark:bg-slate-950"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 flex justify-between items-center">
+            <Button variant="outline" onClick={() => setTransferModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={
+                !transferTargetAlaId || 
+                transferSelectedPatientIds.length === 0 || 
+                transferPatientMutation.isPending
+              }
+              onClick={() => {
+                transferPatientMutation.mutate({
+                  patientIds: transferSelectedPatientIds,
+                  targetAlaId: transferTargetAlaId,
+                  leitoStrategy: transferLeitoStrategy,
+                  singleLeito: transferSingleLeito,
+                  motivo: transferMotivo
+                });
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2 shadow-sm"
+            >
+              <ArrowLeftRight className="w-4 h-4" />
+              {transferPatientMutation.isPending 
+                ? "Transferindo..." 
+                : `Confirmar Transferência (${transferSelectedPatientIds.length})`
+              }
             </Button>
           </DialogFooter>
         </DialogContent>

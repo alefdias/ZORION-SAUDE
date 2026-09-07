@@ -79,6 +79,11 @@ export function ComboboxMedicamento({
                             {m.codigo}
                         </span>
                     )}
+                    {m.is_adiantamento && (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0">
+                            💳 Adiantamento
+                        </span>
+                    )}
                     {isPsicotropico(m.grupo_terapeutico) && (
                         <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
                     )}
@@ -112,6 +117,11 @@ export function ComboboxMedicamento({
                             {selectedMed.codigo && (
                                 <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0 text-slate-600 border border-slate-200">
                                     {selectedMed.codigo}
+                                </span>
+                            )}
+                            {selectedMed.is_adiantamento && (
+                                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0">
+                                    💳 Adiantamento
                                 </span>
                             )}
                             {isPsicotropico(selectedMed.categoria) && (

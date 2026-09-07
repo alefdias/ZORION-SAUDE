@@ -3,7 +3,7 @@ const { Client } = pg;
 const client = new Client({
   host: 'localhost',
   user: 'postgres',
-  password: '123',
+  password: '1020',
   database: 'zorion',
 });
 await client.connect().catch(e => {

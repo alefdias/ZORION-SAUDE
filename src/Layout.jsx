@@ -26,7 +26,10 @@ import {
   ChevronDown,
   TrendingUp,
   Palette,
-  Clock
+  Clock,
+  CreditCard,
+  ShoppingCart,
+  ShieldCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -52,6 +55,7 @@ const moduleSections = [
       { name: "Movimentações", icon: ArrowLeftRight, page: "Movimentacoes" },
       { name: "Estoque", icon: Boxes, page: "Estoque" },
       { name: "Vencimentos", icon: CalendarX2, page: "Vencimentos" },
+      { name: "Compras", icon: ShoppingCart, page: "Compras" },
       { name: "Relatórios", icon: FileText, page: "Relatorios" },
     ]
   },
@@ -61,12 +65,13 @@ const moduleSections = [
     icon: Package,
     mainPage: "Satelite",
     menu: [
-      { name: "Painel Satélite", icon: LayoutDashboard, page: "Satelite" },
+      { name: "Painel", icon: LayoutDashboard, page: "Satelite" },
       { name: "Sazonalidade", icon: TrendingUp, page: "SateliteEvolucao" },
       { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
+      { name: "Adiantamento", icon: CreditCard, page: "SateliteAdiantamento" },
       { name: "Movimentações", icon: ArrowLeftRight, page: "SateliteMovimentacoes" },
-      { name: "Folha Reg. Específico", icon: Book, page: "SatelitePortaria" },
-      { name: "Estoque Atual", icon: Package, page: "SateliteEstoque" },
+      { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
+      { name: "Estoque", icon: Package, page: "SateliteEstoque" },
     ]
   },
   {
@@ -76,6 +81,7 @@ const moduleSections = [
     mainPage: "ResponsavelTecnico",
     menu: [
       { name: "Gestão RT", icon: Users, page: "ResponsavelTecnico" },
+      { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Cadastros", icon: Building2, page: "Cadastros" },
       { name: "Empréstimos", icon: HandHelping, page: "Emprestimos" },
       { name: "Configurações", icon: Settings, page: "Configuracoes" },
@@ -93,7 +99,7 @@ const moduleSections = [
 ];
 
 function getCurrentSection(pageName) {
-  if (pageName === "LivroRegistro") {
+  if (pageName === "LivroRegistro" || pageName === "SateliteAdiantamento" || pageName === "SatelitePortaria") {
     return moduleSections.find(sec => sec.id === "satelite");
   }
   for (const sec of moduleSections) {
@@ -193,7 +199,7 @@ export default function Layout({ children, currentPageName }) {
           </div>
 
           {/* CENTER: Delphi/POS Style Vertical Navigation Items */}
-          <nav className="hidden lg:flex items-center justify-center gap-1 lg:gap-3 flex-1 min-w-0 overflow-x-auto no-scrollbar px-2 py-1">
+          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 flex-1 min-w-0 overflow-x-auto no-scrollbar px-1 py-1">
             {activeSection.menu.map((item) => {
               const isActive = currentPageName === item.page;
               return (
@@ -201,17 +207,17 @@ export default function Layout({ children, currentPageName }) {
                   key={item.page}
                   to={createPageUrl(item.page)}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1 px-2.5 py-1 min-w-[72px] rounded-lg transition-all whitespace-nowrap group shrink-0",
+                    "flex flex-col items-center justify-center gap-0.5 px-2 xl:px-2.5 py-1 min-w-[58px] xl:min-w-[68px] rounded-lg transition-all whitespace-nowrap group shrink-0",
                     isActive
                       ? "bg-blue-600/20 border border-blue-500/30 text-blue-400 shadow-inner"
                       : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200 border border-transparent"
                   )}
                 >
                   <item.icon className={cn(
-                    "w-5 h-5 shrink-0 transition-colors",
+                    "w-4 h-4 xl:w-4.5 xl:h-4.5 shrink-0 transition-colors",
                     isActive ? "text-blue-400" : "text-slate-500 group-hover:text-cyan-400"
                   )} />
-                  <span className="text-[10px] font-bold tracking-wide uppercase">{item.name}</span>
+                  <span className="text-[10px] font-bold tracking-tight uppercase">{item.name}</span>
                 </Link>
               );
             })}

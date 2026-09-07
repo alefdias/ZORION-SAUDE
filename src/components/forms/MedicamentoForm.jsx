@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useQuery } from "@tanstack/react-query";
 import { db } from "@/api/db";
+
+export function normalizeApresentacao(str) {
+    if (!str) return "";
+    let s = str.trim().toUpperCase();
+    s = s.replace(/\s+/g, ' ');
+    // Padroniza vírgula em números decimais (ex: 0.25 -> 0,25)
+    s = s.replace(/(\d+)\.(\d+)/g, '$1,$2');
+    // Padroniza espaço único entre número e unidade de medida (ex: 10ML -> 10 ML, 1ML -> 1 ML, 20ML -> 20 ML)
+    s = s.replace(/(\d+)\s*(ML|MG|G|MCG|L)\b/gi, '$1 $2');
+    s = s.replace(/(\d+),(\d+)\s*(ML|MG|G|MCG|L)\b/gi, '$1,$2 $3');
+    return s;
+}
 
 const CATEGORIAS = [
     "PSICOTRÓPICO / CONTROLADO (PORTARIA 344)",
@@ -32,22 +44,44 @@ const CATEGORIAS = [
 ];
 
 const APRESENTACOES = [
-    "Comprimido",
-    "Cápsula",
-    "Gotas",
-    "Xarope",
-    "Injetável",
-    "Pomada",
-    "Creme",
-    "Spray",
-    "Supositório",
-    "Envelope",
-    "Shampoo",
-    "Ampola",
-    "Tubo",
-    "Frasco",
-    "Seringa",
-    "Sachê"
+    "COMPRIMIDO",
+    "CÁPSULA",
+    "AMPOLA",
+    "AMPOLA 0,25 ML",
+    "AMPOLA 1 ML",
+    "AMPOLA 2 ML",
+    "AMPOLA 2,5 ML",
+    "AMPOLA 5 ML",
+    "AMPOLA 10 ML",
+    "AMPOLA 20 ML",
+    "FRASCO",
+    "FRASCO-AMPOLA",
+    "FRASCO 5 ML",
+    "FRASCO 10 ML",
+    "FRASCO 60 ML",
+    "FRASCO 100 ML",
+    "FRASCO 250 ML",
+    "FRASCO 500 ML",
+    "BOLSA",
+    "BOLSA 100 ML",
+    "BOLSA 250 ML",
+    "BOLSA 500 ML",
+    "BOLSA 1000 ML",
+    "SERINGA",
+    "SERINGA PREENCHIDA",
+    "SACHÊ",
+    "TUBO",
+    "POMADA",
+    "CREME",
+    "GEL",
+    "GOTAS",
+    "XAROPE",
+    "SPRAY",
+    "SUPOSITÓRIO",
+    "ENVELOPE",
+    "ADESIVO",
+    "COLÍRIO",
+    "BLISTER"
 ];
 
 // Removed CATEGORIA_MAP
@@ -80,7 +114,8 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
         nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "",
         concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false,
         origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false,
-        is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2
+        is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2,
+        is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: ""
     });
 
     useEffect(() => {
@@ -109,9 +144,13 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                 is_fracionado: Boolean(medicamento.medicamento_origem_id),
                 medicamento_origem_id: medicamento.medicamento_origem_id || "",
                 fator_fracionamento: medicamento.fator_fracionamento || 2,
+                is_adiantamento: Boolean(medicamento.is_adiantamento),
+                nota_fiscal: medicamento.nota_fiscal || "",
+                valor_compra: medicamento.valor_compra || "",
+                fornecedor_nome: medicamento.fornecedor_nome || "",
             });
         } else {
-            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2 });
+            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2, is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "" });
         }
     }, [medicamento, open]);
 
@@ -120,19 +159,26 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
         queryFn: () => db.entities.Medicamento.list(),
     });
 
-    const uniqueApresentacoes = Array.from(
-        new Set([
-            ...APRESENTACOES.map(a => a.toUpperCase()),
-            ...dbMedicamentos.map(m => m.apresentacao?.toUpperCase()).filter(Boolean)
-        ])
-    ).sort();
+    const uniqueApresentacoes = useMemo(() => {
+        const set = new Set();
+        APRESENTACOES.forEach(a => {
+            const norm = normalizeApresentacao(a);
+            if (norm) set.add(norm);
+        });
+        dbMedicamentos.forEach(m => {
+            const norm = normalizeApresentacao(m.apresentacao);
+            if (norm) set.add(norm);
+        });
+        return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+    }, [dbMedicamentos]);
 
-    const uniqueCategorias = Array.from(
-        new Set([
+    const uniqueCategorias = useMemo(() => {
+        const set = new Set([
             ...CATEGORIAS.map(c => c.toUpperCase()),
             ...dbMedicamentos.map(m => m.grupo_terapeutico?.toUpperCase()).filter(Boolean)
-        ])
-    ).sort();
+        ]);
+        return Array.from(set).sort();
+    }, [dbMedicamentos]);
 
     const handleChange = (field) => (e) => setForm({ ...form, [field]: e.target.value });
     const handleSelectChange = (field) => (value) => setForm({ ...form, [field]: value });
@@ -162,12 +208,14 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
             toast.error("Selecione uma categoria");
             return;
         }
-        if (!form.apresentacao) {
-            toast.error("Selecione a apresentação");
-            return;
-        }
 
-        onSave(form);
+        // Garante que a apresentação nunca fique vazia nem repetida de forma divergente
+        const apresentacaoFinal = normalizeApresentacao(form.apresentacao) || "COMPRIMIDO";
+
+        onSave({
+            ...form,
+            apresentacao: apresentacaoFinal
+        });
     };
 
     return (
@@ -218,6 +266,12 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                                 list="apresentacoes-list" 
                                 value={form.apresentacao} 
                                 onChange={(e) => setForm({ ...form, apresentacao: e.target.value.toUpperCase() })} 
+                                onBlur={() => {
+                                    setForm(f => ({
+                                        ...f,
+                                        apresentacao: normalizeApresentacao(f.apresentacao) || "COMPRIMIDO"
+                                    }));
+                                }}
                                 placeholder="Ex: COMPRIMIDO, AMPOLA, SACHÊ 5G..." 
                             />
                             <datalist id="apresentacoes-list">
@@ -345,6 +399,60 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                                         required={form.is_fracionado}
                                     />
                                     <span className="text-xs text-purple-600 mt-1 block">Ex: 2 (Um comprimido inteiro vira duas metades)</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* SEÇÃO DE ADIANTAMENTO / CARTÃO DO ESTADO */}
+                    <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-900/40 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="is_adiantamento" 
+                                checked={form.is_adiantamento} 
+                                onChange={(e) => setForm({ 
+                                    ...form, 
+                                    is_adiantamento: e.target.checked,
+                                    padronizado: e.target.checked ? false : form.padronizado
+                                })}
+                                className="rounded border-amber-300 w-4 h-4 text-amber-600 focus:ring-amber-500" 
+                            />
+                            <Label htmlFor="is_adiantamento" className="cursor-pointer text-sm font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
+                                💳 Compra por Adiantamento (Cartão do Estado)
+                            </Label>
+                        </div>
+                        
+                        {form.is_adiantamento && (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-amber-200 dark:border-amber-900/30">
+                                <div>
+                                    <Label className="text-amber-900 dark:text-amber-300 text-xs">Nota Fiscal / Cupom</Label>
+                                    <Input 
+                                        placeholder="Ex: NF-e 4521"
+                                        value={form.nota_fiscal} 
+                                        onChange={(e) => setForm({ ...form, nota_fiscal: e.target.value })}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-amber-900 dark:text-amber-300 text-xs">Valor da Compra (R$)</Label>
+                                    <Input 
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0,00"
+                                        value={form.valor_compra} 
+                                        onChange={(e) => setForm({ ...form, valor_compra: e.target.value })}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-amber-900 dark:text-amber-300 text-xs">Fornecedor / Farmácia</Label>
+                                    <Input 
+                                        placeholder="Ex: Drogasil / Distrib."
+                                        value={form.fornecedor_nome} 
+                                        onChange={(e) => setForm({ ...form, fornecedor_nome: e.target.value })}
+                                        className="bg-white"
+                                    />
                                 </div>
                             </div>
                         )}
