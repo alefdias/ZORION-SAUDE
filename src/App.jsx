@@ -48,6 +48,30 @@ function App() {
     };
   }, []);
 
+  // Limpeza automática de metades do banco de dados (GavetaPaciente e frações)
+  useEffect(() => {
+    const cleanMetades = async () => {
+      try {
+        const ip = localStorage.getItem('pg_ip');
+        const dbName = localStorage.getItem('pg_db');
+        const password = localStorage.getItem('pg_pass');
+        if (!ip || !password) return;
+
+        await invoke('execute_postgres', {
+          ip, dbName, password,
+          query: `
+            DELETE FROM "GavetaPaciente";
+            UPDATE "PrescricaoPaciente" 
+            SET "totalDiario" = ROUND("totalDiario") 
+            WHERE "totalDiario" IS NOT NULL AND ("totalDiario"::numeric % 1) != 0;
+          `,
+        });
+        queryClientInstance.invalidateQueries();
+      } catch (_) { /* silencioso */ }
+    };
+    cleanMetades();
+  }, []);
+
   // Polling silencioso: detecta qualquer mudança no banco a cada 4s
   // Sem piscar, sem interromper — só invalida o cache do React Query em background
   useEffect(() => {

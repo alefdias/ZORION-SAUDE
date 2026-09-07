@@ -38,7 +38,11 @@ import {
   User,
   CreditCard,
   ArrowLeftRight,
-  ArrowRight
+  ArrowRight,
+  CalendarCheck,
+  X,
+  Bed,
+  Sparkles
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -73,8 +77,7 @@ export default function PacientesMedicao() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [activeMainTab, setActiveMainTab] = useState("pacientes");
-  const [reportSubTab, setReportSubTab] = useState("consolidado");
+  const [activeCategory, setActiveCategory] = useState("todos"); // "todos", "com_prescricao", "sem_prescricao", "altas"
   const [periodoDias, setPeriodoDias] = useState(1);
   const [searchPatient, setSearchPatient] = useState("");
   const [filterAla, setFilterAla] = useState("all");
@@ -419,10 +422,9 @@ export default function PacientesMedicao() {
         return patientIds.includes(pId) && status === "Ativa";
       });
 
-      // Nova etapa 1: Calcular saídas e deduções PER PATIENT considerando a GavetaPaciente
+      // Etapa 1: Calcular saídas e deduções diretas (unidades inteiras)
       const saidasParaRegistrar = [];
-      const deducoesEstoqueCentral = {}; // o que de fato sairá da Satélite
-      const atualizacoesGaveta = [];
+      const deducoesEstoqueCentral = {};
 
       for (const pr of activePrescs) {
         const pacId = pr.pacienteId || pr.paciente_id;
@@ -433,50 +435,30 @@ export default function PacientesMedicao() {
         const d22 = getDoseForHora(pr.horarios, "22:00");
         const d06 = getDoseForHora(pr.horarios, "06:00");
         const calculatedDaily = d08 + d14 + d22 + d06;
-        const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (pr.totalDiario || 0);
+        const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
-        const qtdSaida = dailyTotal * dias; // e.g. 1.5
+        const qtdSaida = Math.round(dailyTotal * dias);
         if (qtdSaida <= 0) continue;
 
-        // Se converte toda a saída em "metades" para o cálculo
-        const metadesNecessarias = Math.round(qtdSaida * 2); 
-        
-        const gavetaItem = gavetas.find(g => g.paciente_id === pacId && g.medicamento_id === medId);
-        const metadesNaGaveta = gavetaItem ? (gavetaItem.quantidade || 0) : 0; 
-
-        let inteirosDoEstoque = 0;
-        let novasMetadesGaveta = 0;
-
-        if (metadesNaGaveta >= metadesNecessarias) {
-           novasMetadesGaveta = metadesNaGaveta - metadesNecessarias;
-        } else {
-           const metadesFaltantes = metadesNecessarias - metadesNaGaveta;
-           inteirosDoEstoque = Math.ceil(metadesFaltantes / 2); // Pega comprimidos inteiros da farmácia
-           const metadesGeradas = inteirosDoEstoque * 2;
-           novasMetadesGaveta = metadesGeradas - metadesFaltantes;
-        }
-
-        if (inteirosDoEstoque > 0) {
-           deducoesEstoqueCentral[medId] = (deducoesEstoqueCentral[medId] || 0) + inteirosDoEstoque;
-        }
+        deducoesEstoqueCentral[medId] = (deducoesEstoqueCentral[medId] || 0) + qtdSaida;
 
         saidasParaRegistrar.push({
-           pr, pacId, medId, inteirosDoEstoque, metadesUsadas: metadesNecessarias, gavetaItem, novasMetadesGaveta, qtdOriginalStr: qtdSaida
+           pr, pacId, medId, qtdSaida
         });
       }
 
-      // Etapa 2: Validar se há estoque suficiente para TODAS as deduções inteiras
+      // Etapa 2: Validar se há estoque suficiente para TODAS as deduções
       for (const [medId, totalQtd] of Object.entries(deducoesEstoqueCentral)) {
         const med = medicamentos.find(m => m.id === medId);
         const atualSatelite = med ? (med.estoque_satelite || 0) : 0;
         if (atualSatelite < totalQtd) {
-          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${med ? med.nome : "Medicamento Desconhecido"}. Necessário inteiros: ${totalQtd}, Disponível: ${atualSatelite}`);
+          throw new Error(`Estoque insuficiente na Farmácia Satélite para: ${med ? med.nome : "Medicamento Desconhecido"}. Necessário: ${totalQtd} un, Disponível: ${atualSatelite} un`);
         }
       }
 
-      // Etapa 3: Criar registros de saída para Portaria 344 e efetivar atualizações
+      // Etapa 3: Criar registros de saída para o estoque e histórico
       for (const saida of saidasParaRegistrar) {
-        const { pr, pacId, medId, inteirosDoEstoque, metadesUsadas, gavetaItem, novasMetadesGaveta, qtdOriginalStr } = saida;
+        const { pr, pacId, medId, qtdSaida } = saida;
         
         const pac = selectedPacs.find(p => p.id === pacId);
         const med = medicamentos.find(m => m.id === medId);
@@ -484,57 +466,24 @@ export default function PacientesMedicao() {
         const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
         const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Paciente";
 
-        if (inteirosDoEstoque > 0) {
-          await db.entities.Saida.create({
-            medicamento_id: medId,
-            medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
-            lote_id: loteId,
-            numero_lote: numeroLote,
-            quantidade: inteirosDoEstoque, // Integraidade da Portaria 344
-            destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
-            paciente_nome: pac ? pac.nome : "",
-            ala_id: pac?.alaId || pac?.ala_id || null,
-            ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
-            motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'}) - Fracionamento`,
-            observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt. Faturada: ${qtdOriginalStr} un`,
-            data_saida: todayDateStr,
-            created_at: nowStr
-          });
-        } else {
-          // Consumiu apenas da gaveta, registrar auditoria
-          await db.entities.Saida.create({
-            medicamento_id: medId,
-            medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
-            lote_id: loteId,
-            numero_lote: numeroLote,
-            quantidade: 0,
-            destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
-            paciente_nome: pac ? pac.nome : "",
-            ala_id: pac?.alaId || pac?.ala_id || null,
-            ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
-            motivo: `Uso da Gaveta Nominal (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
-            observacao: `Consumiu saldo fracionado da gaveta do paciente. Qt. Faturada: ${qtdOriginalStr} un`,
-            data_saida: todayDateStr,
-            created_at: nowStr
-          });
-        }
-
-        // Atualizar gaveta do paciente
-        if (gavetaItem) {
-           await db.entities.GavetaPaciente.update(gavetaItem.id, {
-               quantidade: novasMetadesGaveta
-           });
-        } else if (novasMetadesGaveta > 0) {
-           await db.entities.GavetaPaciente.create({
-               paciente_id: pacId,
-               medicamento_id: medId,
-               lote_id: loteId,
-               quantidade: novasMetadesGaveta
-           });
-        }
+        await db.entities.Saida.create({
+          medicamento_id: medId,
+          medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
+          lote_id: loteId,
+          numero_lote: numeroLote,
+          quantidade: qtdSaida,
+          destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
+          paciente_nome: pac ? pac.nome : "",
+          ala_id: pac?.alaId || pac?.ala_id || null,
+          ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
+          motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
+          observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un`,
+          data_saida: todayDateStr,
+          created_at: nowStr
+        });
       }
 
-      // Etapa 4: Atualizar estoque_satelite com a dedução de INTEIROS
+      // Etapa 4: Atualizar estoque_satelite com a dedução direta
       for (const [medId, totalQtd] of Object.entries(deducoesEstoqueCentral)) {
         const med = medicamentos.find(m => m.id === medId);
         if (med) {
@@ -1126,19 +1075,83 @@ export default function PacientesMedicao() {
     return (pacientes || []).filter(p => p.status === "Alta");
   }, [pacientes]);
 
-  const filteredPatients = useMemo(() => {
-    const search = searchPatient.toLowerCase();
-    return activePatients.filter(p => {
-      const matchSearch = p.nome?.toLowerCase().includes(search) ||
-        p.prontuario?.toLowerCase().includes(search) ||
-        p.leito?.toLowerCase().includes(search) ||
-        p.alaNome?.toLowerCase().includes(search);
-        
+  // Contagens e KPIs de Pacientes
+  const patientCounts = useMemo(() => {
+    const ativos = (pacientes || []).filter(p => p.status !== "Alta");
+    const altas = (pacientes || []).filter(p => p.status === "Alta");
+
+    const patientIdsWithActivePresc = new Set(
+      (prescricoes || [])
+        .filter(pr => pr.status === "Ativa")
+        .map(pr => pr.pacienteId || pr.paciente_id)
+    );
+
+    const comPrescricao = ativos.filter(p => patientIdsWithActivePresc.has(p.id)).length;
+    const semPrescricao = ativos.length - comPrescricao;
+
+    const activePrescList = (prescricoes || []).filter(pr => pr.status === "Ativa");
+    const totalPrescricoes = activePrescList.length;
+    const totalDosesDiarias = activePrescList.reduce((acc, pr) => acc + (parseFloat(pr.totalDiario) || 0), 0);
+
+    const alasSet = new Set(ativos.map(p => p.alaNome || p.alaId).filter(Boolean));
+
+    return {
+      todos: ativos.length,
+      comPrescricao,
+      semPrescricao,
+      altas: altas.length,
+      totalPrescricoes,
+      totalDosesDiarias: Math.round(totalDosesDiarias),
+      alasDistintas: alasSet.size
+    };
+  }, [pacientes, prescricoes]);
+
+  // Lista de pacientes exibidos baseada na categoria ativa, busca e filtro de ala
+  const displayedPatients = useMemo(() => {
+    const search = (searchPatient || "").trim().toLowerCase();
+
+    if (activeCategory === "altas") {
+      return (pacientes || []).filter(p => {
+        if (p.status !== "Alta") return false;
+        const matchSearch = !search ||
+          (p.nome?.toLowerCase().includes(search)) ||
+          (p.prontuario?.toLowerCase().includes(search)) ||
+          (p.leito?.toLowerCase().includes(search)) ||
+          (p.alaNome?.toLowerCase().includes(search));
+        const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
+        return matchSearch && matchAla;
+      });
+    }
+
+    const patientIdsWithActivePresc = new Set(
+      (prescricoes || [])
+        .filter(pr => pr.status === "Ativa")
+        .map(pr => pr.pacienteId || pr.paciente_id)
+    );
+
+    return (pacientes || []).filter(p => {
+      if (p.status === "Alta") return false;
+
+      const matchSearch = !search ||
+        (p.nome?.toLowerCase().includes(search)) ||
+        (p.prontuario?.toLowerCase().includes(search)) ||
+        (p.leito?.toLowerCase().includes(search)) ||
+        (p.alaNome?.toLowerCase().includes(search));
+
       const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
-      
-      return matchSearch && matchAla;
+      if (!matchSearch || !matchAla) return false;
+
+      if (activeCategory === "com_prescricao") {
+        return patientIdsWithActivePresc.has(p.id);
+      }
+      if (activeCategory === "sem_prescricao") {
+        return !patientIdsWithActivePresc.has(p.id);
+      }
+      return true; // "todos"
     });
-  }, [activePatients, searchPatient, filterAla]);
+  }, [pacientes, prescricoes, activeCategory, searchPatient, filterAla]);
+
+  const filteredPatients = displayedPatients;
 
   const candidatesForTransfer = useMemo(() => {
     if (transferOriginAlaId === "all") {
@@ -1152,16 +1165,6 @@ export default function PacientesMedicao() {
     return alas.filter(a => a.id !== transferOriginAlaId);
   }, [alas, transferOriginAlaId]);
 
-  const filteredAltaPatients = useMemo(() => {
-    const search = searchAltaPatient.toLowerCase();
-    return dischargedPatients.filter(p => 
-      p.nome?.toLowerCase().includes(search) ||
-      p.prontuario?.toLowerCase().includes(search) ||
-      p.leito?.toLowerCase().includes(search) ||
-      p.alaNome?.toLowerCase().includes(search)
-    );
-  }, [dischargedPatients, searchAltaPatient]);
-
   const filteredPrescriptions = prescricoes.filter(p =>
     p.pacienteNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
     p.medicamentoNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
@@ -1170,256 +1173,519 @@ export default function PacientesMedicao() {
   );
 
   return (
-    <div className="p-6 space-y-6 min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="p-6 space-y-4 min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Pacientes</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Gestão de pacientes ativos, leitos e prescrições médicas fixas
-            </p>
-          </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            Pacientes & Prescrições
+          </h1>
+          <p className="text-slate-500 text-xs font-medium mt-0.5">
+            Gestão de pacientes internados, leitos e prescrições médicas fixas
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto no-print flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <Button 
             onClick={() => navigate('/SateliteAdiantamento')} 
             variant="outline" 
-            className="border-amber-300 bg-amber-50/50 hover:bg-amber-100 text-amber-900 font-semibold"
+            className="h-9 text-xs font-semibold border-amber-200 bg-amber-50/80 hover:bg-amber-100 text-amber-900 shadow-xs gap-1.5"
           >
-            <CreditCard className="w-4 h-4 mr-2 text-amber-600" />
+            <CreditCard className="w-3.5 h-3.5 text-amber-600" />
             Relatório Adiantamento
           </Button>
+
           <Button 
             onClick={() => handleOpenTransferModal()} 
             variant="outline" 
-            className="border-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 font-semibold"
+            className="h-9 text-xs font-semibold border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 shadow-xs gap-1.5"
             title="Transferir pacientes da Ala X para Ala Y"
           >
-            <ArrowLeftRight className="w-4 h-4 mr-2 text-indigo-600" />
-            Transferir Ala (X → Y)
+            <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
+            Transferir Ala
           </Button>
-          <Button onClick={() => handleOpenNewPatient()} variant="outline" className="border-slate-300 dark:border-slate-700">
-            <Users className="w-4 h-4 mr-2 text-blue-600" />
+
+          <Button 
+            onClick={() => handleOpenNewPatient()} 
+            variant="outline" 
+            className="h-9 text-xs font-semibold border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-xs gap-1.5"
+          >
+            <Users className="w-3.5 h-3.5 text-blue-600" />
             Novo Paciente
           </Button>
-          <Button onClick={() => handleOpenNewPresc()} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
-            <Plus className="w-4 h-4 mr-2" />
+
+          <Button 
+            onClick={() => handleOpenNewPresc()} 
+            className="h-9 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
             Nova Prescrição Fixa
           </Button>
         </div>
       </div>
 
-      {/* Main Tabs */}
-      <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-[500px] mb-4">
-          <TabsTrigger value="pacientes" className="flex items-center gap-2 font-bold">
-            <Users className="w-4 h-4 text-blue-600" />
-            Pacientes Ativos ({activePatients.length})
-          </TabsTrigger>
-          <TabsTrigger value="altas" className="flex items-center gap-2 font-bold">
-            <LogOut className="w-4 h-4 text-amber-600" />
-            Pacientes de Alta ({dischargedPatients.length})
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ─── TAB 1: PACIENTES ────────────────────────────────────────────── */}
-        <TabsContent value="pacientes" className="space-y-4">
-          {selectedPatientIds.length > 0 && (
-            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                <div>
-                  <p className="text-sm font-bold text-emerald-950 dark:text-emerald-200">
-                    {selectedPatientIds.length} paciente(s) selecionado(s)
-                  </p>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                    Clique no botão ao lado para dar baixa de uma só vez em todas as medicações ativas destes pacientes.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button
-                  onClick={() => setSelectedPatientIds([])}
-                  variant="ghost"
-                  size="sm"
-                  className="text-slate-600 dark:text-slate-300 hover:text-slate-900"
-                >
-                  Limpar Seleção
-                </Button>
-
-                <Button
-                  onClick={() => handleOpenTransferModal(selectedPatientIds)}
-                  variant="outline"
-                  className="border-indigo-300 bg-indigo-50 text-indigo-900 hover:bg-indigo-100 font-bold gap-2 shadow-sm"
-                >
-                  <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
-                  Transferir de Ala ({selectedPatientIds.length})
-                </Button>
-
-                <Button
-                  onClick={() => setBatchBaixaModalOpen(true)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm"
-                >
-                  <PackageMinus className="w-4 h-4" />
-                  Dar Baixa em Lote ({selectedPatientIds.length})
-                </Button>
-              </div>
+      {/* KPI Stats Summary Bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Card 1: Pacientes Ativos */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pacientes Ativos</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-blue-600 dark:text-blue-400">{patientCounts.todos}</span>
+              <span className="text-[10px] text-slate-400 font-medium">({patientCounts.alasDistintas} alas / setores)</span>
             </div>
-          )}
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600">
+            <Users className="w-4 h-4" />
+          </div>
+        </div>
 
-          <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex flex-col md:flex-row gap-4 items-center w-full">
-              <div className="relative flex-1 w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <Input
-                  placeholder="Buscar paciente por nome, prontuário, ala ou leito..."
-                  value={searchPatient}
-                  onChange={(e) => setSearchPatient(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="w-full md:w-[250px]">
-                <Select value={filterAla} onValueChange={setFilterAla}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filtrar por Ala..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as Alas</SelectItem>
-                    {alas.map(a => (
-                      <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        {/* Card 2: Em Tratamento */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Com Medicação Ativa</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{patientCounts.comPrescricao}</span>
+              <span className="text-[10px] text-slate-400 font-medium">em tratamento</span>
             </div>
-          </Card>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600">
+            <Pill className="w-4 h-4" />
+          </div>
+        </div>
 
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <Table>
-              <TableHeader className="bg-slate-100 dark:bg-slate-800">
+        {/* Card 3: Prescrições Fixas */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Prescrições Fixas</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{patientCounts.totalPrescricoes}</span>
+              <span className="text-[10px] text-slate-400 font-medium">({patientCounts.totalDosesDiarias} doses/dia)</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600">
+            <CalendarCheck className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Card 4: Histórico de Altas */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Histórico de Altas</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{patientCounts.altas}</span>
+              <span className="text-[10px] text-slate-400 font-medium">desospitalizações</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600">
+            <LogOut className="w-4 h-4" />
+          </div>
+        </div>
+      </div>
+
+      {/* Category Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("todos")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "todos" 
+                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs ring-1 ring-slate-200/80" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <Users className="w-3.5 h-3.5 text-blue-600" />
+            Todos os Pacientes Ativos
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "todos" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-600"
+            )}>
+              {patientCounts.todos}
+            </span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("com_prescricao")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "com_prescricao" 
+                ? "bg-emerald-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <Pill className="w-3.5 h-3.5 text-emerald-300" />
+            Com Medicação Ativa
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "com_prescricao" ? "bg-emerald-700 text-emerald-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {patientCounts.comPrescricao}
+            </span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("sem_prescricao")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "sem_prescricao" 
+                ? "bg-indigo-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <User className="w-3.5 h-3.5 text-indigo-300" />
+            Sem Medicação
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "sem_prescricao" ? "bg-indigo-700 text-indigo-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {patientCounts.semPrescricao}
+            </span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveCategory("altas")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "altas" 
+                ? "bg-amber-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <LogOut className="w-3.5 h-3.5 text-amber-300" />
+            Pacientes de Alta
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "altas" ? "bg-amber-700 text-amber-100" : "bg-slate-200 text-slate-600"
+            )}>
+              {patientCounts.altas}
+            </span>
+          </Button>
+        </div>
+
+        <div className="text-xs text-slate-500 font-medium">
+          Exibindo <strong>{displayedPatients.length}</strong> paciente(s)
+        </div>
+      </div>
+
+      {/* Search and Ala Filter Bar */}
+      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <Input
+              placeholder={activeCategory === "altas" 
+                ? "Buscar paciente de alta por nome, prontuário, setor ou leito..." 
+                : "Buscar paciente por nome, prontuário, ala ou leito..."}
+              value={searchPatient}
+              onChange={(e) => setSearchPatient(e.target.value)}
+              className="pl-10 pr-9 h-9.5 bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:bg-white transition-all"
+            />
+            {searchPatient && (
+              <button
+                onClick={() => setSearchPatient("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded-full"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <div className="w-full sm:w-[220px]">
+              <Select value={filterAla} onValueChange={setFilterAla}>
+                <SelectTrigger className="h-9.5 text-xs bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-lg">
+                  <Building2 className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
+                  <SelectValue placeholder="Filtrar por Ala..." />
+                </SelectTrigger>
+                <SelectContent className="text-xs">
+                  <SelectItem value="all">Todas as Alas / Setores</SelectItem>
+                  {alas.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(searchPatient || filterAla !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setSearchPatient(""); setFilterAla("all"); }}
+                className="h-9.5 px-2.5 text-xs text-slate-500 hover:text-slate-800 font-medium"
+                title="Limpar filtros"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                Limpar
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Batch Action Banner */}
+      {activeCategory !== "altas" && selectedPatientIds.length > 0 && (
+        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                {selectedPatientIds.length} paciente(s) selecionado(s)
+              </p>
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                Execute ações em lote para todos os pacientes selecionados.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              onClick={() => setSelectedPatientIds([])}
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs text-slate-600 hover:text-slate-900"
+            >
+              Limpar Seleção
+            </Button>
+
+            <Button
+              onClick={() => handleOpenTransferModal(selectedPatientIds)}
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs border-indigo-200 bg-indigo-50/80 text-indigo-900 hover:bg-indigo-100 font-bold gap-1.5 shadow-xs"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
+              Transferir de Ala ({selectedPatientIds.length})
+            </Button>
+
+            <Button
+              onClick={() => setBatchBaixaModalOpen(true)}
+              size="sm"
+              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs"
+            >
+              <PackageMinus className="w-3.5 h-3.5" />
+              Dar Baixa em Lote ({selectedPatientIds.length})
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Table Container */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden flex-1 flex flex-col min-h-0">
+        <div className="overflow-auto flex-1">
+          <Table>
+            <TableHeader className="bg-slate-50/80 dark:bg-slate-800/80 sticky top-0 z-10 backdrop-blur-xs">
+              {activeCategory !== "altas" ? (
                 <TableRow>
                   <TableHead className="w-12 text-center">
                     <input
                       type="checkbox"
-                      checked={filteredPatients.length > 0 && selectedPatientIds.length === filteredPatients.length}
+                      checked={displayedPatients.length > 0 && selectedPatientIds.length === displayedPatients.length}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPatientIds(filteredPatients.map(p => p.id));
+                          setSelectedPatientIds(displayedPatients.map(p => p.id));
                         } else {
                           setSelectedPatientIds([]);
                         }
                       }}
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      title="Selecionar Todos os Pacientes"
+                      title="Selecionar Todos os Pacientes Exibidos"
                     />
                   </TableHead>
-                  <TableHead>Prontuário</TableHead>
-                  <TableHead>Nome do Paciente</TableHead>
-                  <TableHead>Ala / Leito</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-center">Medicações Ativas</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300">Prontuário</TableHead>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300">Nome do Paciente</TableHead>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300">Ala / Leito</TableHead>
+                  <TableHead className="text-center text-xs font-bold text-slate-700 dark:text-slate-300">Status</TableHead>
+                  <TableHead className="text-center text-xs font-bold text-slate-700 dark:text-slate-300">Medicações Ativas</TableHead>
+                  <TableHead className="text-right text-xs font-bold text-slate-700 dark:text-slate-300 pr-4">Ações</TableHead>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loadingPacientes ? (
-                  Array(4).fill(0).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-16 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : filteredPatients.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                      <p className="text-slate-500 font-medium">Nenhum paciente cadastrado ou encontrado.</p>
-                      <Button onClick={handleOpenNewPatient} variant="link" className="mt-2 text-blue-600">
-                        Cadastrar Primeiro Paciente
-                      </Button>
-                    </TableCell>
+              ) : (
+                <TableRow>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 pl-4">Prontuário</TableHead>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300">Nome do Paciente</TableHead>
+                  <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300">Setor / Leito Anterior</TableHead>
+                  <TableHead className="text-center text-xs font-bold text-slate-700 dark:text-slate-300">Data da Alta</TableHead>
+                  <TableHead className="text-center text-xs font-bold text-slate-700 dark:text-slate-300">Status</TableHead>
+                  <TableHead className="text-right text-xs font-bold text-slate-700 dark:text-slate-300 pr-4">Ações</TableHead>
+                </TableRow>
+              )}
+            </TableHeader>
+            <TableBody>
+              {loadingPacientes ? (
+                Array(5).fill(0).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-36" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-16 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-20 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-24 ml-auto" /></TableCell>
                   </TableRow>
-                ) : (
-                  filteredPatients.map((p) => {
-                    const activePrescsCount = prescricoes.filter(pr => pr.pacienteId === p.id && pr.status === "Ativa").length;
-                    const isSelected = selectedPatientIds.includes(p.id);
+                ))
+              ) : displayedPatients.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={activeCategory === "altas" ? 6 : 7} className="text-center py-16">
+                    <div className="max-w-xs mx-auto space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
+                        {activeCategory === "altas" ? (
+                          <LogOut className="w-6 h-6 text-amber-500/70" />
+                        ) : (
+                          <Users className="w-6 h-6 text-slate-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                          {activeCategory === "altas" 
+                            ? "Nenhum paciente em alta encontrado" 
+                            : activeCategory === "com_prescricao"
+                            ? "Nenhum paciente com medicação ativa"
+                            : activeCategory === "sem_prescricao"
+                            ? "Nenhum paciente sem medicação"
+                            : "Nenhum paciente cadastrado"}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {searchPatient || filterAla !== "all" 
+                            ? "Tente ajustar os filtros ou termo de busca." 
+                            : activeCategory === "altas"
+                            ? "Altas hospitalares registradas aparecerão neste histórico."
+                            : "Cadastre novos pacientes ou prescrições para iniciar."}
+                        </p>
+                      </div>
+                      {activeCategory !== "altas" && !searchPatient && filterAla === "all" && (
+                        <Button onClick={handleOpenNewPatient} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs gap-1.5 shadow-xs">
+                          <Plus className="w-3.5 h-3.5" />
+                          Cadastrar Paciente
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : activeCategory !== "altas" ? (
+                displayedPatients.map((p) => {
+                  const activePrescsCount = prescricoes.filter(pr => (pr.pacienteId === p.id || pr.paciente_id === p.id) && pr.status === "Ativa").length;
+                  const isSelected = selectedPatientIds.includes(p.id);
 
-                    return (
-                      <TableRow key={p.id} className={cn("hover:bg-slate-50/80 dark:hover:bg-slate-800/50", isSelected && "bg-blue-50/50 dark:bg-blue-950/20")}>
-                        <TableCell className="text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedPatientIds(prev => [...prev, p.id]);
-                              } else {
-                                setSelectedPatientIds(prev => prev.filter(id => id !== p.id));
-                              }
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                          {p.prontuario}
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <button
-                              onClick={() => setViewPatientDetails(p)}
-                              className="text-left font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5 group cursor-pointer"
-                              title="Clique para ver o prontuário e prescrições completas"
-                            >
-                              <span>{p.nome}</span>
-                              <FileText className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 text-blue-500" />
-                            </button>
-                            {p.observacoes && (
-                              <p className="text-xs text-amber-600 dark:text-amber-400">Obs: {p.observacoes}</p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
-                            <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{p.alaNome || "Ala não informada"}</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">• {p.leito || "S/L"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant={p.status === "Ativo" ? "default" : "secondary"} className={p.status === "Ativo" ? "bg-emerald-600" : ""}>
-                            {p.status || "Ativo"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge 
-                            onClick={() => setViewPatientDetails(p)} 
-                            variant="outline" 
-                            className="font-bold text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800 cursor-pointer transition-colors"
-                            title="Ver todas as prescrições"
+                  return (
+                    <TableRow 
+                      key={p.id} 
+                      className={cn(
+                        "hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
+                        isSelected && "bg-blue-50/50 dark:bg-blue-950/20"
+                      )}
+                    >
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPatientIds(prev => [...prev, p.id]);
+                            } else {
+                              setSelectedPatientIds(prev => prev.filter(id => id !== p.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-700">
+                          {p.prontuario || "S/P"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <button
+                            onClick={() => setViewPatientDetails(p)}
+                            className="text-left font-bold text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5 group cursor-pointer"
+                            title="Clique para ver o prontuário e prescrições completas"
                           >
-                            {activePrescsCount} remédio(s)
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right space-x-1 whitespace-nowrap">
-                          <Button size="sm" variant="ghost" onClick={() => setViewPatientDetails(p)} title="Ver Prontuário & Prescrições">
-                            <Eye className="w-4 h-4 text-blue-600" />
+                            <span>{p.nome}</span>
+                            <FileText className="w-3 h-3 opacity-70 group-hover:opacity-100 text-blue-500" />
+                          </button>
+                          {p.observacoes && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 truncate max-w-[280px]">
+                              Obs: {p.observacoes}
+                            </p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{p.alaNome || "Sem Ala"}</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">• {p.leito || "S/L"}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-[10px] font-bold py-0.5",
+                            p.status === "Ativo" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800" 
+                              : "bg-slate-100 text-slate-700 border-slate-200"
+                          )}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 inline-block" />
+                          {p.status || "Ativo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge 
+                          onClick={() => setViewPatientDetails(p)} 
+                          variant="outline" 
+                          className={cn(
+                            "text-[10px] font-bold py-0.5 cursor-pointer transition-colors",
+                            activePrescsCount > 0
+                              ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800"
+                              : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+                          )}
+                          title="Ver prescrições completas do paciente"
+                        >
+                          {activePrescsCount > 0 ? (
+                            <Pill className="w-3 h-3 mr-1 text-blue-600 inline" />
+                          ) : null}
+                          {activePrescsCount} medicação(ões)
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap pr-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => setViewPatientDetails(p)} 
+                            className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700" 
+                            title="Ver Prontuário & Prescrições"
+                          >
+                            <Eye className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleOpenTransferModal([p.id])} title="Transferir de Ala (Ala X para Y)">
-                            <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => handleOpenTransferModal([p.id])} 
+                            className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700" 
+                            title="Transferir de Ala"
+                          >
+                            <ArrowLeftRight className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleOpenNewPresc(p.id)} title="Adicionar Medicação Fixa">
-                            <Plus className="w-4 h-4 text-emerald-600" />
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => handleOpenNewPresc(p.id)} 
+                            className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" 
+                            title="Adicionar Prescrição Fixa"
+                          >
+                            <Plus className="w-4 h-4" />
                           </Button>
                           <Button 
                             size="sm" 
@@ -1430,9 +1696,10 @@ export default function PacientesMedicao() {
                                 setAltaModalOpen(true);
                               }
                             }} 
-                            title="Dar Alta ao Paciente (Suspender todas as medicações e remover do relatório)"
+                            className="h-8 w-8 p-0 text-amber-600 hover:bg-amber-50 hover:text-amber-700" 
+                            title="Dar Alta ao Paciente"
                           >
-                            <LogOut className="w-4 h-4 text-amber-600" />
+                            <LogOut className="w-4 h-4" />
                           </Button>
                           <Button 
                             size="sm" 
@@ -1442,101 +1709,73 @@ export default function PacientesMedicao() {
                               setDeleteReason("");
                               setDeleteLogModalOpen(true);
                             }} 
-                            title="Excluir Paciente (Solicita motivo e grava log)"
+                            className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 hover:text-red-600" 
+                            title="Excluir Paciente"
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4" />
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
-
-        {/* ─── TAB 2: PACIENTES DE ALTA ────────────────────────────────────── */}
-        <TabsContent value="altas" className="space-y-4">
-          <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                placeholder="Buscar paciente de alta por nome, prontuário, setor ou leito..."
-                value={searchAltaPatient}
-                onChange={(e) => setSearchAltaPatient(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </Card>
-
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden bg-white dark:bg-slate-900">
-            <Table>
-              <TableHeader className="bg-amber-50/60 dark:bg-amber-950/20">
-                <TableRow>
-                  <TableHead>Prontuário</TableHead>
-                  <TableHead>Nome do Paciente</TableHead>
-                  <TableHead>Setor / Leito Anterior</TableHead>
-                  <TableHead className="text-center">Data da Alta</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAltaPatients.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12">
-                      <LogOut className="w-12 h-12 text-amber-300 dark:text-amber-700/40 mx-auto mb-3" />
-                      <p className="text-slate-600 dark:text-slate-400 font-medium">Nenhum paciente registrado em alta hospitalar.</p>
-                      <p className="text-xs text-slate-400 mt-1">Ao conceder alta no prontuário do paciente, ele será transferido para este histórico.</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                displayedPatients.map((p) => (
+                  <TableRow key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                    <TableCell className="pl-4">
+                      <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-700">
+                        {p.prontuario || "S/P"}
+                      </span>
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredAltaPatients.map((p) => (
-                    <TableRow key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                      <TableCell className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                        {p.prontuario}
-                      </TableCell>
-                      <TableCell className="font-bold text-slate-800 dark:text-slate-200">
-                        {p.nome}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-600 dark:text-slate-400">
-                        {p.alaNome || "Ala Geral"} • Leito: {p.leito || "S/L"}
-                      </TableCell>
-                      <TableCell className="text-center text-xs font-mono text-slate-600 dark:text-slate-400">
-                        {p.dataAlta ? format(new Date(p.dataAlta), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "Alta Registrada"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge className="bg-amber-600 text-white font-bold text-xs">Alta Hospitalar</Badge>
-                      </TableCell>
-                      <TableCell className="text-right space-x-1">
+                    <TableCell className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                      {p.nome}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                      <div className="flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{p.alaNome || "Ala Geral"}</span>
+                        <span className="font-bold text-slate-700">• Leito: {p.leito || "S/L"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center text-xs font-mono text-slate-600 dark:text-slate-400">
+                      {p.dataAlta ? format(new Date(p.dataAlta), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "Alta Registrada"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 inline-block" />
+                        Alta Hospitalar
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap pr-4">
+                      <div className="flex items-center justify-end gap-1.5">
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => setViewPatientDetails(p)}
-                          title="Ver histórico de prontuário e medicações do paciente"
+                          className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"
+                          title="Ver histórico de prontuário e medicações"
                         >
-                          <Eye className="w-4 h-4 text-blue-600" />
+                          <Eye className="w-4 h-4" />
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 font-bold text-xs shadow-sm"
+                          className="h-8 text-xs text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 font-bold gap-1 shadow-xs"
                           onClick={() => reativarPacienteMutation.mutate(p.id)}
                           title="Reativar internação do paciente"
                         >
-                          <RefreshCw className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                          <RefreshCw className="w-3 h-3 text-emerald-600" />
                           Reativar Internação
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {/* ─── MODAL: EXCLUSÃO AUDITADA COM REGISTRO DE LOG ───────────────── */}
       <Dialog open={deleteLogModalOpen} onOpenChange={setDeleteLogModalOpen}>

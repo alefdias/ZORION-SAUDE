@@ -52,6 +52,21 @@ export async function initializeApp() {
             `;
             await invoke("execute_postgres", { ip, dbName, password, query });
 
+            // Limpeza definitiva de metades do banco de dados
+            try {
+                await invoke("execute_postgres", {
+                    ip, dbName, password,
+                    query: `
+                        DELETE FROM "GavetaPaciente";
+                        UPDATE "PrescricaoPaciente" 
+                        SET "totalDiario" = ROUND("totalDiario") 
+                        WHERE "totalDiario" IS NOT NULL AND ("totalDiario"::numeric % 1) != 0;
+                    `
+                });
+            } catch (e) {
+                console.warn("[syncManager] Limpeza metades:", e);
+            }
+
             // Migrate R2 patients once
             if (!localStorage.getItem("migrated_patients_r2")) {
                 try {
