@@ -52,34 +52,62 @@ export function getCurrentShiftDetails() {
   // 19h00 até 06h59:59 = Noturno
   const isDiurno = hour >= 7 && hour < 19;
   
-  // Se for noturno entre 00:00 e 06:59, a data de início do plantão é o dia anterior
-  let shiftDate = new Date(now);
-  if (!isDiurno && hour < 7) {
-    shiftDate = subDays(shiftDate, 1);
-  }
+  // A data acompanha sempre o dia civil atual do relógio:
+  // - 07/09 das 07h às 18h59 -> Data: 07/09/2026, Plantão: Diurno
+  // - 07/09 das 19h às 23h59 -> Data: 07/09/2026, Plantão: Noturno
+  // - 08/09 das 00h às 06h59 -> Data: 08/09/2026, Plantão: Noturno (continua noturno e vira a data para 08/09)
+  // - 08/09 das 07h às 18h59 -> Data: 08/09/2026, Plantão: Diurno
+  const dataStr = format(now, "yyyy-MM-dd");
   
   return {
     isDiurno,
     turno: isDiurno ? "diurno" : "noturno",
-    dataStr: format(shiftDate, "yyyy-MM-dd")
+    dataStr
   };
 }
 
 export function computeShiftInterval(dataStr, turno) {
-  // dataStr formato YYYY-MM-DD
   const [year, month, day] = dataStr.split("-").map(Number);
+  const baseDate = new Date(year, month - 1, day);
   
   if (turno === "diurno") {
     // 07:00:00 até 18:59:59 do mesmo dia
     const start = new Date(year, month - 1, day, 7, 0, 0, 0);
     const end = new Date(year, month - 1, day, 18, 59, 59, 999);
-    return { start, end, label: "Plantão Diurno (07:00 às 19:00)" };
+    return { 
+      start, 
+      end, 
+      label: "Plantão Diurno (07:00 às 19:00)",
+      periodoFormatado: `${format(baseDate, "dd/MM")} 07:00 até ${format(baseDate, "dd/MM")} 18:59`
+    };
   } else {
-    // Noturno: 19:00:00 do dia até 06:59:59 do dia seguinte
-    const start = new Date(year, month - 1, day, 19, 0, 0, 0);
-    const nextDay = addDays(new Date(year, month - 1, day), 1);
-    const end = new Date(nextDay.getFullYear(), nextDay.getMonth(), nextDay.getDate(), 6, 59, 59, 999);
-    return { start, end, label: "Plantão Noturno (19:00 às 07:00)" };
+    // Plantão Noturno:
+    // Se a data selecionada for a data de hoje e estivermos na madrugada (00:00 às 06:59):
+    // o plantão noturno iniciou ontem às 19:00 e vai até hoje às 06:59:59
+    const now = new Date();
+    const isToday = format(now, "yyyy-MM-dd") === dataStr;
+    const isMadrugada = isToday && now.getHours() < 7;
+    
+    let start, end, periodoFormatado;
+    if (isMadrugada) {
+      const prevDay = subDays(baseDate, 1);
+      start = new Date(prevDay.getFullYear(), prevDay.getMonth(), prevDay.getDate(), 19, 0, 0, 0);
+      end = new Date(year, month - 1, day, 6, 59, 59, 999);
+      periodoFormatado = `${format(prevDay, "dd/MM")} 19:00 até ${format(baseDate, "dd/MM")} 06:59`;
+    } else {
+      // Início do plantão às 19:00 até 06:59:59 do dia seguinte
+      const nextDay = addDays(baseDate, 1);
+      start = new Date(year, month - 1, day, 19, 0, 0, 0);
+      end = new Date(nextDay.getFullYear(), nextDay.getMonth(), nextDay.getDate(), 6, 59, 59, 999);
+      periodoFormatado = `${format(baseDate, "dd/MM")} 19:00 até ${format(nextDay, "dd/MM")} 06:59`;
+    }
+    
+    return { 
+      start, 
+      end, 
+      label: "Plantão Noturno (19:00 às 07:00)",
+      periodoFormatado
+    };
   }
 }
 
@@ -159,6 +187,22 @@ export default function PassagemPlantao({ isTab = false }) {
     const now = new Date();
     return now >= shiftInterval.start && now <= shiftInterval.end;
   }, [shiftInterval]);
+
+  // Relógio em tempo real para sincronização automática de plantão (19h e 00h)
+  useEffect(() => {
+    const checkLiveShift = () => {
+      const current = getCurrentShiftDetails();
+      const currentShift = computeShiftInterval(current.dataStr, current.turno);
+      const now = new Date();
+      if (now >= currentShift.start && now <= currentShift.end) {
+        if (selectedDate !== current.dataStr) setSelectedDate(current.dataStr);
+        if (selectedTurno !== current.turno) setSelectedTurno(current.turno);
+      }
+    };
+
+    const interval = setInterval(checkLiveShift, 10000);
+    return () => clearInterval(interval);
+  }, [selectedDate, selectedTurno]);
 
   // Mutation para criar Ocorrência Manual
   const createOcorrenciaMutation = useMutation({
@@ -480,33 +524,30 @@ export default function PassagemPlantao({ isTab = false }) {
     toast.info(`Retornado para o ${current.turno === 'diurno' ? 'Plantão Diurno' : 'Plantão Noturno'} atual.`);
   };
 
-  // Exportar PDF do Plantão
+  // Exportar PDF do Plantão (Estritamente 1 Única Folha)
   const handleExportPDF = async () => {
     try {
-      toast.loading("Gerando PDF da Passagem de Plantão...");
+      toast.loading("Gerando PDF da Passagem de Plantão (1 Folha)...");
       const element = printRef.current;
-      const canvas = await html2canvas(element, { scale: 2 });
+      const canvas = await html2canvas(element, { 
+        scale: 2, 
+        useCORS: true,
+        logging: false 
+      });
       const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      let heightLeft = pdfHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-      }
+      // Desenha estritamente em 1 única folha A4 (sem páginas excedentes)
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST");
       pdf.save(`passagem-plantao-${selectedTurno}-${selectedDate}.pdf`);
       toast.dismiss();
-      toast.success("PDF da Passagem de Plantão exportado com sucesso!");
+      toast.success("PDF da Passagem de Plantão gerado em 1 folha!");
     } catch (error) {
       toast.dismiss();
       toast.error("Erro ao gerar PDF: " + (error?.message || error));
@@ -1206,128 +1247,214 @@ export default function PassagemPlantao({ isTab = false }) {
         </DialogContent>
       </Dialog>
 
-      {/* ─── RELATÓRIO OFICIAL PARA IMPRESSÃO / PDF (OCULTO NA TELA) ─────────── */}
+      {/* ─── ESTILOS ESPECÍFICOS PARA IMPRESSÃO EM 1 ÚNICA FOLHA A4 ─────────── */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 6mm 8mm;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-plantao-sheet, #printable-plantao-sheet * {
+            visibility: visible !important;
+          }
+          #printable-plantao-sheet {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 194mm !important;
+            max-height: 284mm !important;
+            height: 284mm !important;
+            margin: 0 !important;
+            padding: 4mm 6mm !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            background: white !important;
+            color: #0f172a !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}</style>
+
+      {/* ─── RELATÓRIO OFICIAL PARA IMPRESSÃO / PDF (1 ÚNICA FOLHA A4) ─────────── */}
       <div className="hidden">
-        <div ref={printRef} className="p-8 bg-white text-slate-900 max-w-[900px] mx-auto space-y-6">
-          {/* Header Oficial */}
-          <div className="border-b-2 border-purple-700 pb-4 flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-black text-purple-900 tracking-tight">ZORION SAÚDE</h1>
-              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                Sistema de Gestão Farmacêutica Hospitalar • Farmácia Satélite
-              </p>
-              <h2 className="text-lg font-bold text-slate-800 mt-2">
-                RELATÓRIO OFICIAL DE PASSAGEM DE PLANTÃO
-              </h2>
+        <div 
+          id="printable-plantao-sheet"
+          ref={printRef} 
+          className="w-[210mm] max-h-[296mm] h-[296mm] p-[8mm] box-border bg-white text-slate-900 flex flex-col justify-between overflow-hidden text-[10.5px]"
+          style={{ width: "210mm", height: "296mm", maxHeight: "296mm", boxSizing: "border-box" }}
+        >
+          {/* Topo e Conteúdo */}
+          <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
+            {/* Header Oficial */}
+            <div className="border-b-2 border-purple-800 pb-2 flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black text-purple-900 tracking-tight">ZORION SAÚDE</span>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200">
+                    Farmácia Satélite
+                  </span>
+                </div>
+                <h2 className="text-sm font-extrabold text-slate-800 mt-0.5 uppercase tracking-wide">
+                  Relatório Oficial de Passagem de Plantão
+                </h2>
+              </div>
+              <div className="text-right text-[10px] font-mono text-slate-500 leading-tight">
+                <p>Data do Turno: <strong className="text-slate-800">{format(parseISO(selectedDate), "dd/MM/yyyy")}</strong></p>
+                <p>Turno: <strong className="text-purple-800">{selectedTurno === 'diurno' ? 'DIURNO (07h às 19h)' : 'NOTURNO (19h às 07h)'}</strong></p>
+                <p>Horário: {shiftInterval.periodoFormatado}</p>
+                <p className="text-[9px] text-slate-400 mt-0.5">Emissão: {format(new Date(), "dd/MM/yyyy HH:mm")}</p>
+              </div>
             </div>
-            <div className="text-right text-[11px] font-mono text-slate-500">
-              <p>Data do Turno: <strong>{format(parseISO(selectedDate), "dd/MM/yyyy")}</strong></p>
-              <p>Turno: <strong>{selectedTurno === 'diurno' ? 'DIURNO (07h às 19h)' : 'NOTURNO (19h às 07h)'}</strong></p>
-              <p>Emissão: {format(new Date(), "dd/MM/yyyy HH:mm:ss")}</p>
-            </div>
-          </div>
 
-          {/* Dados do Farmacêutico */}
-          <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="text-slate-500 font-medium">Farmacêutico Responsável:</span>
-              <p className="font-bold text-purple-950 text-sm">{farmaceuticoNome}</p>
+            {/* Dados do Farmacêutico */}
+            <div className="p-2 bg-purple-50/70 rounded-md border border-purple-200 grid grid-cols-2 gap-2 text-[10.5px]">
+              <div>
+                <span className="text-slate-500 font-medium">Farmacêutico(a) Responsável do Plantão:</span>
+                <p className="font-bold text-purple-950 text-xs">{farmaceuticoNome}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-slate-500 font-medium">Registro Profissional:</span>
+                <p className="font-mono font-bold text-purple-950 text-xs">{farmaceuticoCrf}</p>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500 font-medium">Registro Profissional:</span>
-              <p className="font-mono font-bold text-purple-950 text-sm">{farmaceuticoCrf}</p>
-            </div>
-          </div>
 
-          {/* Quadro Estatístico */}
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <div className="p-2 border rounded-lg bg-slate-50">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Dispensações</span>
-              <p className="text-base font-extrabold text-blue-700">{counts.saidasQtd} ({counts.totalUnidadesSaidas} un)</p>
+            {/* Quadro Estatístico Compacto */}
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-1.5 border border-slate-200 rounded-md bg-slate-50">
+                <span className="text-[9px] text-slate-500 uppercase font-bold block">Dispensações</span>
+                <p className="text-xs font-black text-blue-700">{counts.saidasQtd} ({counts.totalUnidadesSaidas} un)</p>
+              </div>
+              <div className="p-1.5 border border-slate-200 rounded-md bg-slate-50">
+                <span className="text-[9px] text-slate-500 uppercase font-bold block">Devoluções / Entradas</span>
+                <p className="text-xs font-black text-emerald-700">{counts.devolucoesQtd + counts.entradasQtd} ({counts.totalUnidadesEntradas} un)</p>
+              </div>
+              <div className="p-1.5 border border-slate-200 rounded-md bg-slate-50">
+                <span className="text-[9px] text-slate-500 uppercase font-bold block">Anotações do Plantão</span>
+                <p className="text-xs font-black text-purple-700">{counts.ocorrenciasCount}</p>
+              </div>
+              <div className="p-1.5 border border-slate-200 rounded-md bg-slate-50">
+                <span className="text-[9px] text-slate-500 uppercase font-bold block">Total de Movimentações</span>
+                <p className="text-xs font-black text-slate-800">{counts.totalEventos}</p>
+              </div>
             </div>
-            <div className="p-2 border rounded-lg bg-slate-50">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Devoluções</span>
-              <p className="text-base font-extrabold text-emerald-700">{counts.devolucoesQtd} ({counts.totalUnidadesEntradas} un)</p>
-            </div>
-            <div className="p-2 border rounded-lg bg-slate-50">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Ocorrências</span>
-              <p className="text-base font-extrabold text-purple-700">{counts.ocorrenciasCount}</p>
-            </div>
-            <div className="p-2 border rounded-lg bg-slate-50">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Total no Turno</span>
-              <p className="text-base font-extrabold text-slate-800">{counts.totalEventos}</p>
-            </div>
-          </div>
 
-          {/* Seção 1: Ocorrências e Pendências do Farmacêutico */}
-          <div className="space-y-2">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 border-b pb-1">
-              1. Ocorrências Clínicas, Pendências e Observações para o Próximo Plantão
-            </h3>
-            {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").length === 0 ? (
-              <p className="text-xs italic text-slate-400">Nenhuma pendência ou intercorrência registrada pelo farmacêutico.</p>
-            ) : (
-              <div className="space-y-2">
-                {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").map((oco, idx) => (
-                  <div key={idx} className="p-2.5 bg-purple-50/50 rounded border border-purple-200 text-xs">
-                    <div className="flex justify-between font-bold text-purple-900">
-                      <span>[{oco.subTipoOcorrencia}] {oco.titulo}</span>
-                      <span className="font-mono text-[10px]">{format(oco.date, "HH:mm")}</span>
+            {/* Seção 1: Ocorrências e Pendências para o Próximo Plantão */}
+            <div>
+              <h3 className="font-bold text-[10px] uppercase tracking-wider text-slate-800 border-b border-purple-200 pb-0.5 mb-1 flex items-center justify-between">
+                <span>1. Ocorrências Clínicas e Pendências para o Próximo Plantão</span>
+                <span className="text-[9px] font-normal text-purple-700 font-mono">({timelineEvents.filter(e => e.tipoCategoria === 'ocorrencia').length} registro(s))</span>
+              </h3>
+              {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").length === 0 ? (
+                <div className="p-1.5 bg-slate-50 rounded border border-slate-200 text-center text-slate-400 italic text-[9.5px]">
+                  Nenhuma pendência ou intercorrência manual registrada neste plantão. Plantão decorrido sem alterações.
+                </div>
+              ) : (
+                <div className="space-y-1 max-h-[120px] overflow-hidden">
+                  {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").slice(0, 3).map((oco, idx) => (
+                    <div key={idx} className="p-1.5 bg-purple-50/60 rounded border border-purple-200 text-[9.5px]">
+                      <div className="flex justify-between font-bold text-purple-900">
+                        <span>[{oco.subTipoOcorrencia}] {oco.titulo}</span>
+                        <span className="font-mono text-[9px] text-slate-500">{format(oco.date, "HH:mm")}</span>
+                      </div>
+                      <p className="mt-0.5 text-slate-700 leading-snug line-clamp-2">{oco.textoTecnico}</p>
                     </div>
-                    <p className="mt-1 text-slate-700">{oco.textoTecnico}</p>
-                  </div>
-                ))}
+                  ))}
+                  {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").length > 3 && (
+                    <p className="text-[8.5px] text-purple-700 italic text-center">
+                      + {timelineEvents.filter(e => e.tipoCategoria === "ocorrencia").length - 3} outra(s) ocorrência(s) registrada(s) em sistema.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Seção 2: Registro Cronológico de Movimentações */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <h3 className="font-bold text-[10px] uppercase tracking-wider text-slate-800 border-b border-purple-200 pb-0.5 mb-1 flex items-center justify-between">
+                <span>2. Registro Técnico Detalhado de Movimentações do Turno</span>
+                <span className="text-[9px] font-normal text-slate-500 font-mono">({timelineEvents.filter(e => e.tipoCategoria !== 'ocorrencia').length} registro(s))</span>
+              </h3>
+              <div className="overflow-hidden border border-slate-200 rounded">
+                <table className="w-full text-[9px] border-collapse">
+                  <thead>
+                    <tr className="bg-purple-900 text-white font-bold">
+                      <th className="py-1 px-1.5 text-left w-14">Hora</th>
+                      <th className="py-1 px-1.5 text-left w-16">Tipo</th>
+                      <th className="py-1 px-1.5 text-left">Descrição Técnica / Medicamento</th>
+                      <th className="py-1 px-1.5 text-center w-12">Qtd</th>
+                      <th className="py-1 px-1.5 text-left w-24">Destino</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timelineEvents.filter(e => e.tipoCategoria !== "ocorrencia").length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-2.5 text-slate-400 italic">
+                          Nenhuma movimentação de saída ou devolução registrada neste turno.
+                        </td>
+                      </tr>
+                    ) : (
+                      timelineEvents.filter(e => e.tipoCategoria !== "ocorrencia").slice(0, 8).map((ev, idx) => (
+                        <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50">
+                          <td className="py-1 px-1.5 font-mono text-[8.5px] text-slate-600">{format(ev.date, "HH:mm")}</td>
+                          <td className="py-1 px-1.5 font-bold uppercase text-[8.5px]">
+                            <span className={cn(
+                              ev.tipoCategoria === "saida" ? "text-blue-700" :
+                              ev.tipoCategoria === "devolucao" ? "text-emerald-700" :
+                              ev.tipoCategoria === "alta" ? "text-amber-700" : "text-slate-700"
+                            )}>
+                              {ev.tipoCategoria}
+                            </span>
+                          </td>
+                          <td className="py-1 px-1.5 truncate max-w-[280px]">{ev.textoTecnico}</td>
+                          <td className="py-1 px-1.5 text-center font-bold">{ev.quantidade > 0 ? `${ev.quantidade} un` : "-"}</td>
+                          <td className="py-1 px-1.5 truncate max-w-[100px]">{ev.setorOuPaciente}</td>
+                        </tr>
+                      ))
+                    )}
+                    {timelineEvents.filter(e => e.tipoCategoria !== "ocorrencia").length > 8 && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={5} className="py-1 px-2 text-center text-[8.5px] text-slate-500 italic">
+                          [... e mais {timelineEvents.filter(e => e.tipoCategoria !== "ocorrencia").length - 8} movimentação(ões) auditadas em sistema ...]
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Seção 2: Relação Cronológica de Movimentações */}
-          <div className="space-y-2">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 border-b pb-1">
-              2. Registro Técnico Detalhado de Dispensações e Movimentações
-            </h3>
-            <table className="w-full text-[11px] border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border text-slate-700">
-                  <th className="p-1.5 text-left w-16">Hora</th>
-                  <th className="p-1.5 text-left w-24">Tipo</th>
-                  <th className="p-1.5 text-left">Descrição Técnica / Medicamento</th>
-                  <th className="p-1.5 text-center w-14">Qtd</th>
-                  <th className="p-1.5 text-left w-32">Destino / Paciente</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timelineEvents.filter(e => e.tipoCategoria !== "ocorrencia").map((ev, idx) => (
-                  <tr key={idx} className="border-b">
-                    <td className="p-1.5 font-mono text-[10px]">{format(ev.date, "HH:mm")}</td>
-                    <td className="p-1.5 font-bold uppercase text-[10px]">{ev.tipoCategoria}</td>
-                    <td className="p-1.5">{ev.textoTecnico}</td>
-                    <td className="p-1.5 text-center font-bold">{ev.quantidade > 0 ? `${ev.quantidade} un` : "-"}</td>
-                    <td className="p-1.5">{ev.setorOuPaciente}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Rodapé com Assinaturas Oficiais (Sem quebra de folha) */}
+          <div className="pt-2 border-t border-slate-300 shrink-0">
+            <div className="grid grid-cols-2 gap-6 text-center text-[9.5px]">
+              <div className="space-y-3">
+                <div className="border-b border-slate-400 w-4/5 mx-auto" />
+                <div>
+                  <p className="font-bold text-slate-800 text-[11px]">{farmaceuticoNome}</p>
+                  <p className="text-[9.5px] text-slate-500 font-mono">CRF: {farmaceuticoCrf}</p>
+                  <p className="text-[8.5px] text-slate-400 uppercase font-semibold mt-0.5">Farmacêutico(a) que ENTREGA o Plantão</p>
+                </div>
+              </div>
 
-          {/* Termo de Encerramento e Assinaturas */}
-          <div className="pt-8 grid grid-cols-2 gap-8 border-t border-slate-300 text-center text-xs">
-            <div className="space-y-8">
-              <div className="border-b border-slate-400 w-3/4 mx-auto" />
-              <div>
-                <p className="font-bold text-slate-800">{farmaceuticoNome}</p>
-                <p className="text-[11px] text-slate-500 font-mono">CRF: {farmaceuticoCrf}</p>
-                <p className="text-[10px] text-slate-400 mt-1">Farmacêutico(a) que ENTREGA o Plantão</p>
+              <div className="space-y-3">
+                <div className="border-b border-slate-400 w-4/5 mx-auto" />
+                <div>
+                  <p className="font-bold text-slate-800 text-[11px]">Farmacêutico(a) Sucessor</p>
+                  <p className="text-[9.5px] text-slate-500 font-mono">CRF: _______________________</p>
+                  <p className="text-[8.5px] text-slate-400 uppercase font-semibold mt-0.5">Farmacêutico(a) que ASSUME o Plantão</p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-8">
-              <div className="border-b border-slate-400 w-3/4 mx-auto" />
-              <div>
-                <p className="font-bold text-slate-800">Assinatura / Carimbo</p>
-                <p className="text-[11px] text-slate-500 font-mono">CRF: _______________________</p>
-                <p className="text-[10px] text-slate-400 mt-1">Farmacêutico(a) que ASSUME o Plantão</p>
-              </div>
+            <div className="mt-1.5 text-center text-[8px] text-slate-400 font-mono">
+              Documento emitido eletronicamente pelo Sistema ZORION SAÚDE • Emissão de Folha Única • Registro Imutável
             </div>
           </div>
         </div>
