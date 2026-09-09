@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -119,6 +119,45 @@ export const formatDiasSemana = (dias) => {
   return labels.join(', ');
 };
 
+export function isMedicamentoAntibiotico(med) {
+  if (!med) return false;
+  if (med.antimicrobiano) return true;
+  const grupo = (med.grupo_terapeutico || "").toUpperCase();
+  if (grupo.includes("ANTIBI") || grupo.includes("ANTIMICROB")) return true;
+  const nome = (med.nome || "").toLowerCase();
+  return /amoxicilina|ampicilina|azitromicina|claritromicina|cefalexina|ceftriaxona|cefazolina|ciprofloxacino|levofloxacino|metronidazol|vancomicina|meropenem|piperacilina|gentamicina|amikacina|clindamicina|sulfametoxazol|ceftazidima|oxacilina|penicilina|polimixina|daptomicina|linezolida|ertapenem|colistina|tobramicina/i.test(nome);
+}
+
+export function calcularDataFim(inicioStr, diasQtd) {
+  if (!inicioStr || !diasQtd || parseInt(diasQtd, 10) <= 0) return "";
+  const parts = inicioStr.split("-");
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  d.setDate(d.getDate() + (parseInt(diasQtd, 10) - 1));
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+export function calcularDiasEntre(inicioStr, fimStr) {
+  if (!inicioStr || !fimStr) return "";
+  const p1 = inicioStr.split("-");
+  const p2 = fimStr.split("-");
+  const d1 = new Date(parseInt(p1[0], 10), parseInt(p1[1], 10) - 1, parseInt(p1[2], 10));
+  const d2 = new Date(parseInt(p2[0], 10), parseInt(p2[1], 10) - 1, parseInt(p2[2], 10));
+  const diffTime = d2.getTime() - d1.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  return diffDays > 0 ? diffDays : 1;
+}
+
+export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")) {
+  if (!pr) return false;
+  const status = pr.status || "Ativa";
+  if (status !== "Ativa") return false;
+  if (pr.dataFim && pr.dataFim < hojeStr) return false;
+  return true;
+}
+
 export const calculatePrescQtdParaDias = (pr, diasCount) => {
   const d08 = getDoseForHora(pr.horarios, "08:00");
   const d14 = getDoseForHora(pr.horarios, "14:00");
@@ -127,17 +166,26 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   const calculatedDaily = d08 + d14 + d22 + d06;
   const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
-  const diasArr = parseDiasSemana(pr.diasSemana);
-  if (diasArr.length === 7 || diasArr.length === 0) {
-    return Math.round(dailyTotal * diasCount);
+  let maxDataFim = null;
+  if (pr.dataFim) {
+    const pFim = pr.dataFim.split("-");
+    maxDataFim = new Date(parseInt(pFim[0], 10), parseInt(pFim[1], 10) - 1, parseInt(pFim[2], 10), 23, 59, 59);
   }
 
+  const diasArr = parseDiasSemana(pr.diasSemana);
   let matchDays = 0;
   const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
   for (let i = 0; i < diasCount; i++) {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
-    if (diasArr.includes(d.getDay())) {
+
+    if (maxDataFim && d > maxDataFim) {
+      break;
+    }
+
+    if (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay())) {
       matchDays++;
     }
   }
@@ -187,6 +235,7 @@ export default function PacientesMedicao() {
     diasSemana: [0, 1, 2, 3, 4, 5, 6],
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
+    diasTratamento: "",
     status: "Ativa",
     observacoes: ""
   });
@@ -236,6 +285,58 @@ export default function PacientesMedicao() {
     queryKey: ['prescricoes_paciente'],
     queryFn: () => db.entities.PrescricaoPaciente.list(),
   });
+
+  // Suspensão automática de prescrições com período finalizado (dataFim < hoje)
+  useEffect(() => {
+    if (!prescricoes || prescricoes.length === 0) return;
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
+
+    const prescricoesVencidas = prescricoes.filter(pr => {
+      const status = pr.status || "Ativa";
+      return status === "Ativa" && pr.dataFim && pr.dataFim < hojeStr;
+    });
+
+    if (prescricoesVencidas.length === 0) return;
+
+    let isMounted = true;
+    (async () => {
+      let suspensasCount = 0;
+      for (const pr of prescricoesVencidas) {
+        try {
+          const obsAnterior = pr.observacoes ? `${pr.observacoes} | ` : "";
+          const dataFimFmt = pr.dataFim ? new Date(pr.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : pr.dataFim;
+          const novaObs = `${obsAnterior}Tratamento com duração programada finalizado em ${dataFimFmt} (Suspenso automaticamente)`;
+          
+          await db.entities.PrescricaoPaciente.update(pr.id, {
+            status: "Suspensa",
+            observacoes: novaObs
+          });
+          
+          await db.logAction(
+            "SUSPENSAO_AUTOMATICA_PRESCRICAO",
+            "PrescricaoPaciente",
+            pr.id,
+            `Suspensão automática por término do período programado (${pr.dataInicio || ''} até ${pr.dataFim}) do medicamento '${pr.medicamentoNome}' do paciente '${pr.pacienteNome || pr.pacienteId}'.`
+          );
+          suspensasCount++;
+        } catch (err) {
+          console.error("Erro na suspensão automática da prescrição:", pr.id, err);
+        }
+      }
+
+      if (isMounted && suspensasCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+        toast.info(
+          `Tratamento concluído: ${suspensasCount} prescrição(ões) com período finalizado foram suspensas automaticamente.`,
+          { duration: 6000 }
+        );
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [prescricoes, queryClient]);
 
   const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
     queryKey: ['medicamentos'],
@@ -392,8 +493,8 @@ export default function PacientesMedicao() {
         // 2. Cria a nova prescrição com o novo esquema ativado
         const newPayload = {
           ...payload,
-          dataInicio: today,
-          dataFim: null,
+          dataInicio: data.dataInicio || today,
+          dataFim: data.dataFim || null,
           status: "Ativa",
           observacoes: data.observacoes || (data.motivoAlteracao ? `Ajustado de ${editingPresc.esquemaPosologico} para ${esquema}: ${data.motivoAlteracao}` : "")
         };
@@ -1059,6 +1160,7 @@ export default function PacientesMedicao() {
       esquemaPosologico: "0-0-0-0",
       dataInicio: format(new Date(), "yyyy-MM-dd"),
       dataFim: "",
+      diasTratamento: "",
       status: "Ativa",
       observacoes: "",
       motivoAlteracao: "",
@@ -1074,6 +1176,9 @@ export default function PacientesMedicao() {
     const d14 = getDoseForHora(p.horarios, "14:00");
     const d22 = getDoseForHora(p.horarios, "22:00");
     const d06 = getDoseForHora(p.horarios, "06:00");
+    const inicio = p.dataInicio || format(new Date(), "yyyy-MM-dd");
+    const fim = p.dataFim || "";
+    const dias = (inicio && fim) ? calcularDiasEntre(inicio, fim) : "";
 
     setPrescFormData({
       pacienteId: p.pacienteId || (viewPatientDetails ? viewPatientDetails.id : ""),
@@ -1088,9 +1193,10 @@ export default function PacientesMedicao() {
       dose06: String(d06 || 0),
       isMetade06: false,
       esquemaPosologico: p.esquemaPosologico || `${d08 || 0}-${d14 || 0}-${d22 || 0}-${d06 || 0}`,
-      dataInicio: format(new Date(), "yyyy-MM-dd"),
-      dataFim: "",
-      status: "Ativa",
+      dataInicio: inicio,
+      dataFim: fim,
+      diasTratamento: dias ? String(dias) : "",
+      status: p.status || "Ativa",
       observacoes: p.observacoes || "",
       motivoAlteracao: "",
       gerarHistorico: true,
@@ -1133,10 +1239,11 @@ export default function PacientesMedicao() {
     });
   };
 
-  // Previsão de 7 Dias / Cálculo Consolidado (Exclui Pacientes em ALTA)
+  // Previsão de 7 Dias / Cálculo Consolidado (Exclui Pacientes em ALTA e Prescrições Expiradas)
   const calculoPrevisao = useMemo(() => {
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
     const ativas = prescricoes.filter(p => {
-      if (p.status !== "Ativa") return false;
+      if (!isPrescricaoAtiva(p, hojeStr)) return false;
       const pac = pacientes.find(patient => patient.id === p.pacienteId);
       return pac && pac.status !== "Alta";
     });
@@ -1232,17 +1339,18 @@ export default function PacientesMedicao() {
   const patientCounts = useMemo(() => {
     const ativos = (pacientes || []).filter(p => p.status !== "Alta");
     const altas = (pacientes || []).filter(p => p.status === "Alta");
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
 
     const patientIdsWithActivePresc = new Set(
       (prescricoes || [])
-        .filter(pr => pr.status === "Ativa")
+        .filter(pr => isPrescricaoAtiva(pr, hojeStr))
         .map(pr => pr.pacienteId || pr.paciente_id)
     );
 
     const comPrescricao = ativos.filter(p => patientIdsWithActivePresc.has(p.id)).length;
     const semPrescricao = ativos.length - comPrescricao;
 
-    const activePrescList = (prescricoes || []).filter(pr => pr.status === "Ativa");
+    const activePrescList = (prescricoes || []).filter(pr => isPrescricaoAtiva(pr, hojeStr));
     const totalPrescricoes = activePrescList.length;
     const totalDosesDiarias = activePrescList.reduce((acc, pr) => acc + (parseFloat(pr.totalDiario) || 0), 0);
 
@@ -1262,6 +1370,7 @@ export default function PacientesMedicao() {
   // Lista de pacientes exibidos baseada na categoria ativa, busca e filtro de ala
   const displayedPatients = useMemo(() => {
     const search = (searchPatient || "").trim().toLowerCase();
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
 
     if (activeCategory === "altas") {
       return (pacientes || []).filter(p => {
@@ -1278,7 +1387,7 @@ export default function PacientesMedicao() {
 
     const patientIdsWithActivePresc = new Set(
       (prescricoes || [])
-        .filter(pr => pr.status === "Ativa")
+        .filter(pr => isPrescricaoAtiva(pr, hojeStr))
         .map(pr => pr.pacienteId || pr.paciente_id)
     );
 
@@ -2157,14 +2266,15 @@ export default function PacientesMedicao() {
                                <TableHead className="font-bold text-slate-600">Dose</TableHead>
                                <TableHead className="font-bold text-slate-600">Frequência</TableHead>
                                <TableHead className="font-bold text-slate-600">Via</TableHead>
-                               <TableHead className="font-bold text-slate-600">Início</TableHead>
+                               <TableHead className="font-bold text-slate-600">Período / Duração</TableHead>
                                <TableHead className="font-bold text-slate-600">Prescrito por</TableHead>
                                <TableHead className="font-bold text-slate-600 text-right">Ações</TableHead>
                             </TableRow>
                          </TableHeader>
                          <TableBody>
                             {(() => {
-                               const ativas = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && pr.status !== "Suspensa" && pr.status !== "Devolvida");
+                               const hojeStr = format(new Date(), "yyyy-MM-dd");
+                               const ativas = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && isPrescricaoAtiva(pr, hojeStr));
                                if (ativas.length === 0) return (
                                  <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-500">Nenhuma medicação ativa.</TableCell></TableRow>
                                );
@@ -2200,7 +2310,68 @@ export default function PacientesMedicao() {
                                         </TableCell>
                                        <TableCell className="text-slate-600 text-sm font-medium">{pr.esquemaPosologico}</TableCell>
                                        <TableCell className="text-slate-600 text-sm">{via}</TableCell>
-                                       <TableCell className="text-slate-600 text-sm">{pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'}</TableCell>
+                                       <TableCell className="text-slate-600 text-xs py-3">
+                                          {(() => {
+                                            const isAnti = isMedicamentoAntibiotico(med);
+
+                                            if (pr.dataFim) {
+                                              const dataInicioFmt = pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--';
+                                              const dataFimFmt = new Date(pr.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+                                              const diasTotais = pr.dataInicio ? calcularDiasEntre(pr.dataInicio, pr.dataFim) : null;
+                                              
+                                              let diasDecorridos = 0;
+                                              let diasRestantes = 0;
+                                              if (pr.dataInicio) {
+                                                const dInicio = new Date(pr.dataInicio);
+                                                const dHoje = new Date(hojeStr);
+                                                const dFim = new Date(pr.dataFim);
+                                                diasDecorridos = Math.max(1, Math.round((dHoje.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                                diasRestantes = Math.round((dFim.getTime() - dHoje.getTime()) / (1000 * 60 * 60 * 24));
+                                              }
+
+                                              const isUltimoDia = pr.dataFim === hojeStr;
+                                              const isEncerrado = pr.dataFim < hojeStr;
+
+                                              return (
+                                                <div className="space-y-1">
+                                                  {isAnti && (
+                                                    <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[9px] py-0 px-1.5 font-bold block w-max">
+                                                      🧪 Antibiótico
+                                                    </Badge>
+                                                  )}
+                                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                                    {dataInicioFmt} a {dataFimFmt}
+                                                    {diasTotais && <span className="text-slate-500 font-normal ml-1">({diasTotais}d)</span>}
+                                                  </div>
+                                                  {isEncerrado ? (
+                                                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] font-bold">
+                                                      Finalizado
+                                                    </Badge>
+                                                  ) : isUltimoDia ? (
+                                                    <Badge className="bg-amber-500 text-white text-[10px] font-bold">
+                                                      ⚠️ Último dia hoje!
+                                                    </Badge>
+                                                  ) : (
+                                                    <div className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">
+                                                      Dia {diasDecorridos} de {diasTotais} • Faltam {diasRestantes}d
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            }
+
+                                            return (
+                                              <div className="space-y-0.5">
+                                                <div className="font-medium text-slate-800 dark:text-slate-200">
+                                                  Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
+                                                </div>
+                                                <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
+                                                  Uso Contínuo
+                                                </Badge>
+                                              </div>
+                                            );
+                                          })()}
+                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm leading-tight">
                                           <div className="font-medium text-slate-800">Médico(a) Assist.</div>
                                           <div className="text-[10px] text-slate-400">CRM N/A</div>
@@ -2668,7 +2839,22 @@ export default function PacientesMedicao() {
               <ComboboxMedicamento
                 medicamentos={medicamentosComEstoque}
                 value={prescFormData.medicamentoId}
-                onChange={(val) => setPrescFormData(prev => ({ ...prev, medicamentoId: val }))}
+                onChange={(val) => {
+                  const m = medicamentos.find(med => med.id === val);
+                  const isAnti = isMedicamentoAntibiotico(m);
+                  setPrescFormData(prev => {
+                    if (isAnti && !prev.dataFim) {
+                      const inicio = prev.dataInicio || format(new Date(), "yyyy-MM-dd");
+                      return {
+                        ...prev,
+                        medicamentoId: val,
+                        diasTratamento: "7",
+                        dataFim: calcularDataFim(inicio, 7)
+                      };
+                    }
+                    return { ...prev, medicamentoId: val };
+                  });
+                }}
                 placeholder="Selecione ou busque o medicamento com estoque..."
               />
             </div>
@@ -2848,6 +3034,144 @@ export default function PacientesMedicao() {
                 </button>
               </div>
             </div>
+
+            {/* Período de Tratamento (Início, Dias e Término com Suspensão Automática) */}
+            {(() => {
+              const selectedMed = medicamentos.find(m => m.id === prescFormData.medicamentoId);
+              const isAnti = isMedicamentoAntibiotico(selectedMed);
+              return (
+                <div className={cn(
+                  "p-3.5 rounded-xl border space-y-3 transition-all",
+                  isAnti 
+                    ? "bg-purple-50/90 dark:bg-purple-950/40 border-purple-300 dark:border-purple-800 shadow-sm"
+                    : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700"
+                )}>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Calendar className={cn("w-4 h-4", isAnti ? "text-purple-600" : "text-blue-600")} />
+                      Período do Tratamento & Término Automático
+                    </Label>
+                    {isAnti && (
+                      <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] px-2 py-0.5">
+                        🧪 Antibiótico / Antimicrobiano
+                      </Badge>
+                    )}
+                  </div>
+
+                  {isAnti && (
+                    <p className="text-xs text-purple-800 dark:text-purple-300 bg-purple-100/70 dark:bg-purple-900/40 p-2 rounded-lg border border-purple-200 dark:border-purple-800">
+                      ℹ️ Para antibióticos, defina a duração ou a data final. Ao alcançar o término, <strong>o sistema suspenderá a prescrição automaticamente</strong>.
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Data de Início *</Label>
+                      <Input
+                        type="date"
+                        className="bg-white dark:bg-slate-900 text-xs font-medium h-9 mt-1"
+                        value={prescFormData.dataInicio}
+                        onChange={(e) => {
+                          const newInicio = e.target.value;
+                          setPrescFormData(prev => {
+                            const newFim = prev.diasTratamento ? calcularDataFim(newInicio, prev.diasTratamento) : prev.dataFim;
+                            return { ...prev, dataInicio: newInicio, dataFim: newFim };
+                          });
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Duração (Dias)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Ex: 7"
+                        className="bg-white dark:bg-slate-900 text-xs font-medium h-9 mt-1"
+                        value={prescFormData.diasTratamento}
+                        onChange={(e) => {
+                          const dias = e.target.value;
+                          setPrescFormData(prev => {
+                            const newFim = dias ? calcularDataFim(prev.dataInicio || format(new Date(), "yyyy-MM-dd"), dias) : "";
+                            return { ...prev, diasTratamento: dias, dataFim: newFim };
+                          });
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Data de Término</Label>
+                      <Input
+                        type="date"
+                        className="bg-white dark:bg-slate-900 text-xs font-medium h-9 mt-1"
+                        value={prescFormData.dataFim || ""}
+                        onChange={(e) => {
+                          const newFim = e.target.value;
+                          setPrescFormData(prev => {
+                            const dias = newFim && prev.dataInicio ? calcularDiasEntre(prev.dataInicio, newFim) : "";
+                            return { ...prev, dataFim: newFim, diasTratamento: dias ? String(dias) : "" };
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Atalhos rápidos de dias */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                    <span className="text-[10px] text-slate-400 font-medium mr-0.5">Duração rápida:</span>
+                    {[3, 5, 7, 10, 14, 21].map(dias => (
+                      <button
+                        type="button"
+                        key={dias}
+                        onClick={() => {
+                          setPrescFormData(prev => {
+                            const inicio = prev.dataInicio || format(new Date(), "yyyy-MM-dd");
+                            const fim = calcularDataFim(inicio, dias);
+                            return { ...prev, dataInicio: inicio, diasTratamento: String(dias), dataFim: fim };
+                          });
+                        }}
+                        className={cn(
+                          "px-2 py-0.5 rounded border text-xs font-medium transition-colors cursor-pointer",
+                          String(prescFormData.diasTratamento) === String(dias)
+                            ? "bg-purple-600 text-white border-purple-600 font-bold"
+                            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
+                        )}
+                      >
+                        {dias} Dias
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrescFormData(prev => ({ ...prev, diasTratamento: "", dataFim: "" }));
+                      }}
+                      className={cn(
+                        "px-2 py-0.5 rounded border text-xs font-medium transition-colors cursor-pointer ml-auto",
+                        !prescFormData.dataFim
+                          ? "bg-slate-800 text-white border-slate-800 font-bold"
+                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-500"
+                      )}
+                      title="Medicamento de uso contínuo sem previsão de suspensão automática"
+                    >
+                      Uso Contínuo (Sem término)
+                    </button>
+                  </div>
+
+                  {/* Explicação / Prévia */}
+                  <div className="text-[11px] pt-1">
+                    {prescFormData.dataFim ? (
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                        ✓ Tratamento de <strong>{prescFormData.diasTratamento || calcularDiasEntre(prescFormData.dataInicio, prescFormData.dataFim)} dias</strong>: de {prescFormData.dataInicio ? new Date(prescFormData.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'} até {new Date(prescFormData.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}. Suspensão automática programada.
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 italic">
+                        Uso Contínuo selecionado. A medicação permanecerá ativa até suspensão manual.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div>
               <Label>Observações Gerais</Label>
