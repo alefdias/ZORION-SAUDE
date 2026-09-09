@@ -69,11 +69,11 @@ export function ComboboxMedicamento({
                     setOpen(false)
                 }}
                 className={cn(
-                    "flex flex-col items-start px-3 py-2 text-sm cursor-pointer rounded-sm w-full my-0.5 relative",
+                    "flex flex-col items-start px-3 py-2 text-sm cursor-pointer rounded-sm w-full max-w-full my-0.5 relative min-w-0 overflow-hidden",
                     value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : "data-[selected=true]:bg-slate-100"
                 )}
             >
-                <div className="flex items-center gap-2 w-full pr-6">
+                <div className="flex items-center gap-2 w-full max-w-full min-w-0 pr-6 overflow-hidden">
                     {m.codigo && (
                         <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 uppercase shrink-0 text-slate-600">
                             {m.codigo}
@@ -88,10 +88,10 @@ export function ComboboxMedicamento({
                         <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
                     )}
                     <span className={cn(
-                        "truncate flex-1 text-left",
+                        "truncate min-w-0 flex-1 text-left",
                         isMav(m) && "text-red-900 font-bold",
                         !isMav(m) && hasSatelite ? "text-emerald-700 font-bold" : "text-slate-800"
-                    )}>
+                    )} title={formatMedLabel(m)}>
                         {formatMedLabel(m)}
                         {isMav(m) && " (MAV)"}
                     </span>
@@ -110,10 +110,10 @@ export function ComboboxMedicamento({
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className="w-full justify-between font-normal h-auto min-h-10 text-left px-3 py-2 bg-white"
+                    className="w-full max-w-full justify-between font-normal h-auto min-h-10 text-left px-3 py-2 bg-white min-w-0 overflow-hidden"
                 >
                     {selectedMed ? (
-                        <div className="flex items-center gap-2 truncate overflow-hidden">
+                        <div className="flex items-center gap-2 truncate overflow-hidden min-w-0 flex-1">
                             {selectedMed.codigo && (
                                 <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0 text-slate-600 border border-slate-200">
                                     {selectedMed.codigo}
@@ -127,28 +127,33 @@ export function ComboboxMedicamento({
                             {isPsicotropico(selectedMed.categoria) && (
                                 <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
                             )}
-                            <span className={cn("truncate", isMav(selectedMed) && "text-red-900 font-bold")}>
+                            <span className={cn("truncate min-w-0 flex-1", isMav(selectedMed) && "text-red-900 font-bold")} title={formatMedLabel(selectedMed)}>
                                 {formatMedLabel(selectedMed)}
                                 {isMav(selectedMed) && " (MAV)"}
                             </span>
                         </div>
                     ) : (
-                        <span className="text-muted-foreground">{placeholder}</span>
+                        <span className="text-muted-foreground truncate">{placeholder}</span>
                     )}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0 shadow-lg border-slate-200" align="start">
-                <Command shouldFilter={false}>
+            <PopoverContent 
+                className="w-[--radix-popover-trigger-width] max-w-[calc(100vw-2rem)] p-0 shadow-xl border-slate-200 overflow-hidden" 
+                align="start"
+                sideOffset={4}
+                collisionPadding={10}
+            >
+                <Command shouldFilter={false} className="w-full max-w-full overflow-hidden">
                     <CommandInput 
                         placeholder="Buscar por código ou nome..." 
-                        className="h-10 text-sm" 
+                        className="h-10 text-sm w-full" 
                         value={search}
                         onValueChange={setSearch}
                     />
                     <CommandEmpty className="py-6 text-center text-sm text-slate-500">Nenhum medicamento encontrado.</CommandEmpty>
                     <CommandList
-                        className="max-h-[250px] overflow-y-auto w-full"
+                        className="max-h-[250px] overflow-y-auto w-full max-w-full overflow-x-hidden"
                         onWheel={(e) => e.stopPropagation()}
                     >
                         {padronizados.length > 0 && (

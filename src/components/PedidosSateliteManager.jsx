@@ -29,7 +29,8 @@ import {
   RotateCcw,
   Ban,
   AlertTriangle,
-  XCircle
+  XCircle,
+  Printer
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -52,6 +53,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [printOrderData, setPrintOrderData] = useState(null);
 
   // Queries
   const { data: pacientes = [] } = useQuery({
@@ -284,6 +286,67 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     }
   });
 
+  const handleOpenPrintPreview = (pedidoCustom = null) => {
+    if (pedidoCustom) {
+      let itens = pedidoCustom.itens || [];
+      if (typeof itens === "string") {
+        try { itens = JSON.parse(itens); } catch {}
+      }
+      setPrintOrderData({
+        codigo: pedidoCustom.codigo || "PED-CENTRAL",
+        alaNome: pedidoCustom.ala_nome || "Geral",
+        dataSolicitacao: pedidoCustom.data_solicitacao || new Date().toISOString(),
+        dias: pedidoCustom.dias_calculados || effectiveDays,
+        margem: pedidoCustom.margem_seguranca || 0,
+        descontarEstoque: pedidoCustom.descontar_estoque === 1,
+        prioridade: pedidoCustom.prioridade || "Normal",
+        status: pedidoCustom.status || "Pendente",
+        observacao: pedidoCustom.observacoes || pedidoCustom.observacao || "",
+        itens: itens.map(i => ({
+          codigo: i.codigo || "-",
+          nome: i.medicamento_nome || i.nome,
+          concentracao: i.concentracao || "",
+          apresentacao: i.apresentacao || "",
+          qtdPrescrita: i.qtd_prescrita || i.qtdCalculada || 0,
+          estoqueSatelite: i.estoque_satelite_momento ?? i.estoqueSatelite ?? 0,
+          qtdSolicitada: i.qtd_solicitada !== undefined ? i.qtd_solicitada : (i.finalQtd || 0)
+        }))
+      });
+    } else {
+      const alaObj = alas.find(a => a.id === selectedAlaId);
+      const alaNomeStr = selectedAlaId === "all" ? "Todas as Alas" : (alaObj?.nome || "Ala Selecionada");
+
+      const itens = calculoNecessidade.map(item => {
+        const finalQtd = customQuantities[item.medicamentoId] !== undefined 
+          ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
+          : item.qtdSugerida;
+
+        return {
+          codigo: item.codigo || "-",
+          nome: item.nome,
+          concentracao: item.concentracao || "",
+          apresentacao: item.apresentacao || "",
+          qtdPrescrita: item.qtdCalculada,
+          estoqueSatelite: item.estoqueSatelite,
+          qtdSolicitada: finalQtd
+        };
+      });
+
+      setPrintOrderData({
+        codigo: `PREVIA-${Date.now().toString().slice(-4)}`,
+        alaNome: alaNomeStr,
+        dataSolicitacao: new Date().toISOString(),
+        dias: effectiveDays,
+        margem: effectiveMargem,
+        descontarEstoque: descontarEstoque,
+        prioridade: prioridadePedido,
+        status: "Em Elaboração (Sem envio)",
+        observacao: observacaoPedido,
+        itens: itens
+      });
+    }
+  };
+
   // Modal Action Mutation (Separar, Entregar, Conferir/Receber)
   const updatePedidoMutation = useMutation({
     mutationFn: async ({ pedido, newStatus, updatedItens, motivoCancelamento }) => {
@@ -437,6 +500,17 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                     <option value="Emergência">🚨 Emergência</option>
                   </select>
                 </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenPrintPreview()}
+                  className="border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold gap-2 shadow-sm h-9"
+                  title="Imprimir requisição do pedido calculada (sem enviar)"
+                >
+                  <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                  Imprimir Pedido
+                </Button>
 
                 <Button
                   onClick={() => criarPedidoMutation.mutate()}
@@ -824,7 +898,16 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                       </TableCell>
                       <TableCell className="text-center font-mono">{itensArr.length} item(s)</TableCell>
                       <TableCell className="text-center">{getStatusBadge(p.status)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap space-x-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenPrintPreview({ ...p, itens: itensArr })}
+                          className="h-8 w-8 p-0 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                          title="Imprimir este Pedido"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -857,6 +940,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           onOpenChange={setModalOpen}
           pedido={selectedPedido}
           mode={mode}
+          onPrint={(p) => handleOpenPrintPreview(p)}
           onUpdateStatus={(newStatus, updatedItens, motivoCancelamento) => {
             updatePedidoMutation.mutate({
               pedido: selectedPedido,
@@ -868,12 +952,153 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           isPending={updatePedidoMutation.isPending}
         />
       )}
+
+      {/* ─── MODAL DE IMPRESSÃO DO PEDIDO (A4 FORMAL) ────────────────────── */}
+      <Dialog open={Boolean(printOrderData)} onOpenChange={(open) => !open && setPrintOrderData(null)}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-0 border-none bg-slate-100 dark:bg-slate-900 shadow-2xl">
+          <DialogHeader className="p-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between no-print sticky top-0 z-10">
+            <div className="flex items-center gap-2">
+              <Printer className="w-5 h-5 text-blue-600" />
+              <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Visualização de Impressão — Requisição à Farmácia Central
+              </DialogTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPrintOrderData(null)}>
+                Fechar
+              </Button>
+              <Button size="sm" onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-1.5 shadow-sm">
+                <Printer className="w-4 h-4" />
+                Imprimir Agora
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {/* FOLHA FORMAL A4 */}
+          <div id="printable-order-sheet" className="p-6 sm:p-10 bg-white text-slate-900 mx-auto w-full shadow-sm print:p-0 print:shadow-none">
+            <style>{`
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #printable-order-sheet, #printable-order-sheet * {
+                  visibility: visible !important;
+                }
+                #printable-order-sheet {
+                  position: fixed !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 10mm !important;
+                  background: white !important;
+                  color: black !important;
+                  display: block !important;
+                  z-index: 999999 !important;
+                }
+              }
+            `}</style>
+
+            {/* Cabeçalho */}
+            <div className="border-b-2 border-slate-900 pb-4 mb-5 flex justify-between items-start">
+              <div>
+                <h1 className="text-xl font-black uppercase text-slate-950 tracking-tight">
+                  ZORION SAÚDE — FARMÁCIA HOSPITALAR
+                </h1>
+                <h2 className="text-sm font-bold text-blue-800 uppercase mt-0.5">
+                  REQUISIÇÃO DE MEDICAMENTOS • PEDIDO À FARMÁCIA CENTRAL
+                </h2>
+                <p className="text-xs text-slate-600 mt-1">
+                  Origem: <strong>Farmácia Satélite</strong> • Setor/Ala: <strong>{printOrderData?.alaNome}</strong>
+                </p>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  Código: <strong>{printOrderData?.codigo}</strong> • Status: <strong>{printOrderData?.status}</strong>
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-600 font-mono space-y-1">
+                <p>Emissão: <strong>{printOrderData?.dataSolicitacao ? format(new Date(printOrderData.dataSolicitacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "--"}</strong></p>
+                <p>Prioridade: <span className="font-bold uppercase text-slate-900">{printOrderData?.prioridade}</span></p>
+                <p>Suprimento: <strong>{printOrderData?.dias} dia(s)</strong></p>
+                {printOrderData?.margem > 0 && <p>Margem de Segurança: <strong>+{printOrderData.margem}%</strong></p>}
+                {printOrderData?.descontarEstoque && <p>Abatido Estoque Satélite: <strong>Sim</strong></p>}
+              </div>
+            </div>
+
+            {printOrderData?.observacao && (
+              <div className="mb-4 p-2.5 bg-slate-50 border border-slate-200 rounded text-xs">
+                <strong>Observações da Requisição:</strong> {printOrderData.observacao}
+              </div>
+            )}
+
+            {/* Tabela de Itens */}
+            <table className="w-full text-xs border-collapse border border-slate-300 mb-6">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
+                  <th className="border border-slate-300 p-2 text-center w-10">Item</th>
+                  <th className="border border-slate-300 p-2 text-center w-16">Cód.</th>
+                  <th className="border border-slate-300 p-2 text-left">Medicamento / Concentração</th>
+                  <th className="border border-slate-300 p-2 text-center w-24">Prescr. ({printOrderData?.dias}D)</th>
+                  <th className="border border-slate-300 p-2 text-center w-16">Est. Sat.</th>
+                  <th className="border border-slate-300 p-2 text-center w-28 bg-blue-50/60 font-black">Qtd Solicitada</th>
+                  <th className="border border-slate-300 p-2 text-center w-24">Conferência</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printOrderData?.itens?.map((item, idx) => (
+                  <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono">{idx + 1}</td>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono">{item.codigo || "-"}</td>
+                    <td className="border border-slate-300 p-1.5 font-medium">
+                      <span className="font-bold">{item.nome}</span>
+                      {item.concentracao && <span className="text-slate-600"> ({item.concentracao})</span>}
+                      {item.apresentacao && <span className="text-slate-500 text-[10px] block">[{item.apresentacao}]</span>}
+                    </td>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono">{item.qtdPrescrita} un</td>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono">{item.estoqueSatelite} un</td>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono font-bold text-sm bg-blue-50/30">
+                      {item.qtdSolicitada} un
+                    </td>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-400">
+                      [&nbsp;&nbsp;&nbsp;&nbsp;]
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
+                  <td colSpan={5} className="border border-slate-300 p-2 text-right uppercase">
+                    Total de Itens: {printOrderData?.itens?.length || 0} • Total de Unidades Solicitadas:
+                  </td>
+                  <td className="border border-slate-300 p-2 text-center font-mono text-sm font-black bg-blue-100/60">
+                    {printOrderData?.itens?.reduce((acc, item) => acc + (Number(item.qtdSolicitada) || 0), 0) || 0} un
+                  </td>
+                  <td className="border border-slate-300 p-2"></td>
+                </tr>
+              </tfoot>
+            </table>
+
+            {/* Campos de Assinatura */}
+            <div className="mt-12 pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                <div className="border-b border-slate-400 w-52 mx-auto mb-1"></div>
+                <p className="font-bold text-slate-800">Solicitante (Farmácia Satélite)</p>
+                <p className="text-[10px] text-slate-500">Assinatura / Carimbo</p>
+              </div>
+              <div>
+                <div className="border-b border-slate-400 w-52 mx-auto mb-1"></div>
+                <p className="font-bold text-slate-800">Atendido / Separado por (Farmácia Central)</p>
+                <p className="text-[10px] text-slate-500">Assinatura / Carimbo</p>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ─── SUBCOMPONENTE MODAL DE DETALHES & CONFERÊNCIA ───────────────────────────
-export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending }) {
+export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending, onPrint }) {
   const [itensState, setItensState] = useState(() => {
     const rawItens = pedido.itens || [];
     return rawItens.map(i => ({
@@ -1139,6 +1364,16 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
           </div>
 
           <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onPrint?.(pedido)}
+              className="gap-1.5 font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
+            >
+              <Printer className="w-4 h-4 text-slate-600" />
+              Imprimir Pedido
+            </Button>
+
             {/* CENTRAL ACTIONS */}
             {mode === "central" && pedido.status === "Pendente" && (
               <Button

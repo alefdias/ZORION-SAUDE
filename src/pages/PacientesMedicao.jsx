@@ -29,20 +29,22 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   PackageMinus, 
-  Building2,
-  RefreshCw,
-  Eye,
-  FileText,
-  LogOut,
-  Undo2,
-  User,
-  CreditCard,
-  ArrowLeftRight,
-  ArrowRight,
-  CalendarCheck,
-  X,
-  Bed,
-  Sparkles
+  Building2, 
+  RefreshCw, 
+  Eye, 
+  FileText, 
+  LogOut, 
+  Undo2, 
+  User, 
+  CreditCard, 
+  ArrowLeftRight, 
+  ArrowRight, 
+  CalendarCheck, 
+  Calendar,
+  X, 
+  Bed, 
+  Sparkles, 
+  History 
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -71,6 +73,75 @@ const getDoseForHora = (horariosData, targetHora) => {
   const list = safeParseHorarios(horariosData);
   const found = list.find(h => h && h.hora === targetHora);
   return found?.dose ?? 0;
+};
+
+export const DIAS_SEMANA_MAP = [
+  { id: 1, label: "Seg", full: "Segunda-feira" },
+  { id: 2, label: "Ter", full: "Terça-feira" },
+  { id: 3, label: "Qua", full: "Quarta-feira" },
+  { id: 4, label: "Qui", full: "Quinta-feira" },
+  { id: 5, label: "Sex", full: "Sexta-feira" },
+  { id: 6, label: "Sáb", full: "Sábado" },
+  { id: 0, label: "Dom", full: "Domingo" },
+];
+
+export const parseDiasSemana = (dias) => {
+  if (!dias) return [0, 1, 2, 3, 4, 5, 6];
+  if (Array.isArray(dias)) return dias.map(Number);
+  if (typeof dias === 'string') {
+    try {
+      const parsed = JSON.parse(dias);
+      if (Array.isArray(parsed)) return parsed.map(Number);
+    } catch {}
+    if (dias.includes(',')) return dias.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
+  }
+  return [0, 1, 2, 3, 4, 5, 6];
+};
+
+export const formatDiasSemana = (dias) => {
+  const arr = parseDiasSemana(dias);
+  if (arr.length === 0) return "Nenhum dia";
+  if (arr.length === 7) return "Todos os dias (Diário)";
+  
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const sorted = [...arr].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const str = sorted.join(',');
+  if (str === "1,2,3,4,5") return "Seg a Sex";
+  if (str === "1,3,5") return "Seg, Qua, Sex";
+  if (str === "6,0" || str === "0,6") return "Fim de semana (Sáb/Dom)";
+  if (str === "1,2,3") return "Seg, Ter, Qua";
+
+  const labels = sorted.map(id => {
+    const found = DIAS_SEMANA_MAP.find(d => d.id === id);
+    return found ? found.label : "";
+  }).filter(Boolean);
+  
+  return labels.join(', ');
+};
+
+export const calculatePrescQtdParaDias = (pr, diasCount) => {
+  const d08 = getDoseForHora(pr.horarios, "08:00");
+  const d14 = getDoseForHora(pr.horarios, "14:00");
+  const d22 = getDoseForHora(pr.horarios, "22:00");
+  const d06 = getDoseForHora(pr.horarios, "06:00");
+  const calculatedDaily = d08 + d14 + d22 + d06;
+  const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
+
+  const diasArr = parseDiasSemana(pr.diasSemana);
+  if (diasArr.length === 7 || diasArr.length === 0) {
+    return Math.round(dailyTotal * diasCount);
+  }
+
+  let matchDays = 0;
+  const hoje = new Date();
+  for (let i = 0; i < diasCount; i++) {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() + i);
+    if (diasArr.includes(d.getDay())) {
+      matchDays++;
+    }
+  }
+  return Math.round(dailyTotal * matchDays);
 };
 
 export default function PacientesMedicao() {
@@ -113,6 +184,7 @@ export default function PacientesMedicao() {
     isMetade22: false,
     isMetade06: false,
     esquemaPosologico: "0-0-0-0",
+    diasSemana: [0, 1, 2, 3, 4, 5, 6],
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
     status: "Ativa",
@@ -196,12 +268,21 @@ export default function PacientesMedicao() {
     queryFn: () => db.entities.GavetaPaciente.list ? db.entities.GavetaPaciente.list() : [],
   });
 
-  const getSaidasAvulsasDoPaciente = (pacienteNome) => {
-    if (!pacienteNome) return [];
-    return saidas.filter(s => 
-      s.paciente_nome === pacienteNome && 
+  const getSaidasDoPaciente = (pacienteNome, pacienteId) => {
+    if (!pacienteNome && !pacienteId) return [];
+    const normNome = pacienteNome ? pacienteNome.trim().toLowerCase() : "";
+    return saidas.filter(s => {
+      const sNome = (s.paciente_nome || "").trim().toLowerCase();
+      const matchNome = Boolean(normNome && sNome && (sNome === normNome || sNome.includes(normNome) || normNome.includes(sNome)));
+      const matchId = Boolean(pacienteId && (s.paciente_id === pacienteId || s.pacienteId === pacienteId));
+      return matchNome || matchId;
+    }).sort((a, b) => new Date(b.created_at || b.data_saida || 0) - new Date(a.created_at || a.data_saida || 0));
+  };
+
+  const getSaidasAvulsasDoPaciente = (pacienteNome, pacienteId) => {
+    return getSaidasDoPaciente(pacienteNome, pacienteId).filter(s => 
       (!s.motivo || !s.motivo.startsWith("Baixa de medicação fixa"))
-    ).sort((a, b) => new Date(b.created_at || b.data_saida || 0) - new Date(a.created_at || a.data_saida || 0));
+    );
   };
 
   // Patient Mutations
@@ -268,7 +349,7 @@ export default function PacientesMedicao() {
         medicamentoNome: med ? med.nome : (data.medicamentoNome || "Medicamento não informado"),
         medicamentoCodigo: med ? (med.codigo || "") : (data.medicamentoCodigo || ""),
         apresentacao: med ? (med.apresentacao || "") : (data.apresentacao || ""),
-        concentracao: med ? (med.concentracao || "") : (data.concentracao || ""),
+        concentracao: med ? (med.concentracao || (med.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med.unidade_medida.toLowerCase()) ? med.unidade_medida : "") || "") : (data.concentracao || ""),
         dose08: String(data.dose08 ?? "0"),
         dose14: String(data.dose14 ?? "0"),
         dose22: String(data.dose22 ?? "0"),
@@ -288,11 +369,43 @@ export default function PacientesMedicao() {
         dataInicio: data.dataInicio || format(new Date(), "yyyy-MM-dd"),
         dataFim: data.dataFim || null,
         status: data.status || "Ativa",
+        diasSemana: JSON.stringify(data.diasSemana || [0, 1, 2, 3, 4, 5, 6]),
         observacoes: data.observacoes || ""
       };
 
       let result;
-      if (editingPresc) {
+      if (editingPresc && data.gerarHistorico) {
+        const today = format(new Date(), "yyyy-MM-dd");
+        const motivo = data.motivoAlteracao
+          ? `${data.motivoAlteracao} (Esquema anterior: ${editingPresc.esquemaPosologico})`
+          : `Alterado em ${format(new Date(), "dd/MM/yyyy")}: esquema ${editingPresc.esquemaPosologico} alterado para ${esquema}`;
+
+        // 1. Arquiva a prescrição antiga como Suspensa no histórico com dataFim = hoje
+        await db.entities.PrescricaoPaciente.update(editingPresc.id, {
+          status: "Suspensa",
+          dataFim: today,
+          observacoes: editingPresc.observacoes
+            ? `${editingPresc.observacoes} | ${motivo}`
+            : motivo
+        });
+
+        // 2. Cria a nova prescrição com o novo esquema ativado
+        const newPayload = {
+          ...payload,
+          dataInicio: today,
+          dataFim: null,
+          status: "Ativa",
+          observacoes: data.observacoes || (data.motivoAlteracao ? `Ajustado de ${editingPresc.esquemaPosologico} para ${esquema}: ${data.motivoAlteracao}` : "")
+        };
+        result = await db.entities.PrescricaoPaciente.create(newPayload);
+
+        await db.logAction(
+          "ALTERACAO_PRESCRICAO",
+          "PrescricaoPaciente",
+          result?.id || editingPresc.id,
+          `Prescrição alterada para paciente '${patient?.nome || pacienteId}': esquema anterior '${editingPresc.esquemaPosologico}' arquivado no histórico e novo esquema '${esquema}' ativado.`
+        );
+      } else if (editingPresc) {
         result = await db.entities.PrescricaoPaciente.update(editingPresc.id, payload);
         await db.logAction(
           "ALTERACAO_PRESCRICAO",
@@ -315,7 +428,7 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       setPrescModalOpen(false);
       setEditingPresc(null);
-      toast.success("Prescrição fixa salva com sucesso!");
+      toast.success(editingPresc ? "Prescrição alterada e histórico do esquema anterior gerado com sucesso!" : "Prescrição fixa salva com sucesso!");
     },
     onError: (err) => toast.error("Erro ao salvar prescrição: " + (err?.message || (typeof err === "string" ? err : "Erro desconhecido")))
   });
@@ -451,7 +564,7 @@ export default function PacientesMedicao() {
         const calculatedDaily = d08 + d14 + d22 + d06;
         const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
-        const qtdSaida = Math.round(dailyTotal * dias);
+        const qtdSaida = calculatePrescQtdParaDias(pr, dias);
         if (qtdSaida <= 0) continue;
 
         deducoesEstoqueCentral[medId] = (deducoesEstoqueCentral[medId] || 0) + qtdSaida;
@@ -929,9 +1042,11 @@ export default function PacientesMedicao() {
 
   // Handlers Modal Prescrição
   const handleOpenNewPresc = (pacienteIdTarget = "") => {
+    const targetId = pacienteIdTarget || (viewPatientDetails ? viewPatientDetails.id : "");
     setEditingPresc(null);
     setPrescFormData({
-      pacienteId: pacienteIdTarget,
+      pacienteId: targetId,
+      isPatientLocked: Boolean(targetId),
       medicamentoId: "",
       dose08: "0",
       dose14: "0",
@@ -945,7 +1060,10 @@ export default function PacientesMedicao() {
       dataInicio: format(new Date(), "yyyy-MM-dd"),
       dataFim: "",
       status: "Ativa",
-      observacoes: ""
+      observacoes: "",
+      motivoAlteracao: "",
+      gerarHistorico: false,
+      diasSemana: [0, 1, 2, 3, 4, 5, 6]
     });
     setPrescModalOpen(true);
   };
@@ -958,7 +1076,8 @@ export default function PacientesMedicao() {
     const d06 = getDoseForHora(p.horarios, "06:00");
 
     setPrescFormData({
-      pacienteId: p.pacienteId || "",
+      pacienteId: p.pacienteId || (viewPatientDetails ? viewPatientDetails.id : ""),
+      isPatientLocked: true,
       medicamentoId: p.medicamentoId || "",
       dose08: String(d08 || 0),
       isMetade08: false,
@@ -969,10 +1088,13 @@ export default function PacientesMedicao() {
       dose06: String(d06 || 0),
       isMetade06: false,
       esquemaPosologico: p.esquemaPosologico || `${d08 || 0}-${d14 || 0}-${d22 || 0}-${d06 || 0}`,
-      dataInicio: p.dataInicio || format(new Date(), "yyyy-MM-dd"),
-      dataFim: p.dataFim || "",
-      status: p.status || "Ativa",
-      observacoes: p.observacoes || ""
+      dataInicio: format(new Date(), "yyyy-MM-dd"),
+      dataFim: "",
+      status: "Ativa",
+      observacoes: p.observacoes || "",
+      motivoAlteracao: "",
+      gerarHistorico: true,
+      diasSemana: parseDiasSemana(p.diasSemana)
     });
     setPrescModalOpen(true);
   };
@@ -991,6 +1113,23 @@ export default function PacientesMedicao() {
         };
       }
       return { ...prev, esquemaPosologico: val };
+    });
+  };
+
+  const toggleDiaSemana = (diaId) => {
+    setPrescFormData(prev => {
+      const current = parseDiasSemana(prev.diasSemana);
+      let updated;
+      if (current.includes(diaId)) {
+        if (current.length === 1) {
+          toast.warning("A medicação precisa ter ao menos 1 dia da semana selecionado.");
+          return prev;
+        }
+        updated = current.filter(d => d !== diaId);
+      } else {
+        updated = [...current, diaId];
+      }
+      return { ...prev, diasSemana: updated };
     });
   };
 
@@ -1024,7 +1163,7 @@ export default function PacientesMedicao() {
       };
 
       const dailyDose = p.totalDiario || 0;
-      const periodDose = dailyDose * periodoDias;
+      const periodDose = calculatePrescQtdParaDias(p, periodoDias);
 
       // Group Meds
       if (!medMap[p.medicamentoId]) {
@@ -1182,9 +1321,17 @@ export default function PacientesMedicao() {
   const filteredPrescriptions = prescricoes.filter(p =>
     p.pacienteNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
     p.medicamentoNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
+    p.concentracao?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
     p.prontuario?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
     p.esquemaPosologico?.includes(searchPrescription)
   );
+
+  const selectedPrescPatient = useMemo(() => {
+    const pId = prescFormData.pacienteId || viewPatientDetails?.id || editingPresc?.pacienteId;
+    return pacientes.find(p => p.id === pId) || viewPatientDetails || null;
+  }, [pacientes, prescFormData.pacienteId, viewPatientDetails, editingPresc]);
+
+  const isPatientLocked = Boolean(prescFormData.isPatientLocked || viewPatientDetails || editingPresc);
 
   return (
     <div className="p-6 space-y-4 min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -2025,13 +2172,32 @@ export default function PacientesMedicao() {
                                   const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
                                   const via = med?.via_administracao || "Oral";
                                   const apresentacao = med?.apresentacao || "Comprimido";
+                                  const rawConc = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                                  const hasConcInName = rawConc && pr.medicamentoNome?.toLowerCase().includes(rawConc.toLowerCase());
+                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
                                   return (
                                     <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
                                        <TableCell className="font-semibold text-slate-800 py-3">
-                                         {pr.medicamentoNome}
+                                         <span>
+                                           {pr.medicamentoNome}
+                                           {concentracao && (
+                                             <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium">
+                                               ({concentracao})
+                                             </span>
+                                           )}
+                                         </span>
                                          <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
                                        </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium">{pr.totalDiario} un/dia</TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium">
+                                          <div>{pr.totalDiario} un/dia</div>
+                                          {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
+                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
+                                              📅 {formatDiasSemana(pr.diasSemana)}
+                                            </Badge>
+                                          ) : (
+                                            <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
+                                          )}
+                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm font-medium">{pr.esquemaPosologico}</TableCell>
                                        <TableCell className="text-slate-600 text-sm">{via}</TableCell>
                                        <TableCell className="text-slate-600 text-sm">{pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'}</TableCell>
@@ -2039,8 +2205,17 @@ export default function PacientesMedicao() {
                                           <div className="font-medium text-slate-800">Médico(a) Assist.</div>
                                           <div className="text-[10px] text-slate-400">CRM N/A</div>
                                        </TableCell>
-                                       <TableCell className="text-right py-3 space-x-1">
-                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600 hover:bg-blue-50" onClick={() => handleOpenEditPresc(pr)} title="Editar prescrição"><Pencil className="w-4 h-4"/></Button>
+                                       <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
+                                            onClick={() => handleOpenEditPresc(pr)} 
+                                            title="Alterar medicamento ou esquema posológico"
+                                          >
+                                            <Pencil className="w-3.5 h-3.5" />
+                                            Alterar
+                                          </Button>
                                           <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
                                             if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
                                               togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
@@ -2089,14 +2264,35 @@ export default function PacientesMedicao() {
                                   const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
                                   const via = med?.via_administracao || "Oral";
                                   const apresentacao = med?.apresentacao || "Comprimido";
+                                  const rawConc = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                                  const hasConcInName = rawConc && pr.medicamentoNome?.toLowerCase().includes(rawConc.toLowerCase());
+                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
                                   return (
                                     <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
                                        <TableCell className="font-semibold text-slate-800 py-3 opacity-60">
-                                         {pr.medicamentoNome}
+                                         <span>
+                                           {pr.medicamentoNome}
+                                           {concentracao && (
+                                             <span className="ml-1 text-slate-600 font-medium">
+                                               ({concentracao})
+                                             </span>
+                                           )}
+                                         </span>
                                          <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-slate-50 text-slate-500 border-slate-200 rounded">{apresentacao}</Badge>
                                        </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">{pr.totalDiario} un/dia</TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">{pr.esquemaPosologico}</TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">
+                                          <div>{pr.totalDiario} un/dia</div>
+                                          {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" && (
+                                            <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-bold mt-0.5 block w-max">
+                                              📅 {formatDiasSemana(pr.diasSemana)}
+                                            </Badge>
+                                          )}
+                                       </TableCell>
+                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">
+                                         <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 font-mono text-xs font-bold">
+                                           {pr.esquemaPosologico}
+                                         </Badge>
+                                       </TableCell>
                                        <TableCell className="text-slate-600 text-sm opacity-60">{via}</TableCell>
                                        <TableCell className="text-slate-600 text-sm opacity-60">
                                           {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'} a {pr.dataFim ? new Date(pr.dataFim).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Hoje'}
@@ -2105,6 +2301,143 @@ export default function PacientesMedicao() {
                                        <TableCell className="text-slate-600 text-sm leading-tight opacity-60">
                                           <div className="font-medium text-slate-800">Médico(a) Assist.</div>
                                           <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                       </TableCell>
+                                    </TableRow>
+                                  );
+                               });
+                            })()}
+                         </TableBody>
+                       </Table>
+                     </div>
+                  </div>
+
+                  {/* Dispensações e Saídas da Farmácia Satélite */}
+                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm mt-6">
+                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
+                        <div className="flex gap-3 items-center">
+                           <div className="bg-blue-100 dark:bg-blue-950/60 p-2 rounded-lg text-blue-700 dark:text-blue-300">
+                             <PackageMinus className="w-5 h-5" />
+                           </div>
+                           <div>
+                             <div className="flex items-center gap-2">
+                               <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                                 Dispensações e Saídas da Satélite
+                               </h3>
+                               {(() => {
+                                 const saidasPac = getSaidasDoPaciente(viewPatientDetails?.nome, viewPatientDetails?.id);
+                                 return saidasPac.length > 0 ? (
+                                   <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border-none text-xs font-bold">
+                                     {saidasPac.length} registro{saidasPac.length > 1 ? 's' : ''}
+                                   </Badge>
+                                 ) : null;
+                               })()}
+                             </div>
+                             <p className="text-sm text-slate-500">
+                               Histórico de saídas de medicamentos da farmácia satélite registradas para este paciente
+                             </p>
+                           </div>
+                        </div>
+                     </div>
+                     
+                     <div className="overflow-x-auto">
+                       <Table>
+                         <TableHeader className="bg-slate-50/50">
+                            <TableRow>
+                               <TableHead className="font-bold text-slate-600">Data / Horário</TableHead>
+                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
+                               <TableHead className="font-bold text-slate-600">Lote</TableHead>
+                               <TableHead className="font-bold text-slate-600 text-center">Quantidade</TableHead>
+                               <TableHead className="font-bold text-slate-600">Tipo / Movimento</TableHead>
+                               <TableHead className="font-bold text-slate-600">Setor / Destino</TableHead>
+                               <TableHead className="font-bold text-slate-600">Motivo / Observação</TableHead>
+                            </TableRow>
+                         </TableHeader>
+                         <TableBody>
+                            {(() => {
+                               const patientSaidas = getSaidasDoPaciente(viewPatientDetails?.nome, viewPatientDetails?.id);
+                               if (patientSaidas.length === 0) {
+                                 return (
+                                   <TableRow>
+                                     <TableCell colSpan={7} className="text-center py-8 text-slate-400">
+                                       <div className="flex flex-col items-center justify-center gap-1">
+                                         <PackageMinus className="w-8 h-8 text-slate-300 stroke-1" />
+                                         <span className="font-medium text-slate-500">Nenhuma saída ou dispensação registrada para este paciente.</span>
+                                         <span className="text-xs text-slate-400">Quando registrar uma saída vinculando este paciente em Movimentação &gt; Saída, ela constará aqui automaticamente.</span>
+                                       </div>
+                                     </TableCell>
+                                   </TableRow>
+                                 );
+                               }
+
+                               return patientSaidas.map((s, idx) => {
+                                  const med = medicamentos.find(m => m.id === (s.medicamento_id || s.medicamentoId));
+                                  const rawConc = (s.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                                  const medNome = s.medicamento_nome || s.medicamentoNome || med?.nome || "Medicamento não informado";
+                                  const hasConcInName = rawConc && medNome.toLowerCase().includes(rawConc.toLowerCase());
+                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
+                                  const apresentacao = med?.apresentacao || "Comprimido";
+
+                                  let dataFormatada = "--";
+                                  const rawDate = s.created_at || s.data_saida;
+                                  if (rawDate) {
+                                    try {
+                                      const parsed = new Date(rawDate);
+                                      if (!isNaN(parsed.getTime())) {
+                                        dataFormatada = format(parsed, "dd/MM/yyyy HH:mm", { locale: ptBR });
+                                      } else {
+                                        dataFormatada = rawDate;
+                                      }
+                                    } catch {
+                                      dataFormatada = rawDate;
+                                    }
+                                  }
+
+                                  const loteObj = lotes.find(l => l.id === (s.lote_id || s.loteId));
+                                  const numeroLote = s.numero_lote || s.lote_numero || loteObj?.numero_lote || "N/I";
+                                  const isBaixaFixa = s.motivo && s.motivo.startsWith("Baixa de medicação fixa");
+
+                                  return (
+                                    <TableRow key={s.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors border-b border-slate-100 dark:border-slate-800">
+                                       <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-mono whitespace-nowrap">
+                                         {dataFormatada}
+                                       </TableCell>
+                                       <TableCell className="py-2.5">
+                                         <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                                           {medNome}
+                                           {concentracao && (
+                                             <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium">
+                                               ({concentracao})
+                                             </span>
+                                           )}
+                                         </span>
+                                         <Badge variant="outline" className="block w-max mt-0.5 text-[10px] bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 rounded">
+                                           {apresentacao}
+                                         </Badge>
+                                       </TableCell>
+                                       <TableCell className="text-xs font-mono text-slate-600 dark:text-slate-400">
+                                         {numeroLote}
+                                       </TableCell>
+                                       <TableCell className="text-center">
+                                         <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 font-bold font-mono">
+                                           -{s.quantidade} un
+                                         </Badge>
+                                       </TableCell>
+                                       <TableCell>
+                                         {isBaixaFixa ? (
+                                           <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 text-[11px]">
+                                             Baixa Periódica
+                                           </Badge>
+                                         ) : (
+                                           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-medium">
+                                             Saída Satélite
+                                           </Badge>
+                                         )}
+                                       </TableCell>
+                                       <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                                         {s.destino || s.ala_nome || viewPatientDetails?.alaNome || "Farmácia Satélite"}
+                                       </TableCell>
+                                       <TableCell className="text-xs text-slate-600 dark:text-slate-400 max-w-[220px] truncate" title={s.motivo || s.observacao || ""}>
+                                         {s.motivo || s.observacao || "Atendimento ao paciente"}
                                        </TableCell>
                                     </TableRow>
                                   );
@@ -2191,7 +2524,7 @@ export default function PacientesMedicao() {
                         {activePrescs.map((pr) => {
                           const pac = selectedPacs.find(p => p.id === pr.pacienteId);
                           const med = medicamentos.find(m => m.id === pr.medicamentoId);
-                          const qtdSaida = (pr.totalDiario || 0) * batchBaixaDias;
+                          const qtdSaida = calculatePrescQtdParaDias(pr, batchBaixaDias);
                           const estoqueDisponivel = med?.estoque_atual || 0;
                           const temEstoqueSuficiente = estoqueDisponivel >= qtdSaida;
 
@@ -2202,7 +2535,15 @@ export default function PacientesMedicao() {
                                 <p className="text-[10px] text-slate-500 font-mono">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
                               </TableCell>
                               <TableCell>
-                                <p className="font-bold text-xs text-blue-900 dark:text-blue-200">{pr.medicamentoNome}</p>
+                                <p className="font-bold text-xs text-blue-900 dark:text-blue-200">
+                                  {pr.medicamentoNome}
+                                  {(() => {
+                                    const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+                                    const rawC = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                                    const hasC = rawC && pr.medicamentoNome?.toLowerCase().includes(rawC.toLowerCase());
+                                    return rawC && !hasC ? ` (${rawC})` : "";
+                                  })()}
+                                </p>
                                 <p className="text-[10px] text-slate-500">Cód: {pr.medicamentoCodigo || "N/A"}</p>
                               </TableCell>
                               <TableCell className="text-center font-mono text-xs font-bold">
@@ -2256,26 +2597,70 @@ export default function PacientesMedicao() {
 
       {/* ─── MODAL: PRESCRIÇÃO FIXA ────────────────────────────────────────── */}
       <Dialog open={prescModalOpen} onOpenChange={setPrescModalOpen}>
-        <DialogContent className="sm:max-w-[550px]">
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingPresc ? "Editar Prescrição Fixa" : "Nova Prescrição Fixa de Paciente"}</DialogTitle>
+            <DialogTitle>{editingPresc ? "Alterar Prescrição do Paciente" : "Nova Prescrição Fixa de Paciente"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {editingPresc && (
+              <div className="bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-blue-600" /> Prescrição Atual em Uso:
+                  </span>
+                  <Badge variant="outline" className="bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-mono font-bold border-blue-300">
+                    Esquema: {editingPresc.esquemaPosologico} ({editingPresc.totalDiario} un/dia) • {formatDiasSemana(editingPresc.diasSemana)}
+                  </Badge>
+                </div>
+                <p className="text-slate-700 dark:text-slate-300">
+                  Medicamento: <strong>{editingPresc.medicamentoNome} {editingPresc.concentracao ? `(${editingPresc.concentracao})` : ''}</strong>
+                </p>
+                <label className="flex items-start gap-2 pt-1 font-medium text-slate-800 dark:text-slate-200 cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={Boolean(prescFormData.gerarHistorico)} 
+                    onChange={(e) => setPrescFormData(prev => ({ ...prev, gerarHistorico: e.target.checked }))}
+                    className="w-4 h-4 mt-0.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Arquivar o esquema anterior <strong>({editingPresc.esquemaPosologico})</strong> no histórico do paciente e ativar o novo</span>
+                </label>
+              </div>
+            )}
+
             <div>
               <Label>Paciente *</Label>
-              <Select
-                value={prescFormData.pacienteId}
-                onValueChange={(val) => setPrescFormData(prev => ({ ...prev, pacienteId: val }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o paciente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {pacientes.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome} (Pront: {p.prontuario}) - Leito: {p.leito || "S/L"}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isPatientLocked ? (
+                <div className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-sm mt-1">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <User className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div className="truncate">
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {selectedPrescPatient?.nome || "Paciente Selecionado"}
+                      </span>
+                      <span className="text-xs text-slate-500 ml-1.5 font-mono">
+                        (Pront: {selectedPrescPatient?.prontuario || "S/P"} • Ala: {selectedPrescPatient?.alaNome || "Geral"} • Leito: {selectedPrescPatient?.leito || "S/L"})
+                      </span>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border-slate-300 shrink-0 ml-2">
+                    🔒 Prontuário Bloqueado
+                  </Badge>
+                </div>
+              ) : (
+                <Select
+                  value={prescFormData.pacienteId}
+                  onValueChange={(val) => setPrescFormData(prev => ({ ...prev, pacienteId: val }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o paciente..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pacientes.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.nome} (Pront: {p.prontuario}) - Leito: {p.leito || "S/L"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div>
@@ -2387,6 +2772,83 @@ export default function PacientesMedicao() {
               </div>
             </div>
 
+            {/* Frequência: Dias da Semana */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  Dias da Semana de Administração *
+                </Label>
+                <Badge variant="outline" className="bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold text-[11px]">
+                  {formatDiasSemana(prescFormData.diasSemana)}
+                </Badge>
+              </div>
+
+              {/* 7 Day Toggles */}
+              <div className="grid grid-cols-7 gap-1.5">
+                {DIAS_SEMANA_MAP.map(d => {
+                  const currentDias = parseDiasSemana(prescFormData.diasSemana);
+                  const isSelected = currentDias.includes(d.id);
+                  return (
+                    <button
+                      type="button"
+                      key={d.id}
+                      onClick={() => toggleDiaSemana(d.id)}
+                      className={cn(
+                        "py-2 px-1 text-xs font-bold rounded-lg border transition-all text-center flex flex-col items-center justify-center cursor-pointer",
+                        isSelected
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                      )}
+                      title={d.full}
+                    >
+                      <span>{d.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Atalhos rápidos de seleção */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                <span className="text-[10px] text-slate-400 font-medium mr-0.5">Atalhos:</span>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 1, 2, 3, 4, 5, 6] }))}
+                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                >
+                  Diário
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3, 4, 5] }))}
+                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                >
+                  Seg a Sex
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 3, 5] }))}
+                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                >
+                  Seg/Qua/Sex
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3] }))}
+                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                >
+                  Seg/Ter/Qua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 6] }))}
+                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                >
+                  Fim de Semana
+                </button>
+              </div>
+            </div>
+
             <div>
               <Label>Observações Gerais</Label>
               <Input
@@ -2395,11 +2857,27 @@ export default function PacientesMedicao() {
                 placeholder="Ex: Tomar após as refeições"
               />
             </div>
+
+            {editingPresc && prescFormData.gerarHistorico && (
+              <div>
+                <Label className="text-xs">Motivo da Alteração Posológica / Médica (Opcional)</Label>
+                <Input
+                  value={prescFormData.motivoAlteracao}
+                  onChange={(e) => setPrescFormData(prev => ({ ...prev, motivoAlteracao: e.target.value }))}
+                  placeholder="Ex: Ajuste de dosagem, redução gradual, etc."
+                  className="h-9 text-xs"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPrescModalOpen(false)}>Cancelar</Button>
-            <Button onClick={() => savePrescMutation.mutate(prescFormData)} disabled={!prescFormData.pacienteId || !prescFormData.medicamentoId}>
-              Salvar Prescrição
+            <Button 
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              onClick={() => savePrescMutation.mutate(prescFormData)} 
+              disabled={!prescFormData.pacienteId || !prescFormData.medicamentoId || savePrescMutation.isPending}
+            >
+              {editingPresc ? (prescFormData.gerarHistorico ? "Salvar Alteração e Gerar Histórico" : "Atualizar Prescrição") : "Salvar Prescrição"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2605,7 +3083,15 @@ export default function PacientesMedicao() {
                     ) : (
                       prescricoes.filter(pr => (pr.pacienteId === altaPacienteId || pr.paciente_id === altaPacienteId) && (pr.status === "Ativa" || !pr.status)).map(pr => (
                         <TableRow key={pr.id}>
-                          <TableCell className="font-medium">{pr.medicamentoNome}</TableCell>
+                          <TableCell className="font-medium">
+                            {pr.medicamentoNome}
+                            {(() => {
+                              const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+                              const rawC = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                              const hasC = rawC && pr.medicamentoNome?.toLowerCase().includes(rawC.toLowerCase());
+                              return rawC && !hasC ? ` (${rawC})` : "";
+                            })()}
+                          </TableCell>
                           <TableCell className="p-1">
                             <Input
                               type="number"

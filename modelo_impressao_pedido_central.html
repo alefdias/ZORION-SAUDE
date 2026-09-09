@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZORION SAÚDE — Requisição de Medicamentos (Pedido Farmácia Central)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    /* Barra Superior de Ações (Oculta na Impressão) */
+    .top-actions-bar {
+      width: 100%;
+      max-width: 820px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .top-actions-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .top-actions-info svg {
+      width: 20px;
+      height: 20px;
+      color: #2563eb;
+    }
+
+    .top-actions-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .top-actions-subtitle {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .btn-print {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background-color: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+      transition: all 0.15s ease;
+    }
+
+    .btn-print:hover {
+      background-color: #1d4ed8;
+      transform: translateY(-1px);
+    }
+
+    /* Folha A4 */
+    .a4-sheet {
+      width: 100%;
+      max-width: 820px;
+      background-color: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+      padding: 40px;
+      margin-bottom: 40px;
+    }
+
+    /* Cabeçalho */
+    .header-section {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: -0.5px;
+      color: #020617;
+    }
+
+    .brand-subtitle {
+      font-size: 13px;
+      font-weight: 800;
+      color: #1d4ed8;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .header-details {
+      font-size: 12px;
+      color: #475569;
+      margin-top: 6px;
+    }
+
+    .header-details strong {
+      color: #0f172a;
+    }
+
+    .header-meta {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    .header-meta strong {
+      color: #0f172a;
+    }
+
+    .priority-badge {
+      display: inline-block;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+    }
+
+    .priority-normal {
+      background-color: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+
+    .priority-urgente {
+      background-color: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+
+    .priority-emergencia {
+      background-color: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    /* Observações */
+    .observation-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 20px;
+      font-size: 11px;
+      color: #334155;
+    }
+
+    /* Tabela */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 24px;
+    }
+
+    th {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      padding: 8px 6px;
+      text-align: center;
+    }
+
+    th.text-left {
+      text-align: left;
+      padding-left: 10px;
+    }
+
+    td {
+      border: 1px solid #cbd5e1;
+      padding: 7px 6px;
+      color: #334155;
+    }
+
+    tr:nth-child(even) {
+      background-color: #fafafa;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .med-nome {
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .med-conc {
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .med-apres {
+      display: block;
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 1px;
+    }
+
+    .qtd-destaque {
+      font-weight: 800;
+      font-size: 13px;
+      color: #1e3a8a;
+      background-color: #eff6ff;
+      text-align: center;
+    }
+
+    tfoot tr td {
+      background-color: #f8fafc;
+      font-weight: 800;
+      border-top: 2px solid #64748b;
+      padding: 10px 8px;
+    }
+
+    .tfoot-total {
+      background-color: #dbeafe !important;
+      color: #1e3a8a;
+      font-size: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      text-align: center;
+    }
+
+    /* Assinaturas */
+    .signatures-section {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid #cbd5e1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      text-align: center;
+    }
+
+    .signature-line {
+      width: 220px;
+      border-bottom: 1px solid #475569;
+      margin: 0 auto 6px auto;
+    }
+
+    .signature-role {
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .signature-sub {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Impressão Real A4 */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        padding: 0 !important;
+      }
+
+      .no-print, .top-actions-bar {
+        display: none !important;
+      }
+
+      .a4-sheet {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+      }
+
+      @page {
+        size: A4 portrait;
+        margin: 12mm;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Barra de Controle Superior (visível na tela, invisível na impressão) -->
+  <div class="top-actions-bar no-print">
+    <div class="top-actions-info">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+      </svg>
+      <div>
+        <div class="top-actions-title">Modelo Formal de Impressão — Pedido à Central</div>
+        <div class="top-actions-subtitle">Visualização exata de como a folha A4 hospitalar é gerada no Zorion Saúde</div>
+      </div>
+    </div>
+    <button class="btn-print" onclick="window.print()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+      </svg>
+      Imprimir Folha A4
+    </button>
+  </div>
+
+  <!-- Folha Formal A4 Hospitalar -->
+  <div class="a4-sheet" id="printable-order-sheet">
+    
+    <!-- Cabeçalho -->
+    <div class="header-section">
+      <div>
+        <div class="brand-title">ZORION SAÚDE — FARMÁCIA HOSPITALAR</div>
+        <div class="brand-subtitle">REQUISIÇÃO DE MEDICAMENTOS • PEDIDO À FARMÁCIA CENTRAL</div>
+        <div class="header-details">
+          Origem: <strong>Farmácia Satélite</strong> • Setor/Ala: <strong>Ala Geral de Internação (Todos os Leitos)</strong>
+        </div>
+        <div class="header-details" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-top: 4px;">
+          Código do Pedido: <strong>PED-948210</strong> • Status: <strong>Pendente de Separação</strong>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div>Emissão: <strong>09/09/2026 às 14:45</strong></div>
+        <div>Prioridade: <span class="priority-badge priority-normal">Normal</span></div>
+        <div>Suprimento: <strong>3 dia(s)</strong></div>
+        <div>Margem de Segurança: <strong>+10%</strong></div>
+        <div>Abatido Estoque Satélite: <strong>Sim</strong></div>
+      </div>
+    </div>
+
+    <!-- Observações da Requisição -->
+    <div class="observation-box">
+      <strong>Observações da Requisição:</strong> [Margem: +10% | Estoque Satélite Abatido] Reposição programada para o fim de semana dos pacientes da Ala Geral.
+    </div>
+
+    <!-- Tabela de Itens Requisitados -->
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 42px;">Item</th>
+          <th style="width: 70px;">Cód.</th>
+          <th class="text-left">Medicamento / Concentração</th>
+          <th style="width: 100px;">Prescr. (3D)</th>
+          <th style="width: 70px;">Est. Sat.</th>
+          <th class="qtd-destaque" style="width: 110px;">Qtd Solicitada</th>
+          <th style="width: 85px;">Conferência</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="text-center font-mono">1</td>
+          <td class="text-center font-mono">MED-0012</td>
+          <td>
+            <span class="med-nome">DIPIRONA SÓDICA</span>
+            <span class="med-conc">(500mg)</span>
+            <span class="med-apres">[Comprimido]</span>
+          </td>
+          <td class="text-center font-mono">36 un</td>
+          <td class="text-center font-mono">10 un</td>
+          <td class="qtd-destaque font-mono">30 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+        <tr>
+          <td class="text-center font-mono">2</td>
+          <td class="text-center font-mono">MED-0045</td>
+          <td>
+            <span class="med-nome">CEFTRIAXONA</span>
+            <span class="med-conc">(1g)</span>
+            <span class="med-apres">[Frasco-Ampola (Injetável)]</span>
+          </td>
+          <td class="text-center font-mono">12 un</td>
+          <td class="text-center font-mono">2 un</td>
+          <td class="qtd-destaque font-mono">12 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+        <tr>
+          <td class="text-center font-mono">3</td>
+          <td class="text-center font-mono">MED-0089</td>
+          <td>
+            <span class="med-nome">OMEPRAZOL</span>
+            <span class="med-conc">(20mg)</span>
+            <span class="med-apres">[Cápsula]</span>
+          </td>
+          <td class="text-center font-mono">24 un</td>
+          <td class="text-center font-mono">5 un</td>
+          <td class="qtd-destaque font-mono">22 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+        <tr>
+          <td class="text-center font-mono">4</td>
+          <td class="text-center font-mono">MED-0104</td>
+          <td>
+            <span class="med-nome">PARACETAMOL</span>
+            <span class="med-conc">(750mg)</span>
+            <span class="med-apres">[Comprimido]</span>
+          </td>
+          <td class="text-center font-mono">18 un</td>
+          <td class="text-center font-mono">8 un</td>
+          <td class="qtd-destaque font-mono">12 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+        <tr>
+          <td class="text-center font-mono">5</td>
+          <td class="text-center font-mono">MED-0231</td>
+          <td>
+            <span class="med-nome">ONDANSETRONA</span>
+            <span class="med-conc">(4mg/2ml)</span>
+            <span class="med-apres">[Ampola]</span>
+          </td>
+          <td class="text-center font-mono">15 un</td>
+          <td class="text-center font-mono">3 un</td>
+          <td class="qtd-destaque font-mono">14 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+        <tr>
+          <td class="text-center font-mono">6</td>
+          <td class="text-center font-mono">MED-0312</td>
+          <td>
+            <span class="med-nome">METOCLOPRAMIDA</span>
+            <span class="med-conc">(10mg/2ml)</span>
+            <span class="med-apres">[Ampola]</span>
+          </td>
+          <td class="text-center font-mono">9 un</td>
+          <td class="text-center font-mono">1 un</td>
+          <td class="qtd-destaque font-mono">9 un</td>
+          <td class="text-center font-mono" style="color: #94a3b8;">[&nbsp;&nbsp;&nbsp;&nbsp;]</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" style="text-align: right; text-transform: uppercase;">
+            Total de Medicamentos: <strong>6 itens</strong> • Total de Unidades Requisitadas:
+          </td>
+          <td class="tfoot-total">99 un</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Assinaturas e Carimbos -->
+    <div class="signatures-section">
+      <div>
+        <div class="signature-line"></div>
+        <div class="signature-role">Solicitante (Farmácia Satélite)</div>
+        <div class="signature-sub">Assinatura / Carimbo CRF</div>
+      </div>
+      <div>
+        <div class="signature-line"></div>
+        <div class="signature-role">Atendido / Separado por (Farmácia Central)</div>
+        <div class="signature-sub">Assinatura / Carimbo CRF</div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
