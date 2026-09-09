@@ -48,7 +48,7 @@ function App() {
     };
   }, []);
 
-  // Limpeza automática de metades do banco de dados (GavetaPaciente e frações)
+  // Limpeza automática e garantia estrutural de tabelas
   useEffect(() => {
     const cleanMetades = async () => {
       try {
@@ -60,6 +60,13 @@ function App() {
         await invoke('execute_postgres', {
           ip, dbName, password,
           query: `
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade08" BOOLEAN DEFAULT false;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade14" BOOLEAN DEFAULT false;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade22" BOOLEAN DEFAULT false;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade06" BOOLEAN DEFAULT false;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "viaAdministracao" TEXT;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "via_administracao" TEXT;
+            ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativa';
             DELETE FROM "GavetaPaciente";
             UPDATE "PrescricaoPaciente" 
             SET "totalDiario" = ROUND("totalDiario") 

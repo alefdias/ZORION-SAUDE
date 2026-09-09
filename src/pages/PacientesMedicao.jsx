@@ -243,7 +243,8 @@ export default function PacientesMedicao() {
   // Prescription Mutations
   const savePrescMutation = useMutation({
     mutationFn: async (data) => {
-      const patient = pacientes.find(p => p.id === data.pacienteId);
+      const pacienteId = data.pacienteId || (editingPresc ? (editingPresc.pacienteId || editingPresc.paciente_id) : "");
+      const patient = pacientes.find(p => p.id === pacienteId);
       const med = medicamentos.find(m => m.id === data.medicamentoId);
 
       if (!med) {
@@ -258,15 +259,24 @@ export default function PacientesMedicao() {
       const esquema = `${d08}-${d14}-${d22}-${d06}`;
 
       const payload = {
-        ...data,
-        pacienteNome: patient ? patient.nome : "Paciente não informado",
-        prontuario: patient ? patient.prontuario : "",
-        alaNome: patient ? patient.alaNome : "",
-        leito: patient ? patient.leito : "",
-        medicamentoNome: med ? med.nome : "Medicamento não informado",
-        medicamentoCodigo: med ? med.codigo : "",
-        apresentacao: med ? med.apresentacao : "",
-        concentracao: med ? (med.concentracao || "") : "",
+        pacienteId: pacienteId,
+        pacienteNome: patient ? patient.nome : (data.pacienteNome || "Paciente não informado"),
+        prontuario: patient ? patient.prontuario : (data.prontuario || ""),
+        alaNome: patient ? (patient.alaNome || "") : (data.alaNome || ""),
+        leito: patient ? (patient.leito || "") : (data.leito || ""),
+        medicamentoId: data.medicamentoId,
+        medicamentoNome: med ? med.nome : (data.medicamentoNome || "Medicamento não informado"),
+        medicamentoCodigo: med ? (med.codigo || "") : (data.medicamentoCodigo || ""),
+        apresentacao: med ? (med.apresentacao || "") : (data.apresentacao || ""),
+        concentracao: med ? (med.concentracao || "") : (data.concentracao || ""),
+        dose08: String(data.dose08 ?? "0"),
+        dose14: String(data.dose14 ?? "0"),
+        dose22: String(data.dose22 ?? "0"),
+        dose06: String(data.dose06 ?? "0"),
+        isMetade08: Boolean(data.isMetade08),
+        isMetade14: Boolean(data.isMetade14),
+        isMetade22: Boolean(data.isMetade22),
+        isMetade06: Boolean(data.isMetade06),
         esquemaPosologico: esquema,
         totalDiario: totalDiario,
         horarios: JSON.stringify([
@@ -274,7 +284,11 @@ export default function PacientesMedicao() {
           { hora: "14:00", turno: "Tarde", dose: d14 },
           { hora: "22:00", turno: "Noite", dose: d22 },
           { hora: "06:00", turno: "Madrugada/Manhã", dose: d06 },
-        ])
+        ]),
+        dataInicio: data.dataInicio || format(new Date(), "yyyy-MM-dd"),
+        dataFim: data.dataFim || null,
+        status: data.status || "Ativa",
+        observacoes: data.observacoes || ""
       };
 
       let result;
@@ -284,7 +298,7 @@ export default function PacientesMedicao() {
           "ALTERACAO_PRESCRICAO",
           "PrescricaoPaciente",
           editingPresc.id,
-          `Alteração na prescrição do paciente (ID: ${pacienteId || editingPresc.pacienteId}): Medicamento '${editingPresc.medicamentoNome || payload.medicamentoId}', status: ${payload.status}`
+          `Alteração na prescrição do paciente (ID: ${pacienteId || editingPresc.pacienteId}): Medicamento '${editingPresc.medicamentoNome || payload.medicamentoNome}', status: ${payload.status}`
         );
       } else {
         result = await db.entities.PrescricaoPaciente.create(payload);
@@ -292,7 +306,7 @@ export default function PacientesMedicao() {
           "CRIACAO_PRESCRICAO",
           "PrescricaoPaciente",
           result?.id || pacienteId,
-          `Nova prescrição adicionada para paciente ID: ${pacienteId}: Medicamento ID: ${payload.medicamentoId}, via: ${payload.viaAdministracao || '-'}`
+          `Nova prescrição adicionada para paciente ID: ${pacienteId}: Medicamento ID: ${payload.medicamentoId}, via: ${med?.via_administracao || data.viaAdministracao || '-'}`
         );
       }
       return result;

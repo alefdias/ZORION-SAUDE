@@ -167,7 +167,61 @@ const ensureTableQuery = {
     VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin', false)
     ON CONFLICT DO NOTHING;
   `,
+  Paciente: `
+    CREATE TABLE IF NOT EXISTS "Paciente" (
+        "id" TEXT PRIMARY KEY,
+        "nome" TEXT NOT NULL,
+        "prontuario" TEXT,
+        "idade" INTEGER,
+        "alaId" TEXT,
+        "alaNome" TEXT,
+        "leito" TEXT,
+        "status" TEXT DEFAULT 'Ativo',
+        "observacoes" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "idade" INTEGER;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "alaId" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "alaNome" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "leito" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativo';
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
+  `,
   PrescricaoPaciente: `
+    CREATE TABLE IF NOT EXISTS "PrescricaoPaciente" (
+        "id" TEXT PRIMARY KEY,
+        "pacienteId" TEXT,
+        "pacienteNome" TEXT,
+        "prontuario" TEXT,
+        "alaNome" TEXT,
+        "leito" TEXT,
+        "medicamentoId" TEXT,
+        "medicamentoNome" TEXT,
+        "medicamentoCodigo" TEXT,
+        "apresentacao" TEXT,
+        "concentracao" TEXT,
+        "dose08" TEXT,
+        "dose14" TEXT,
+        "dose22" TEXT,
+        "dose06" TEXT,
+        "isMetade08" BOOLEAN DEFAULT false,
+        "isMetade14" BOOLEAN DEFAULT false,
+        "isMetade22" BOOLEAN DEFAULT false,
+        "isMetade06" BOOLEAN DEFAULT false,
+        "totalDiario" NUMERIC,
+        "esquemaPosologico" TEXT,
+        "horarios" TEXT,
+        "observacoes" TEXT,
+        "dataInicio" TEXT,
+        "dataFim" TEXT,
+        "status" TEXT DEFAULT 'Ativa',
+        "viaAdministracao" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "pacienteId" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "pacienteNome" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "prontuario" TEXT;
@@ -178,16 +232,25 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medicamentoCodigo" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "apresentacao" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "concentracao" TEXT;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose08" INTEGER;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose14" INTEGER;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose22" INTEGER;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose06" INTEGER;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "totalDiario" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose08" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose14" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose22" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose06" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade08" BOOLEAN DEFAULT false;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade14" BOOLEAN DEFAULT false;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade22" BOOLEAN DEFAULT false;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "isMetade06" BOOLEAN DEFAULT false;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "totalDiario" NUMERIC;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "esquemaPosologico" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "horarios" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataInicio" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dataFim" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativa';
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "viaAdministracao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "via_administracao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
   GavetaPaciente: `
     CREATE TABLE IF NOT EXISTS "GavetaPaciente" (
