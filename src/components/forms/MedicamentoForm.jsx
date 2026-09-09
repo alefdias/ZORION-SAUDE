@@ -114,7 +114,6 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
         nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "",
         concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false,
         origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false,
-        is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2,
         is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: ""
     });
 
@@ -141,16 +140,13 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                 portaria_344: medicamento.portaria_344 || false,
                 antimicrobiano: medicamento.antimicrobiano || false,
                 ccih: medicamento.ccih || false,
-                is_fracionado: Boolean(medicamento.medicamento_origem_id),
-                medicamento_origem_id: medicamento.medicamento_origem_id || "",
-                fator_fracionamento: medicamento.fator_fracionamento || 2,
                 is_adiantamento: Boolean(medicamento.is_adiantamento),
                 nota_fiscal: medicamento.nota_fiscal || "",
                 valor_compra: medicamento.valor_compra || "",
                 fornecedor_nome: medicamento.fornecedor_nome || "",
             });
         } else {
-            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_fracionado: false, medicamento_origem_id: "", fator_fracionamento: 2, is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "" });
+            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "" });
         }
     }, [medicamento, open]);
 
@@ -358,51 +354,6 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                         </div>
                     </div>
 
-                    {/* SEÇÃO DE FRACIONAMENTO */}
-                    <div className="bg-purple-50 p-3 rounded-lg border border-purple-200 space-y-3">
-                        <div className="flex items-center gap-2">
-                            <input 
-                                type="checkbox" 
-                                id="is_fracionado" 
-                                checked={form.is_fracionado} 
-                                onChange={(e) => setForm({ ...form, is_fracionado: e.target.checked, medicamento_origem_id: e.target.checked ? form.medicamento_origem_id : "", fator_fracionamento: e.target.checked ? (form.fator_fracionamento || 2) : 0 })}
-                                className="rounded border-purple-300 w-4 h-4 text-purple-600 focus:ring-purple-500" 
-                            />
-                            <Label htmlFor="is_fracionado" className="cursor-pointer text-sm font-bold text-purple-700">
-                                Este é um medicamento fracionado (Ex: Metadinha)?
-                            </Label>
-                        </div>
-                        
-                        {form.is_fracionado && (
-                            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-purple-200">
-                                <div>
-                                    <Label className="text-purple-700">Medicamento Original (Pai)</Label>
-                                    <select 
-                                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                        value={form.medicamento_origem_id}
-                                        onChange={handleChange("medicamento_origem_id")}
-                                        required={form.is_fracionado}
-                                    >
-                                        <option value="">Selecione o comprimido pai...</option>
-                                        {dbMedicamentos.filter(m => !m.medicamento_origem_id).map(med => (
-                                            <option key={med.id} value={med.id}>{med.nome} {med.concentracao && `- ${med.concentracao}`}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <Label className="text-purple-700">Rende quantas partes? (Fator)</Label>
-                                    <Input 
-                                        type="number" 
-                                        min="2" 
-                                        value={form.fator_fracionamento} 
-                                        onChange={(e) => setForm({ ...form, fator_fracionamento: parseInt(e.target.value) || 2 })}
-                                        required={form.is_fracionado}
-                                    />
-                                    <span className="text-xs text-purple-600 mt-1 block">Ex: 2 (Um comprimido inteiro vira duas metades)</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
                     {/* SEÇÃO DE ADIANTAMENTO / CARTÃO DO ESTADO */}
                     <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-900/40 space-y-3">
