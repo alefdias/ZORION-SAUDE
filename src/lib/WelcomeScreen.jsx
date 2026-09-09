@@ -400,6 +400,7 @@ export function WelcomeScreen({ onEnter }) {
 
     // Success login
     sessionStorage.setItem("axion_active_user", JSON.stringify(user));
+    localStorage.setItem("pharma_user", JSON.stringify(user));
     if (carrinhoSubMode) {
       sessionStorage.setItem("axion_carrinho_mode", carrinhoSubMode);
     }
@@ -435,6 +436,7 @@ export function WelcomeScreen({ onEnter }) {
     localStorage.setItem("axion_users", JSON.stringify(updatedUsers));
     
     sessionStorage.setItem("axion_active_user", JSON.stringify(updatedUser));
+    localStorage.setItem("pharma_user", JSON.stringify(updatedUser));
     if (carrinhoSubMode) {
       sessionStorage.setItem("axion_carrinho_mode", carrinhoSubMode);
     }

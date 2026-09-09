@@ -180,10 +180,26 @@ export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
+
   useEffect(() => {
     document.documentElement.classList.remove("dark");
-    setUser({ full_name: "Administrador" });
+    try {
+      const stored = sessionStorage.getItem("axion_active_user") || localStorage.getItem("pharma_user");
+      if (stored) {
+        const u = JSON.parse(stored);
+        setUser({
+          ...u,
+          full_name: u.nome || u.username || u.login || "Administrador",
+          cargo: u.cargo || u.perfil || "Administrador"
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn("Erro ao ler usuário no Layout:", e);
+    }
+    setUser({ full_name: "Administrador", cargo: "Administrador" });
   }, []);
+
   const [themeColor, setThemeColorState] = useState(() => {
     return localStorage.getItem("zorion_theme") || "theme-ocean";
   });
@@ -197,11 +213,6 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     document.documentElement.classList.add(themeColor);
-  }, []);
-
-
-  useEffect(() => {
-    setUser({ full_name: "Administrador" });
   }, []);
 
   const { showWelcome } = useWelcome();
