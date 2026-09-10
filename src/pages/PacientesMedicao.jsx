@@ -1919,18 +1919,18 @@ export default function PacientesMedicao() {
                           {p.prontuario || "S/P"}
                         </span>
                       </TableCell>
-                      <TableCell>
-                        <div>
+                      <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                        <div className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                           <button
                             onClick={() => setViewPatientDetails(p)}
-                            className="text-left font-bold text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5 group cursor-pointer"
+                            className="text-left font-bold text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-start gap-1.5 group cursor-pointer break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug"
                             title="Clique para ver o prontuário e prescrições completas"
                           >
-                            <span>{p.nome}</span>
-                            <FileText className="w-3 h-3 opacity-70 group-hover:opacity-100 text-blue-500" />
+                            <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{p.nome}</span>
+                            <FileText className="w-3 h-3 opacity-70 group-hover:opacity-100 text-blue-500 shrink-0 mt-0.5" />
                           </button>
                           {p.observacoes && (
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 truncate max-w-[280px]">
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 break-words whitespace-normal [overflow-wrap:anywhere] mt-0.5">
                               Obs: {p.observacoes}
                             </p>
                           )}
@@ -2233,35 +2233,37 @@ export default function PacientesMedicao() {
           
           {/* Header Section (Blue) */}
           <div className="bg-[#0e3b8f] text-white p-6 shrink-0 relative">
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-5">
-                <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center text-[#0e3b8f]">
-                  <User className="w-10 h-10" />
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+              <div className="flex items-start gap-4 min-w-0 flex-1">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5">
+                  <User className="w-8 h-8 sm:w-10 sm:h-10" />
                 </div>
-                <div>
-                   <h2 className="text-2xl font-black mb-1">{viewPatientDetails?.nome}</h2>
-                   <div className="text-blue-200 text-sm flex gap-2">
+                <div className="min-w-0 flex-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                   <h2 className="text-xl sm:text-2xl font-black mb-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-tight">
+                     {viewPatientDetails?.nome}
+                   </h2>
+                   <div className="text-blue-200 text-xs sm:text-sm flex gap-2 flex-wrap">
                      <span>ID: {viewPatientDetails?.prontuario}</span> |
                      <span>{viewPatientDetails?.idade || '--'} anos</span>
                    </div>
-                   <div className="text-blue-200 text-sm mt-1 flex items-center gap-2">
+                   <div className="text-blue-200 text-xs sm:text-sm mt-1 flex items-center gap-2 flex-wrap">
                      <span>Setor: {viewPatientDetails?.alaNome || "Não informado"}</span> |
                      <span>Leito: {viewPatientDetails?.leito || "S/L"}</span>
                    </div>
                 </div>
               </div>
-              <div className="text-right flex flex-col items-end gap-2">
-                <div className="text-blue-200 text-sm mb-1">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
-                <div className="flex gap-2">
+              <div className="text-right flex flex-col items-start sm:items-end gap-2 shrink-0">
+                <div className="text-blue-200 text-xs sm:text-sm mb-1">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
+                <div className="flex gap-2 flex-wrap">
                   <Button 
                     variant="outline" 
-                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5" 
+                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
                     onClick={() => handleOpenTransferModal([viewPatientDetails.id])}
                   >
                     <ArrowLeftRight className="w-4 h-4" />
                     Transferir Ala
                   </Button>
-                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
+                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 text-xs sm:text-sm" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
                      Editar Paciente
                   </Button>
                 </div>
@@ -2564,143 +2566,6 @@ export default function PacientesMedicao() {
                        </Table>
                      </div>
                   </div>
-
-                  {/* Dispensações e Saídas da Farmácia Satélite */}
-                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm mt-6">
-                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
-                        <div className="flex gap-3 items-center">
-                           <div className="bg-blue-100 dark:bg-blue-950/60 p-2 rounded-lg text-blue-700 dark:text-blue-300">
-                             <PackageMinus className="w-5 h-5" />
-                           </div>
-                           <div>
-                             <div className="flex items-center gap-2">
-                               <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                                 Dispensações e Saídas da Satélite
-                               </h3>
-                               {(() => {
-                                 const saidasPac = getSaidasDoPaciente(viewPatientDetails?.nome, viewPatientDetails?.id);
-                                 return saidasPac.length > 0 ? (
-                                   <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border-none text-xs font-bold">
-                                     {saidasPac.length} registro{saidasPac.length > 1 ? 's' : ''}
-                                   </Badge>
-                                 ) : null;
-                               })()}
-                             </div>
-                             <p className="text-sm text-slate-500">
-                               Histórico de saídas de medicamentos da farmácia satélite registradas para este paciente
-                             </p>
-                           </div>
-                        </div>
-                     </div>
-                     
-                     <div className="overflow-x-auto">
-                       <Table>
-                         <TableHeader className="bg-slate-50/50">
-                            <TableRow>
-                               <TableHead className="font-bold text-slate-600">Data / Horário</TableHead>
-                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
-                               <TableHead className="font-bold text-slate-600">Lote</TableHead>
-                               <TableHead className="font-bold text-slate-600 text-center">Quantidade</TableHead>
-                               <TableHead className="font-bold text-slate-600">Tipo / Movimento</TableHead>
-                               <TableHead className="font-bold text-slate-600">Setor / Destino</TableHead>
-                               <TableHead className="font-bold text-slate-600">Motivo / Observação</TableHead>
-                            </TableRow>
-                         </TableHeader>
-                         <TableBody>
-                            {(() => {
-                               const patientSaidas = getSaidasDoPaciente(viewPatientDetails?.nome, viewPatientDetails?.id);
-                               if (patientSaidas.length === 0) {
-                                 return (
-                                   <TableRow>
-                                     <TableCell colSpan={7} className="text-center py-8 text-slate-400">
-                                       <div className="flex flex-col items-center justify-center gap-1">
-                                         <PackageMinus className="w-8 h-8 text-slate-300 stroke-1" />
-                                         <span className="font-medium text-slate-500">Nenhuma saída ou dispensação registrada para este paciente.</span>
-                                         <span className="text-xs text-slate-400">Quando registrar uma saída vinculando este paciente em Movimentação &gt; Saída, ela constará aqui automaticamente.</span>
-                                       </div>
-                                     </TableCell>
-                                   </TableRow>
-                                 );
-                               }
-
-                               return patientSaidas.map((s, idx) => {
-                                  const med = medicamentos.find(m => m.id === (s.medicamento_id || s.medicamentoId));
-                                  const rawConc = (s.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
-                                  const medNome = s.medicamento_nome || s.medicamentoNome || med?.nome || "Medicamento não informado";
-                                  const hasConcInName = rawConc && medNome.toLowerCase().includes(rawConc.toLowerCase());
-                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
-                                  const apresentacao = med?.apresentacao || "Comprimido";
-
-                                  let dataFormatada = "--";
-                                  const rawDate = s.created_at || s.data_saida;
-                                  if (rawDate) {
-                                    try {
-                                      const parsed = new Date(rawDate);
-                                      if (!isNaN(parsed.getTime())) {
-                                        dataFormatada = format(parsed, "dd/MM/yyyy HH:mm", { locale: ptBR });
-                                      } else {
-                                        dataFormatada = rawDate;
-                                      }
-                                    } catch {
-                                      dataFormatada = rawDate;
-                                    }
-                                  }
-
-                                  const loteObj = lotes.find(l => l.id === (s.lote_id || s.loteId));
-                                  const numeroLote = s.numero_lote || s.lote_numero || loteObj?.numero_lote || "N/I";
-                                  const isBaixaFixa = s.motivo && s.motivo.startsWith("Baixa de medicação fixa");
-
-                                  return (
-                                    <TableRow key={s.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors border-b border-slate-100 dark:border-slate-800">
-                                       <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-mono whitespace-nowrap">
-                                         {dataFormatada}
-                                       </TableCell>
-                                       <TableCell className="py-2.5">
-                                         <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
-                                           {medNome}
-                                           {concentracao && (
-                                             <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium">
-                                               ({concentracao})
-                                             </span>
-                                           )}
-                                         </span>
-                                         <Badge variant="outline" className="block w-max mt-0.5 text-[10px] bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 rounded">
-                                           {apresentacao}
-                                         </Badge>
-                                       </TableCell>
-                                       <TableCell className="text-xs font-mono text-slate-600 dark:text-slate-400">
-                                         {numeroLote}
-                                       </TableCell>
-                                       <TableCell className="text-center">
-                                         <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 font-bold font-mono">
-                                           -{s.quantidade} un
-                                         </Badge>
-                                       </TableCell>
-                                       <TableCell>
-                                         {isBaixaFixa ? (
-                                           <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 text-[11px]">
-                                             Baixa Periódica
-                                           </Badge>
-                                         ) : (
-                                           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-medium">
-                                             Saída Satélite
-                                           </Badge>
-                                         )}
-                                       </TableCell>
-                                       <TableCell className="text-xs text-slate-600 dark:text-slate-400">
-                                         {s.destino || s.ala_nome || viewPatientDetails?.alaNome || "Farmácia Satélite"}
-                                       </TableCell>
-                                       <TableCell className="text-xs text-slate-600 dark:text-slate-400 max-w-[220px] truncate" title={s.motivo || s.observacao || ""}>
-                                         {s.motivo || s.observacao || "Atendimento ao paciente"}
-                                       </TableCell>
-                                    </TableRow>
-                                  );
-                               });
-                            })()}
-                         </TableBody>
-                       </Table>
-                     </div>
-                  </div>
                </div>
             )}
           </div>
@@ -2784,9 +2649,9 @@ export default function PacientesMedicao() {
 
                           return (
                             <TableRow key={pr.id} className="hover:bg-slate-50/50">
-                              <TableCell>
-                                <p className="font-bold text-xs text-slate-900 dark:text-slate-100">{pac?.nome || "Paciente"}</p>
-                                <p className="text-[10px] text-slate-500 font-mono">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
+                              <TableCell className="max-w-[200px] min-w-[130px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                                <p className="font-bold text-xs text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{pac?.nome || "Paciente"}</p>
+                                <p className="text-[10px] text-slate-500 font-mono break-words">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
                               </TableCell>
                               <TableCell className="max-w-[260px] min-w-[150px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                                 <p className="font-bold text-xs text-blue-900 dark:text-blue-200 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
@@ -2884,19 +2749,19 @@ export default function PacientesMedicao() {
             <div>
               <Label>Paciente *</Label>
               {isPatientLocked ? (
-                <div className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-sm mt-1">
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <User className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div className="truncate">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-sm mt-1">
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                    <User className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] block leading-snug">
                         {selectedPrescPatient?.nome || "Paciente Selecionado"}
                       </span>
-                      <span className="text-xs text-slate-500 ml-1.5 font-mono">
+                      <span className="text-xs text-slate-500 font-mono block mt-0.5 break-words [overflow-wrap:anywhere]">
                         (Pront: {selectedPrescPatient?.prontuario || "S/P"} • Ala: {selectedPrescPatient?.alaNome || "Geral"} • Leito: {selectedPrescPatient?.leito || "S/L"})
                       </span>
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-[10px] bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border-slate-300 shrink-0 ml-2">
+                  <Badge variant="outline" className="text-[10px] bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border-slate-300 shrink-0 self-start sm:self-center ml-1">
                     🔒 Prontuário Bloqueado
                   </Badge>
                 </div>
@@ -2905,12 +2770,21 @@ export default function PacientesMedicao() {
                   value={prescFormData.pacienteId}
                   onValueChange={(val) => setPrescFormData(prev => ({ ...prev, pacienteId: val }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full h-auto min-h-[42px] py-2 px-3 text-left [&>span]:!line-clamp-none [&>span]:!whitespace-normal break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                     <SelectValue placeholder="Selecione o paciente..." />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-w-[calc(100vw-2rem)] sm:max-w-[520px]">
                     {pacientes.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.nome} (Pront: {p.prontuario}) - Leito: {p.leito || "S/L"}</SelectItem>
+                      <SelectItem key={p.id} value={p.id} className="whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] py-2.5">
+                        <div className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] text-left">
+                          <span className="font-bold text-slate-900 dark:text-slate-100 block break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
+                            {p.nome}
+                          </span>
+                          <span className="text-xs text-slate-500 font-mono block mt-0.5">
+                            Pront: {p.prontuario || "S/P"} • Ala: {p.alaNome || "Geral"} • Leito: {p.leito || "S/L"}
+                          </span>
+                        </div>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
