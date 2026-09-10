@@ -112,11 +112,31 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   // Calculation of medication needs per selected Ala, Days, Safety Margin, and Stock Discount
   const calculoNecessidade = useMemo(() => {
     const ativas = prescricoes.filter(p => {
-      if (p.status !== "Ativa") return false;
-      const pac = pacientes.find(patient => patient.id === p.pacienteId);
-      if (!pac || pac.status === "Alta") return false;
-      if (selectedAlaId !== "all" && pac.alaId !== selectedAlaId && pac.alaNome !== alas.find(a => a.id === selectedAlaId)?.nome) {
-        return false;
+      // 1. Status check: aceita Ativa, Ativo (case-insensitive) ou sem status definido
+      const statusStr = String(p.status || "Ativa").trim().toLowerCase();
+      if (statusStr !== "ativa" && statusStr !== "ativo") return false;
+
+      // 2. Paciente check
+      const pacId = p.pacienteId || p.paciente_id;
+      const pac = pacientes.find(patient => 
+        (pacId && String(patient.id) === String(pacId)) ||
+        (p.pacienteNome && patient.nome && patient.nome.trim().toLowerCase() === p.pacienteNome.trim().toLowerCase())
+      );
+      if (pac && (pac.status === "Alta" || pac.status === "alta" || pac.ativo === false)) return false;
+
+      // 3. Ala check
+      if (selectedAlaId !== "all") {
+        const alaObj = alas.find(a => String(a.id) === String(selectedAlaId));
+        const alaNomeSelected = alaObj?.nome?.trim().toLowerCase();
+        const pacAlaId = pac ? String(pac.alaId || pac.ala_id || "") : "";
+        const pacAlaNome = (pac?.alaNome || pac?.ala_nome || p.alaNome || p.ala_nome || "").trim().toLowerCase();
+
+        const matchAlaId = pacAlaId && pacAlaId === String(selectedAlaId);
+        const matchAlaNome = Boolean(alaNomeSelected && pacAlaNome && pacAlaNome === alaNomeSelected);
+
+        if (!matchAlaId && !matchAlaNome) {
+          return false;
+        }
       }
       return true;
     });
@@ -124,34 +144,51 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     const medMap = {};
 
     ativas.forEach(p => {
-      const med = medicamentos.find(m => m.id === p.medicamentoId) || {
-        nome: p.medicamentoNome || "Medicamento",
-        codigo: p.medicamentoCodigo || "-",
+      const medId = p.medicamentoId || p.medicamento_id;
+      const med = medicamentos.find(m => 
+        (medId && String(m.id) === String(medId)) ||
+        (p.medicamentoNome && m.nome && m.nome.trim().toLowerCase() === p.medicamentoNome.trim().toLowerCase())
+      ) || {
+        nome: p.medicamentoNome || p.nome || "Medicamento",
+        codigo: p.medicamentoCodigo || p.codigo || "-",
         apresentacao: p.apresentacao || "",
         concentracao: p.concentracao || "",
         estoque_satelite: 0
       };
 
-      const dailyDose = p.totalDiario || 0;
+      const d08 = Number(p.dose08 ?? p.dose_08 ?? 0) || 0;
+      const d14 = Number(p.dose14 ?? p.dose_14 ?? 0) || 0;
+      const d22 = Number(p.dose22 ?? p.dose_22 ?? 0) || 0;
+      const d06 = Number(p.dose06 ?? p.dose_06 ?? 0) || 0;
+      const sumDoses = d08 + d14 + d22 + d06;
+
+      let dailyDose = Number(p.totalDiario ?? p.total_diario ?? 0);
+      if (!dailyDose || dailyDose <= 0) {
+        dailyDose = sumDoses > 0 ? sumDoses : (Number(p.dose) || 1);
+      }
+
       const calculatedTotal = dailyDose * effectiveDays;
 
-      if (!medMap[p.medicamentoId]) {
-        medMap[p.medicamentoId] = {
-          medicamentoId: p.medicamentoId,
-          nome: med.nome,
-          codigo: med.codigo,
-          apresentacao: med.apresentacao,
-          concentracao: med.concentracao,
-          estoqueSatelite: med.estoque_satelite || 0,
+      // Chave única para nunca colidir em undefined e não sobrescrever medicamentos
+      const groupKey = medId ? String(medId) : (med.id ? String(med.id) : (med.nome ? med.nome.trim().toLowerCase() : String(p.id)));
+
+      if (!medMap[groupKey]) {
+        medMap[groupKey] = {
+          medicamentoId: med.id || medId || groupKey,
+          nome: med.nome || p.medicamentoNome || "Medicamento",
+          codigo: med.codigo || p.medicamentoCodigo || "-",
+          apresentacao: med.apresentacao || p.apresentacao || "",
+          concentracao: med.concentracao || p.concentracao || "",
+          estoqueSatelite: Number(med.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdCalculada: 0,
           totalPacientes: 0
         };
       }
 
-      medMap[p.medicamentoId].qtdDiaria += dailyDose;
-      medMap[p.medicamentoId].qtdCalculada += calculatedTotal;
-      medMap[p.medicamentoId].totalPacientes += 1;
+      medMap[groupKey].qtdDiaria += dailyDose;
+      medMap[groupKey].qtdCalculada += calculatedTotal;
+      medMap[groupKey].totalPacientes += 1;
     });
 
     return Object.values(medMap).map(item => {
@@ -173,7 +210,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         qtdMargemExtra,
         qtdSugerida
       };
-    }).sort((a, b) => a.nome.localeCompare(b.nome));
+    }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [prescricoes, pacientes, medicamentos, selectedAlaId, alas, effectiveDays, effectiveMargem, descontarEstoque]);
 
   // Resumo macro do pedido calculado
@@ -289,32 +326,35 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
   const handleOpenPrintPreview = (pedidoCustom = null) => {
     if (pedidoCustom) {
-      let itens = pedidoCustom.itens || [];
-      if (typeof itens === "string") {
-        try { itens = JSON.parse(itens); } catch {}
+      let rawItens = pedidoCustom.itens || pedidoCustom.itens_json || [];
+      if (typeof rawItens === "string") {
+        try { rawItens = JSON.parse(rawItens); } catch {}
       }
+      const itensArr = Array.isArray(rawItens) ? rawItens : [];
       setPrintOrderData({
         codigo: pedidoCustom.codigo || "PED-CENTRAL",
-        alaNome: pedidoCustom.ala_nome || "Geral",
-        dataSolicitacao: pedidoCustom.data_solicitacao || new Date().toISOString(),
-        dias: pedidoCustom.dias_calculados || effectiveDays,
-        margem: pedidoCustom.margem_seguranca || 0,
-        descontarEstoque: pedidoCustom.descontar_estoque === 1,
+        alaNome: pedidoCustom.ala_nome || pedidoCustom.alaNome || "Geral",
+        dataSolicitacao: pedidoCustom.data_solicitacao || pedidoCustom.dataSolicitacao || new Date().toISOString(),
+        dias: pedidoCustom.dias_calculados || pedidoCustom.dias || effectiveDays,
+        margem: pedidoCustom.margem_seguranca || pedidoCustom.margem || 0,
+        descontarEstoque: pedidoCustom.descontar_estoque === 1 || pedidoCustom.descontarEstoque === true,
         prioridade: pedidoCustom.prioridade || "Normal",
         status: pedidoCustom.status || "Pendente",
         observacao: pedidoCustom.observacoes || pedidoCustom.observacao || "",
-        itens: itens.map(i => ({
+        itens: itensArr.map(i => ({
           codigo: i.codigo || "-",
-          nome: i.medicamento_nome || i.nome,
+          nome: i.medicamento_nome || i.medicamentoNome || i.nome || "Medicamento",
           concentracao: i.concentracao || "",
           apresentacao: i.apresentacao || "",
-          qtdPrescrita: i.qtd_prescrita || i.qtdCalculada || 0,
+          qtdPrescrita: i.qtd_prescrita ?? i.qtdPrescrita ?? i.qtdCalculada ?? 0,
           estoqueSatelite: i.estoque_satelite_momento ?? i.estoqueSatelite ?? 0,
-          qtdSolicitada: i.qtd_solicitada !== undefined ? i.qtd_solicitada : (i.finalQtd || 0)
+          qtdSolicitada: i.qtd_solicitada !== undefined 
+            ? i.qtd_solicitada 
+            : (i.qtdSolicitada !== undefined ? i.qtdSolicitada : (i.finalQtd ?? 0))
         }))
       });
     } else {
-      const alaObj = alas.find(a => a.id === selectedAlaId);
+      const alaObj = alas.find(a => String(a.id) === String(selectedAlaId));
       const alaNomeStr = selectedAlaId === "all" ? "Todas as Alas" : (alaObj?.nome || "Ala Selecionada");
 
       const itens = calculoNecessidade.map(item => {
@@ -866,7 +906,10 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               ) : (
                 filteredPedidos.map(p => {
                   let itensArr = [];
-                  try { itensArr = JSON.parse(p.itens_json || "[]"); } catch {}
+                  try {
+                    if (Array.isArray(p.itens)) itensArr = p.itens;
+                    else itensArr = JSON.parse(p.itens_json || "[]");
+                  } catch {}
 
                   return (
                     <TableRow key={p.id} className="hover:bg-slate-50">
@@ -956,7 +999,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
       {/* ─── MODAL DE PREVIEW DA IMPRESSÃO EM TELA ────────────────────── */}
       <Dialog open={Boolean(printOrderData)} onOpenChange={(open) => !open && setPrintOrderData(null)}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-0 border-none bg-slate-100 dark:bg-slate-900 shadow-2xl">
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-0 border-none bg-slate-100 dark:bg-slate-900 shadow-2xl print:!hidden print:hidden">
           <DialogHeader className="p-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between no-print sticky top-0 z-10">
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-blue-600" />
@@ -1004,14 +1047,21 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
             color: #000000 !important;
             width: 100% !important;
             height: auto !important;
-            min-height: 0 !important;
+            min-height: auto !important;
             overflow: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+          /* Oculta rigorosamente TUDO que for filho do body, exceto nosso portal de impressão */
+          body > *:not(#print-order-sheet-portal) {
+            display: none !important;
+          }
           /* Ocultar app root, overlays e modais do radix, navegações e barras */
           #root,
+          [role="dialog"],
           [data-radix-portal],
+          [data-state],
+          .fixed,
           .no-print,
           nav,
           header,
@@ -1047,7 +1097,19 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           #print-order-sheet-portal thead {
             display: table-header-group !important;
           }
+          #print-order-sheet-portal tbody {
+            display: table-row-group !important;
+          }
           #print-order-sheet-portal tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          #print-order-sheet-portal td, #print-order-sheet-portal th {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          #print-order-sheet-portal tfoot {
+            display: table-footer-group !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
@@ -1202,8 +1264,12 @@ function PrintOrderSheetContent({ data }) {
 // ─── SUBCOMPONENTE MODAL DE DETALHES & CONFERÊNCIA ───────────────────────────
 export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending, onPrint }) {
   const [itensState, setItensState] = useState(() => {
-    const rawItens = pedido.itens || [];
-    return rawItens.map(i => ({
+    let rawItens = pedido.itens || pedido.itens_json || [];
+    if (typeof rawItens === "string") {
+      try { rawItens = JSON.parse(rawItens); } catch {}
+    }
+    const arr = Array.isArray(rawItens) ? rawItens : [];
+    return arr.map(i => ({
       ...i,
       qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida
     }));
@@ -1248,7 +1314,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden print:!hidden print:hidden">
         <DialogHeader className="border-b pb-3">
           <div className="flex justify-between items-center pr-6">
             <div>
@@ -1469,7 +1535,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
             <Button
               type="button"
               variant="outline"
-              onClick={() => onPrint?.(pedido)}
+              onClick={() => onPrint?.({ ...pedido, itens: itensState })}
               className="gap-1.5 font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
             >
               <Printer className="w-4 h-4 text-slate-600" />
