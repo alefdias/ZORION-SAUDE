@@ -805,20 +805,20 @@ export default function SateliteAdiantamento() {
                         </TableCell>
 
                         {/* Medicamentos */}
-                        <TableCell>
+                        <TableCell className="max-w-[320px] min-w-[180px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                           <div className="space-y-1">
                             {pac.medicamentosList.map((mItem, idx) => (
                               <div key={idx} className="flex items-center gap-1.5 flex-wrap">
-                                <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border-amber-300 text-xs font-semibold">
+                                <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border-amber-300 text-xs font-semibold whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] text-left inline-block max-w-full leading-snug py-1">
                                   💳 {mItem.med?.nome || "Medicamento"}
                                 </Badge>
                                 {mItem.med?.concentracao && (
-                                  <span className="text-[11px] text-slate-500">
+                                  <span className="text-[11px] text-slate-500 whitespace-nowrap">
                                     {mItem.med.concentracao}
                                   </span>
                                 )}
                                 {mItem.med?.nota_fiscal && (
-                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-600 dark:text-slate-400 border font-mono">
+                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-600 dark:text-slate-400 border font-mono whitespace-nowrap">
                                     NF: {mItem.med.nota_fiscal}
                                   </span>
                                 )}
@@ -830,11 +830,18 @@ export default function SateliteAdiantamento() {
                         {/* Posologia Prescrita */}
                         <TableCell className="text-center">
                           {pac.medicamentosList.map((mItem, idx) => (
-                            <div key={idx} className="text-xs text-slate-700 dark:text-slate-300">
+                            <div key={idx} className="text-xs text-slate-700 dark:text-slate-300 my-0.5">
                               {mItem.prescricao?.esquemaPosologico ? (
-                                <span className="font-mono font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border">
-                                  {mItem.prescricao.esquemaPosologico}
-                                </span>
+                                <div className="flex flex-col items-center">
+                                  <span className="font-mono font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border">
+                                    {mItem.prescricao.esquemaPosologico}
+                                  </span>
+                                  {mItem.prescricao.horarioInicio && (
+                                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold block mt-0.5">
+                                      Início: {mItem.prescricao.horarioInicio} {mItem.prescricao.horarioInicio === '22:00' ? '🌙' : mItem.prescricao.horarioInicio === '14:00' ? '🌤️' : mItem.prescricao.horarioInicio === '06:00' ? '🌌' : '☀️'}
+                                    </span>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-slate-400 text-xs">Saída Avulsa</span>
                               )}

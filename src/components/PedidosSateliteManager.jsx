@@ -732,9 +732,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                       return (
                         <TableRow key={item.medicamentoId} className="hover:bg-slate-50/80">
                           <TableCell className="font-mono text-xs text-slate-500">{item.codigo || "-"}</TableCell>
-                          <TableCell>
-                            <p className="font-bold text-slate-900 dark:text-slate-100">{item.nome}</p>
-                            <p className="text-xs text-slate-500">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
+                          <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                            <p className="font-bold text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.nome}</p>
+                            <p className="text-xs text-slate-500 break-words whitespace-normal">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
                           </TableCell>
                           <TableCell className="text-center font-mono font-semibold">
                             {item.qtdDiaria} un/dia
@@ -1261,9 +1261,9 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                     </TableCell>
                   )}
 
-                  <TableCell>
-                    <p className="font-bold text-slate-900">{item.medicamento_nome}</p>
-                    <p className="text-xs text-slate-500">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
+                  <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                    <p className="font-bold text-slate-900 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.medicamento_nome}</p>
+                    <p className="text-xs text-slate-500 break-words whitespace-normal">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
                     {item.qtd_prescrita !== undefined && (
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         Prescrição: <span className="font-semibold">{item.qtd_prescrita} un</span>

@@ -73,22 +73,22 @@ export function ComboboxMedicamento({
                     value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : "data-[selected=true]:bg-slate-100"
                 )}
             >
-                <div className="flex items-center gap-2 w-full max-w-full min-w-0 pr-6 overflow-hidden">
+                <div className="flex items-start gap-2 w-full max-w-full min-w-0 pr-6">
                     {m.codigo && (
-                        <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 uppercase shrink-0 text-slate-600">
+                        <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 uppercase shrink-0 text-slate-600 mt-0.5">
                             {m.codigo}
                         </span>
                     )}
                     {m.is_adiantamento && (
-                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0">
+                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0 mt-0.5">
                             💳 Adiantamento
                         </span>
                     )}
                     {isPsicotropico(m.grupo_terapeutico) && (
-                        <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
+                        <User className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" title="Requer nome do paciente" />
                     )}
                     <span className={cn(
-                        "truncate min-w-0 flex-1 text-left",
+                        "break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] text-xs leading-snug flex-1 text-left min-w-0",
                         isMav(m) && "text-red-900 font-bold",
                         !isMav(m) && hasSatelite ? "text-emerald-700 font-bold" : "text-slate-800"
                     )} title={formatMedLabel(m)}>
@@ -97,7 +97,7 @@ export function ComboboxMedicamento({
                     </span>
                 </div>
                 {value === m.id && (
-                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600 shrink-0" />
                 )}
             </CommandItem>
         );
@@ -110,24 +110,24 @@ export function ComboboxMedicamento({
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className="w-full max-w-full justify-between font-normal h-auto min-h-10 text-left px-3 py-2 bg-white min-w-0 overflow-hidden"
+                    className="w-full max-w-full justify-between font-normal h-auto min-h-10 text-left px-3 py-2 bg-white min-w-0 !whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] overflow-hidden"
                 >
                     {selectedMed ? (
-                        <div className="flex items-center gap-2 truncate overflow-hidden min-w-0 flex-1">
+                        <div className="flex items-start gap-2 min-w-0 flex-1 flex-wrap py-0.5 w-full">
                             {selectedMed.codigo && (
-                                <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0 text-slate-600 border border-slate-200">
+                                <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0 text-slate-600 border border-slate-200 mt-0.5">
                                     {selectedMed.codigo}
                                 </span>
                             )}
                             {selectedMed.is_adiantamento && (
-                                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0">
+                                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.5 rounded shrink-0 mt-0.5">
                                     💳 Adiantamento
                                 </span>
                             )}
                             {isPsicotropico(selectedMed.categoria) && (
-                                <User className="h-4 w-4 text-indigo-600 shrink-0" title="Requer nome do paciente" />
+                                <User className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" title="Requer nome do paciente" />
                             )}
-                            <span className={cn("truncate min-w-0 flex-1", isMav(selectedMed) && "text-red-900 font-bold")} title={formatMedLabel(selectedMed)}>
+                            <span className={cn("break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] text-xs leading-snug flex-1 text-left min-w-0", isMav(selectedMed) && "text-red-900 font-bold")} title={formatMedLabel(selectedMed)}>
                                 {formatMedLabel(selectedMed)}
                                 {isMav(selectedMed) && " (MAV)"}
                             </span>

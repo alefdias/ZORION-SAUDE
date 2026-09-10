@@ -41,6 +41,7 @@ import {
   ArrowRight, 
   CalendarCheck, 
   Calendar,
+  Clock,
   X, 
   Bed, 
   Sparkles, 
@@ -128,18 +129,23 @@ export function isMedicamentoAntibiotico(med) {
   return /amoxicilina|ampicilina|azitromicina|claritromicina|cefalexina|ceftriaxona|cefazolina|ciprofloxacino|levofloxacino|metronidazol|vancomicina|meropenem|piperacilina|gentamicina|amikacina|clindamicina|sulfametoxazol|ceftazidima|oxacilina|penicilina|polimixina|daptomicina|linezolida|ertapenem|colistina|tobramicina/i.test(nome);
 }
 
-export function calcularDataFim(inicioStr, diasQtd) {
+export function calcularDataFim(inicioStr, diasQtd, horarioInicio = "08:00") {
   if (!inicioStr || !diasQtd || parseInt(diasQtd, 10) <= 0) return "";
   const parts = inicioStr.split("-");
   const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-  d.setDate(d.getDate() + (parseInt(diasQtd, 10) - 1));
+  const diasNum = parseInt(diasQtd, 10);
+  
+  // Se iniciou à noite (22h) ou à tarde (14h), o paciente só toma parte das doses no 1º dia.
+  // Portanto, para completar todos os ciclos de 24h, o tratamento se estende até o próximo dia correspondente.
+  const diasAdicionar = (horarioInicio === "22:00" || horarioInicio === "14:00") ? diasNum : (diasNum - 1);
+  d.setDate(d.getDate() + diasAdicionar);
   const ano = d.getFullYear();
   const mes = String(d.getMonth() + 1).padStart(2, "0");
   const dia = String(d.getDate()).padStart(2, "0");
   return `${ano}-${mes}-${dia}`;
 }
 
-export function calcularDiasEntre(inicioStr, fimStr) {
+export function calcularDiasEntre(inicioStr, fimStr, horarioInicio = "08:00") {
   if (!inicioStr || !fimStr) return "";
   const p1 = inicioStr.split("-");
   const p2 = fimStr.split("-");
@@ -147,7 +153,12 @@ export function calcularDiasEntre(inicioStr, fimStr) {
   const d2 = new Date(parseInt(p2[0], 10), parseInt(p2[1], 10) - 1, parseInt(p2[2], 10));
   const diffTime = d2.getTime() - d1.getTime();
   const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  return diffDays > 0 ? diffDays : 1;
+  if (diffDays <= 0) return 1;
+  // Se iniciou à noite (22h) ou à tarde (14h), precisou de +1 dia de calendário para fechar o ciclo de 24h
+  if (horarioInicio === "22:00" || horarioInicio === "14:00") {
+    return Math.max(1, diffDays - 1);
+  }
+  return diffDays;
 }
 
 export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")) {
@@ -166,6 +177,9 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   const calculatedDaily = d08 + d14 + d22 + d06;
   const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
+  const horarioInicio = pr.horarioInicio || "08:00";
+  const dataInicioStr = pr.dataInicio;
+
   let maxDataFim = null;
   if (pr.dataFim) {
     const pFim = pr.dataFim.split("-");
@@ -173,7 +187,7 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   }
 
   const diasArr = parseDiasSemana(pr.diasSemana);
-  let matchDays = 0;
+  let totalDoses = 0;
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
@@ -186,10 +200,38 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
     }
 
     if (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay())) {
-      matchDays++;
+      const dStr = format(d, "yyyy-MM-dd");
+
+      // No dia exato de início da prescrição, apenas as doses a partir do horário de início são administradas
+      if (dataInicioStr && dStr === dataInicioStr) {
+        let dosesDoDiaInicio = 0;
+        if (horarioInicio === "06:00") {
+          dosesDoDiaInicio = d06 + d08 + d14 + d22;
+        } else if (horarioInicio === "08:00") {
+          dosesDoDiaInicio = d08 + d14 + d22;
+        } else if (horarioInicio === "14:00") {
+          dosesDoDiaInicio = d14 + d22;
+        } else if (horarioInicio === "22:00") {
+          dosesDoDiaInicio = d22;
+        } else {
+          dosesDoDiaInicio = dailyTotal;
+        }
+        totalDoses += dosesDoDiaInicio;
+      } else if (pr.dataFim && dStr === pr.dataFim && (horarioInicio === "22:00" || horarioInicio === "14:00")) {
+        // No último dia, se iniciou à noite ou tarde, toma apenas as doses restantes que fecham o ciclo durante o dia
+        let dosesDoUltimoDia = 0;
+        if (horarioInicio === "22:00") {
+          dosesDoUltimoDia = d06 + d08 + d14;
+        } else if (horarioInicio === "14:00") {
+          dosesDoUltimoDia = d06 + d08;
+        }
+        totalDoses += dosesDoUltimoDia;
+      } else {
+        totalDoses += dailyTotal;
+      }
     }
   }
-  return Math.round(dailyTotal * matchDays);
+  return Math.round(totalDoses);
 };
 
 export default function PacientesMedicao() {
@@ -236,6 +278,7 @@ export default function PacientesMedicao() {
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
     diasTratamento: "",
+    horarioInicio: "08:00",
     status: "Ativa",
     observacoes: ""
   });
@@ -469,6 +512,7 @@ export default function PacientesMedicao() {
         ]),
         dataInicio: data.dataInicio || format(new Date(), "yyyy-MM-dd"),
         dataFim: data.dataFim || null,
+        horarioInicio: data.horarioInicio || "08:00",
         status: data.status || "Ativa",
         diasSemana: JSON.stringify(data.diasSemana || [0, 1, 2, 3, 4, 5, 6]),
         observacoes: data.observacoes || ""
@@ -1158,6 +1202,7 @@ export default function PacientesMedicao() {
       isMetade22: false,
       isMetade06: false,
       esquemaPosologico: "0-0-0-0",
+      horarioInicio: "08:00",
       dataInicio: format(new Date(), "yyyy-MM-dd"),
       dataFim: "",
       diasTratamento: "",
@@ -1178,7 +1223,8 @@ export default function PacientesMedicao() {
     const d06 = getDoseForHora(p.horarios, "06:00");
     const inicio = p.dataInicio || format(new Date(), "yyyy-MM-dd");
     const fim = p.dataFim || "";
-    const dias = (inicio && fim) ? calcularDiasEntre(inicio, fim) : "";
+    const horaIni = p.horarioInicio || "08:00";
+    const dias = (inicio && fim) ? calcularDiasEntre(inicio, fim, horaIni) : "";
 
     setPrescFormData({
       pacienteId: p.pacienteId || (viewPatientDetails ? viewPatientDetails.id : ""),
@@ -1193,6 +1239,7 @@ export default function PacientesMedicao() {
       dose06: String(d06 || 0),
       isMetade06: false,
       esquemaPosologico: p.esquemaPosologico || `${d08 || 0}-${d14 || 0}-${d22 || 0}-${d06 || 0}`,
+      horarioInicio: horaIni,
       dataInicio: inicio,
       dataFim: fim,
       diasTratamento: dias ? String(dias) : "",
@@ -2287,113 +2334,142 @@ export default function PacientesMedicao() {
                                   const concentracao = rawConc && !hasConcInName ? rawConc : "";
                                   return (
                                     <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                                       <TableCell className="font-semibold text-slate-800 py-3">
-                                         <span>
-                                           {pr.medicamentoNome}
-                                           {concentracao && (
-                                             <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium">
-                                               ({concentracao})
-                                             </span>
-                                           )}
-                                         </span>
-                                         <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
-                                       </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium">
-                                          <div>{pr.totalDiario} un/dia</div>
-                                          {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
-                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
-                                              📅 {formatDiasSemana(pr.diasSemana)}
-                                            </Badge>
-                                          ) : (
-                                            <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
+                                      <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3 max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                                        <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] block leading-snug">
+                                          {pr.medicamentoNome}
+                                          {concentracao && (
+                                            <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium whitespace-normal">
+                                              ({concentracao})
+                                            </span>
                                           )}
-                                        </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium">{pr.esquemaPosologico}</TableCell>
-                                       <TableCell className="text-slate-600 text-sm">{via}</TableCell>
-                                       <TableCell className="text-slate-600 text-xs py-3">
-                                          {(() => {
-                                            const isAnti = isMedicamentoAntibiotico(med);
-
-                                            if (pr.dataFim) {
-                                              const dataInicioFmt = pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--';
-                                              const dataFimFmt = new Date(pr.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-                                              const diasTotais = pr.dataInicio ? calcularDiasEntre(pr.dataInicio, pr.dataFim) : null;
-                                              
-                                              let diasDecorridos = 0;
-                                              let diasRestantes = 0;
-                                              if (pr.dataInicio) {
-                                                const dInicio = new Date(pr.dataInicio);
-                                                const dHoje = new Date(hojeStr);
-                                                const dFim = new Date(pr.dataFim);
-                                                diasDecorridos = Math.max(1, Math.round((dHoje.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                                                diasRestantes = Math.round((dFim.getTime() - dHoje.getTime()) / (1000 * 60 * 60 * 24));
-                                              }
-
-                                              const isUltimoDia = pr.dataFim === hojeStr;
-                                              const isEncerrado = pr.dataFim < hojeStr;
-
-                                              return (
-                                                <div className="space-y-1">
-                                                  {isAnti && (
-                                                    <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[9px] py-0 px-1.5 font-bold block w-max">
-                                                      🧪 Antibiótico
-                                                    </Badge>
-                                                  )}
-                                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
-                                                    {dataInicioFmt} a {dataFimFmt}
-                                                    {diasTotais && <span className="text-slate-500 font-normal ml-1">({diasTotais}d)</span>}
-                                                  </div>
-                                                  {isEncerrado ? (
-                                                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] font-bold">
-                                                      Finalizado
-                                                    </Badge>
-                                                  ) : isUltimoDia ? (
-                                                    <Badge className="bg-amber-500 text-white text-[10px] font-bold">
-                                                      ⚠️ Último dia hoje!
-                                                    </Badge>
-                                                  ) : (
-                                                    <div className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">
-                                                      Dia {diasDecorridos} de {diasTotais} • Faltam {diasRestantes}d
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              );
-                                            }
-
-                                            return (
-                                              <div className="space-y-0.5">
-                                                <div className="font-medium text-slate-800 dark:text-slate-200">
-                                                  Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
-                                                </div>
-                                                <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
-                                                  Uso Contínuo
-                                                </Badge>
-                                              </div>
-                                            );
-                                          })()}
-                                        </TableCell>
-                                       <TableCell className="text-slate-600 text-sm leading-tight">
-                                          <div className="font-medium text-slate-800">Médico(a) Assist.</div>
-                                          <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                        </span>
+                                        <Badge variant="outline" className="inline-block w-auto max-w-full truncate mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-slate-600 text-sm font-medium">
+                                         <div>{pr.totalDiario} un/dia</div>
+                                         {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
+                                           <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
+                                             📅 {formatDiasSemana(pr.diasSemana)}
+                                           </Badge>
+                                         ) : (
+                                           <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
+                                         )}
                                        </TableCell>
-                                       <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
-                                          <Button 
-                                            size="sm" 
-                                            variant="outline" 
-                                            className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
-                                            onClick={() => handleOpenEditPresc(pr)} 
-                                            title="Alterar medicamento ou esquema posológico"
-                                          >
-                                            <Pencil className="w-3.5 h-3.5" />
-                                            Alterar
-                                          </Button>
-                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
-                                            if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
-                                              togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
-                                            }
-                                          }} title="Suspender medicamento"><Trash2 className="w-4 h-4"/></Button>
+                                      <TableCell className="text-slate-600 text-sm font-medium">
+                                         <div className="font-mono font-bold text-slate-900 dark:text-slate-100">{pr.esquemaPosologico}</div>
+                                         <div className="mt-1">
+                                           <span className={cn(
+                                             "text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1",
+                                             pr.horarioInicio === "22:00" 
+                                               ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300"
+                                               : pr.horarioInicio === "14:00"
+                                               ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
+                                               : pr.horarioInicio === "06:00"
+                                               ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300"
+                                               : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300"
+                                           )}>
+                                             {pr.horarioInicio === "22:00" ? "🌙 Início: 22h" :
+                                              pr.horarioInicio === "14:00" ? "🌤️ Início: 14h" :
+                                              pr.horarioInicio === "06:00" ? "🌌 Início: 06h" :
+                                              "☀️ Início: 08h"}
+                                           </span>
+                                         </div>
+                                      </TableCell>
+                                      <TableCell className="text-slate-600 text-sm">{via}</TableCell>
+                                      <TableCell className="text-slate-600 text-xs py-3">
+                                         {(() => {
+                                           const isAnti = isMedicamentoAntibiotico(med);
+
+                                           if (pr.dataFim) {
+                                             const dataInicioFmt = pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--';
+                                             const dataFimFmt = new Date(pr.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+                                             const diasTotais = pr.dataInicio ? calcularDiasEntre(pr.dataInicio, pr.dataFim, pr.horarioInicio || "08:00") : null;
+                                             
+                                             let diasDecorridos = 0;
+                                             let diasRestantes = 0;
+                                             if (pr.dataInicio) {
+                                               const dInicio = new Date(pr.dataInicio);
+                                               const dHoje = new Date(hojeStr);
+                                               const dFim = new Date(pr.dataFim);
+                                               diasDecorridos = Math.max(1, Math.round((dHoje.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                               diasRestantes = Math.round((dFim.getTime() - dHoje.getTime()) / (1000 * 60 * 60 * 24));
+                                             }
+
+                                             const isUltimoDia = pr.dataFim === hojeStr;
+                                             const isEncerrado = pr.dataFim < hojeStr;
+
+                                             return (
+                                               <div className="space-y-1">
+                                                 {isAnti && (
+                                                   <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[9px] py-0 px-1.5 font-bold block w-max">
+                                                     🧪 Antibiótico
+                                                   </Badge>
+                                                 )}
+                                                 <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                                   {dataInicioFmt} a {dataFimFmt}
+                                                   {diasTotais && <span className="text-slate-500 font-normal ml-1">({diasTotais}d)</span>}
+                                                 </div>
+                                                 {pr.horarioInicio && (pr.horarioInicio === "22:00" || pr.horarioInicio === "14:00") && (
+                                                   <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                                                     Iniciou às {pr.horarioInicio} • Termina de dia
+                                                   </div>
+                                                 )}
+                                                 {isEncerrado ? (
+                                                   <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] font-bold">
+                                                     Finalizado
+                                                   </Badge>
+                                                 ) : isUltimoDia ? (
+                                                   <Badge className="bg-amber-500 text-white text-[10px] font-bold">
+                                                     ⚠️ Último dia hoje!
+                                                   </Badge>
+                                                 ) : (
+                                                   <div className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">
+                                                     Dia {diasDecorridos} de {diasTotais} • Faltam {diasRestantes}d
+                                                   </div>
+                                                 )}
+                                               </div>
+                                             );
+                                           }
+
+                                           return (
+                                             <div className="space-y-0.5">
+                                               <div className="font-medium text-slate-800 dark:text-slate-200">
+                                                 Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
+                                               </div>
+                                               {pr.horarioInicio && pr.horarioInicio !== "08:00" && (
+                                                 <div className="text-[10px] text-slate-500">
+                                                   Início às {pr.horarioInicio}
+                                                 </div>
+                                               )}
+                                               <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
+                                                 Uso Contínuo
+                                               </Badge>
+                                             </div>
+                                           );
+                                         })()}
                                        </TableCell>
-                                    </TableRow>
+                                      <TableCell className="text-slate-600 text-sm leading-tight">
+                                         <div className="font-medium text-slate-800">Médico(a) Assist.</div>
+                                         <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                      </TableCell>
+                                      <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
+                                         <Button 
+                                           size="sm" 
+                                           variant="outline" 
+                                           className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
+                                           onClick={() => handleOpenEditPresc(pr)} 
+                                           title="Alterar medicamento ou esquema posológico"
+                                         >
+                                           <Pencil className="w-3.5 h-3.5" />
+                                           Alterar
+                                         </Button>
+                                         <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
+                                           if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
+                                             togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
+                                           }
+                                         }} title="Suspender medicamento"><Trash2 className="w-4 h-4"/></Button>
+                                      </TableCell>
+                                   </TableRow>
                                   );
                                });
                             })()}
@@ -2440,16 +2516,16 @@ export default function PacientesMedicao() {
                                   const concentracao = rawConc && !hasConcInName ? rawConc : "";
                                   return (
                                     <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                                       <TableCell className="font-semibold text-slate-800 py-3 opacity-60">
-                                         <span>
+                                       <TableCell className="font-semibold text-slate-800 py-3 opacity-60 max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                                         <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] block leading-snug">
                                            {pr.medicamentoNome}
                                            {concentracao && (
-                                             <span className="ml-1 text-slate-600 font-medium">
+                                             <span className="ml-1 text-slate-600 font-medium whitespace-normal">
                                                ({concentracao})
                                              </span>
                                            )}
                                          </span>
-                                         <Badge variant="outline" className="block w-max mt-1 text-[10px] bg-slate-50 text-slate-500 border-slate-200 rounded">{apresentacao}</Badge>
+                                         <Badge variant="outline" className="inline-block w-auto max-w-full truncate mt-1 text-[10px] bg-slate-50 text-slate-500 border-slate-200 rounded">{apresentacao}</Badge>
                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm font-medium opacity-60">
                                           <div>{pr.totalDiario} un/dia</div>
@@ -2460,9 +2536,16 @@ export default function PacientesMedicao() {
                                           )}
                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm font-medium opacity-60">
-                                         <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 font-mono text-xs font-bold">
-                                           {pr.esquemaPosologico}
-                                         </Badge>
+                                          <div className="flex flex-col items-start gap-1">
+                                            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 font-mono text-xs font-bold">
+                                              {pr.esquemaPosologico}
+                                            </Badge>
+                                            {pr.horarioInicio && (
+                                              <span className="text-[10px] text-slate-500 font-medium">
+                                                Início: {pr.horarioInicio}
+                                              </span>
+                                            )}
+                                          </div>
                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm opacity-60">{via}</TableCell>
                                        <TableCell className="text-slate-600 text-sm opacity-60">
@@ -2705,8 +2788,8 @@ export default function PacientesMedicao() {
                                 <p className="font-bold text-xs text-slate-900 dark:text-slate-100">{pac?.nome || "Paciente"}</p>
                                 <p className="text-[10px] text-slate-500 font-mono">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
                               </TableCell>
-                              <TableCell>
-                                <p className="font-bold text-xs text-blue-900 dark:text-blue-200">
+                              <TableCell className="max-w-[260px] min-w-[150px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                                <p className="font-bold text-xs text-blue-900 dark:text-blue-200 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
                                   {pr.medicamentoNome}
                                   {(() => {
                                     const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
@@ -2845,11 +2928,12 @@ export default function PacientesMedicao() {
                   setPrescFormData(prev => {
                     if (isAnti && !prev.dataFim) {
                       const inicio = prev.dataInicio || format(new Date(), "yyyy-MM-dd");
+                      const hora = prev.horarioInicio || "08:00";
                       return {
                         ...prev,
                         medicamentoId: val,
                         diasTratamento: "7",
-                        dataFim: calcularDataFim(inicio, 7)
+                        dataFim: calcularDataFim(inicio, 7, hora)
                       };
                     }
                     return { ...prev, medicamentoId: val };
@@ -2958,6 +3042,70 @@ export default function PacientesMedicao() {
               </div>
             </div>
 
+            {/* Horário de Início da 1ª Dose / Administração */}
+            <div className="bg-indigo-50/70 dark:bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-200/80 dark:border-indigo-800 space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <Label className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Horário de Início da 1ª Dose (Início da Administração) *
+                </Label>
+                <Badge variant="outline" className="bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-[11px] border-indigo-300">
+                  {prescFormData.horarioInicio === "22:00" ? "🌙 Inicia às 22:00 (Noite)" :
+                   prescFormData.horarioInicio === "14:00" ? "🌤️ Inicia às 14:00 (Tarde)" :
+                   prescFormData.horarioInicio === "06:00" ? "🌌 Inicia às 06:00 (Madrug)" :
+                   "☀️ Inicia às 08:00 (Manhã)"}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { hora: "08:00", label: "08:00", turno: "Manhã", icon: "☀️" },
+                  { hora: "14:00", label: "14:00", turno: "Tarde", icon: "🌤️" },
+                  { hora: "22:00", label: "22:00", turno: "Noite", icon: "🌙" },
+                  { hora: "06:00", label: "06:00", turno: "Madrug", icon: "🌌" },
+                ].map(item => {
+                  const isSelected = (prescFormData.horarioInicio || "08:00") === item.hora;
+                  return (
+                    <button
+                      key={item.hora}
+                      type="button"
+                      onClick={() => {
+                        const newHora = item.hora;
+                        setPrescFormData(prev => {
+                          const fim = prev.diasTratamento 
+                            ? calcularDataFim(prev.dataInicio || format(new Date(), "yyyy-MM-dd"), prev.diasTratamento, newHora) 
+                            : prev.dataFim;
+                          return { ...prev, horarioInicio: newHora, dataFim: fim };
+                        });
+                      }}
+                      className={cn(
+                        "p-2 rounded-lg border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5",
+                        isSelected
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-400/40"
+                          : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      <span className="text-sm">{item.icon}</span>
+                      <span className="text-xs font-bold font-mono">{item.label}</span>
+                      <span className={cn("text-[10px]", isSelected ? "text-indigo-100" : "text-slate-500")}>{item.turno}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-[11px] text-indigo-900 dark:text-indigo-300 bg-white/70 dark:bg-slate-900/60 p-2 rounded-lg border border-indigo-200/60 dark:border-indigo-800/60">
+                {prescFormData.horarioInicio === "22:00" ? (
+                  <span>🌙 <strong>Início no período noturno (22h):</strong> No 1º dia ({prescFormData.dataInicio ? new Date(prescFormData.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'início'}) o paciente toma apenas a dose noturna. Para fechar o ciclo de {prescFormData.diasTratamento || 7} dias completos, o tratamento estenderá até o dia seguinte pela manhã/tarde ({prescFormData.dataFim ? new Date(prescFormData.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'término'}).</span>
+                ) : prescFormData.horarioInicio === "14:00" ? (
+                  <span>🌤️ <strong>Início à tarde (14h):</strong> No 1º dia toma as doses a partir da tarde, completando as 24h finais no último dia pela manhã.</span>
+                ) : prescFormData.horarioInicio === "06:00" ? (
+                  <span>🌌 <strong>Início na madrugada (06h):</strong> Inicia a escala nas primeiras horas do dia.</span>
+                ) : (
+                  <span>☀️ <strong>Início pela manhã (08h):</strong> Ciclo hospitalar padrão matutino completo. Inicia e finaliza o ciclo de dias durante o dia.</span>
+                )}
+              </p>
+            </div>
+
             {/* Frequência: Dias da Semana */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -3039,6 +3187,7 @@ export default function PacientesMedicao() {
             {(() => {
               const selectedMed = medicamentos.find(m => m.id === prescFormData.medicamentoId);
               const isAnti = isMedicamentoAntibiotico(selectedMed);
+              const horaIni = prescFormData.horarioInicio || "08:00";
               return (
                 <div className={cn(
                   "p-3.5 rounded-xl border space-y-3 transition-all",
@@ -3074,7 +3223,7 @@ export default function PacientesMedicao() {
                         onChange={(e) => {
                           const newInicio = e.target.value;
                           setPrescFormData(prev => {
-                            const newFim = prev.diasTratamento ? calcularDataFim(newInicio, prev.diasTratamento) : prev.dataFim;
+                            const newFim = prev.diasTratamento ? calcularDataFim(newInicio, prev.diasTratamento, prev.horarioInicio || "08:00") : prev.dataFim;
                             return { ...prev, dataInicio: newInicio, dataFim: newFim };
                           });
                         }}
@@ -3092,7 +3241,7 @@ export default function PacientesMedicao() {
                         onChange={(e) => {
                           const dias = e.target.value;
                           setPrescFormData(prev => {
-                            const newFim = dias ? calcularDataFim(prev.dataInicio || format(new Date(), "yyyy-MM-dd"), dias) : "";
+                            const newFim = dias ? calcularDataFim(prev.dataInicio || format(new Date(), "yyyy-MM-dd"), dias, prev.horarioInicio || "08:00") : "";
                             return { ...prev, diasTratamento: dias, dataFim: newFim };
                           });
                         }}
@@ -3108,7 +3257,7 @@ export default function PacientesMedicao() {
                         onChange={(e) => {
                           const newFim = e.target.value;
                           setPrescFormData(prev => {
-                            const dias = newFim && prev.dataInicio ? calcularDiasEntre(prev.dataInicio, newFim) : "";
+                            const dias = newFim && prev.dataInicio ? calcularDiasEntre(prev.dataInicio, newFim, prev.horarioInicio || "08:00") : "";
                             return { ...prev, dataFim: newFim, diasTratamento: dias ? String(dias) : "" };
                           });
                         }}
@@ -3126,7 +3275,7 @@ export default function PacientesMedicao() {
                         onClick={() => {
                           setPrescFormData(prev => {
                             const inicio = prev.dataInicio || format(new Date(), "yyyy-MM-dd");
-                            const fim = calcularDataFim(inicio, dias);
+                            const fim = calcularDataFim(inicio, dias, prev.horarioInicio || "08:00");
                             return { ...prev, dataInicio: inicio, diasTratamento: String(dias), dataFim: fim };
                           });
                         }}
@@ -3160,8 +3309,11 @@ export default function PacientesMedicao() {
                   {/* Explicação / Prévia */}
                   <div className="text-[11px] pt-1">
                     {prescFormData.dataFim ? (
-                      <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                        ✓ Tratamento de <strong>{prescFormData.diasTratamento || calcularDiasEntre(prescFormData.dataInicio, prescFormData.dataFim)} dias</strong>: de {prescFormData.dataInicio ? new Date(prescFormData.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'} até {new Date(prescFormData.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}. Suspensão automática programada.
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1 flex-wrap">
+                        ✓ Tratamento de <strong>{prescFormData.diasTratamento || calcularDiasEntre(prescFormData.dataInicio, prescFormData.dataFim, horaIni)} dias</strong>:
+                        de {prescFormData.dataInicio ? new Date(prescFormData.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'} (iniciando às {horaIni}) 
+                        até {new Date(prescFormData.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} {horaIni === '22:00' || horaIni === '14:00' ? '(encerra de dia)' : ''}.
+                        Suspensão automática programada.
                       </span>
                     ) : (
                       <span className="text-slate-500 italic">
@@ -3407,7 +3559,7 @@ export default function PacientesMedicao() {
                     ) : (
                       prescricoes.filter(pr => (pr.pacienteId === altaPacienteId || pr.paciente_id === altaPacienteId) && (pr.status === "Ativa" || !pr.status)).map(pr => (
                         <TableRow key={pr.id}>
-                          <TableCell className="font-medium">
+                          <TableCell className="font-medium max-w-[240px] min-w-[150px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
                             {pr.medicamentoNome}
                             {(() => {
                               const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
