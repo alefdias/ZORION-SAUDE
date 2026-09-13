@@ -161,8 +161,11 @@ export default function Relatorios() {
     .forEach((s) => {
       const ala = s.ala_nome || s.destino || "Não especificado";
       const medicamento = medicamentos.find((m) => m.id === s.medicamento_id);
+      const dose = (medicamento?.concentracao || (medicamento?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(medicamento.unidade_medida.toLowerCase()) ? medicamento.unidade_medida : "") || "").trim();
+      const apres = medicamento?.apresentacao ? ` [${medicamento.apresentacao}]` : "";
+      const doseStr = dose ? ` - ${dose}` : "";
       const nome = medicamento
-        ? medicamento.nome
+        ? `${medicamento.nome}${doseStr}${apres}`
         : s.medicamento_nome || "Desconhecido";
 
       if (!usoPorMedicamentoEAla[nome]) {
@@ -185,8 +188,11 @@ export default function Relatorios() {
       const ala = s.ala_nome || s.destino || "Não especificado";
       const medicamento = medicamentos.find((m) => m.id === s.medicamento_id);
       const codigo = medicamento ? medicamento.codigo : "S/C";
+      const dose = (medicamento?.concentracao || (medicamento?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(medicamento.unidade_medida.toLowerCase()) ? medicamento.unidade_medida : "") || "").trim();
+      const apres = medicamento?.apresentacao ? ` [${medicamento.apresentacao}]` : "";
+      const doseStr = dose ? ` - ${dose}` : "";
       const nome = medicamento
-        ? medicamento.nome
+        ? `${medicamento.nome}${doseStr}${apres}`
         : s.medicamento_nome || "Desconhecido";
 
       if (!medicamentosPorAla[ala]) {

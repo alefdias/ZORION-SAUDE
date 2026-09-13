@@ -38,10 +38,12 @@ export default function SateliteEstoque() {
 
   const isLoading = loadingMeds || loadingLotes;
 
-  // Filtrar e agrupar medicamentos da satélite
+  const [statusFilter, setStatusFilter] = useState("todos"); // "todos", "com_saldo", "sem_saldo"
+
+  // Filtrar e agrupar medicamentos da satélite - inclui TODOS os medicamentos cadastrados e ativos
   const estoqueSatelite = useMemo(() => {
     return medicamentos
-      .filter(m => m.ativo !== false && ((m.estoque_satelite || 0) > 0 || (m.estoque_atual || 0) > 0))
+      .filter(m => m.ativo !== false && !m.deleted_at)
       .map(med => {
         const lotesDoMed = lotes
           .filter(l => l.medicamento_id === med.id)
@@ -75,14 +77,25 @@ export default function SateliteEstoque() {
   }, [medicamentos, lotes]);
 
   const filteredEstoque = useMemo(() => {
+    const term = (search || "").toLowerCase().trim();
+    const terms = term ? term.split(/\s+/).filter(Boolean) : [];
+
     return estoqueSatelite.filter(med => {
-      const matchSearch =
-        med.nome?.toLowerCase().includes(search.toLowerCase()) ||
-        med.principio_ativo?.toLowerCase().includes(search.toLowerCase()) ||
-        med.codigo?.toLowerCase().includes(search.toLowerCase());
-      return matchSearch;
+      // Busca composta por nome, princípio ativo, código, concentração e apresentação
+      if (terms.length > 0) {
+        const fullText = `${med.nome || ""} ${med.principio_ativo || ""} ${med.codigo || ""} ${med.concentracao || ""} ${med.unidade_medida || ""} ${med.apresentacao || ""}`.toLowerCase();
+        const matchesSearch = terms.every(t => fullText.includes(t));
+        if (!matchesSearch) return false;
+      }
+
+      // Filtro de saldo na satélite
+      const saldoSat = Number(med.estoque_satelite) || 0;
+      if (statusFilter === "com_saldo" && saldoSat <= 0) return false;
+      if (statusFilter === "sem_saldo" && saldoSat > 0) return false;
+
+      return true;
     });
-  }, [estoqueSatelite, search]);
+  }, [estoqueSatelite, search, statusFilter]);
 
   const padronizados = useMemo(() => filteredEstoque.filter(m => m.padronizado !== false), [filteredEstoque]);
   const naoPadronizados = useMemo(() => filteredEstoque.filter(m => m.padronizado === false), [filteredEstoque]);
@@ -262,28 +275,59 @@ export default function SateliteEstoque() {
         </div>
       </div>
 
-      <Card className="p-4 shadow-sm border-slate-200 dark:border-slate-800">
+      <Card className="p-4 shadow-sm border-slate-200 dark:border-slate-800 space-y-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
           <Input
-            placeholder="Buscar por medicamento, princípio ativo ou código..."
+            placeholder="Buscar por medicamento, dosagem (ex: 500mg), apresentação ou código..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10 h-12 text-base"
           />
         </div>
+
+        {/* Filtros rápidos de saldo */}
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+          <Button
+            type="button"
+            size="sm"
+            variant={statusFilter === "todos" ? "default" : "outline"}
+            onClick={() => setStatusFilter("todos")}
+            className={cn("h-8 text-xs font-semibold", statusFilter === "todos" ? "bg-indigo-600 text-white" : "bg-white text-slate-700")}
+          >
+            Todos os Medicamentos ({estoqueSatelite.length})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={statusFilter === "com_saldo" ? "default" : "outline"}
+            onClick={() => setStatusFilter("com_saldo")}
+            className={cn("h-8 text-xs font-semibold", statusFilter === "com_saldo" ? "bg-emerald-600 text-white" : "bg-white text-slate-700")}
+          >
+            Com Saldo na Satélite ({estoqueSatelite.filter(m => (m.estoque_satelite || 0) > 0).length})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={statusFilter === "sem_saldo" ? "default" : "outline"}
+            onClick={() => setStatusFilter("sem_saldo")}
+            className={cn("h-8 text-xs font-semibold", statusFilter === "sem_saldo" ? "bg-amber-600 text-white" : "bg-white text-slate-700")}
+          >
+            Sem Saldo na Satélite ({estoqueSatelite.filter(m => (m.estoque_satelite || 0) <= 0).length})
+          </Button>
+        </div>
       </Card>
 
-      <Tabs defaultValue="padronizados">
+      <Tabs defaultValue="todos">
         <TabsList className="mb-6 bg-slate-100 dark:bg-slate-800 p-1">
+          <TabsTrigger value="todos" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
+            Todos os Medicamentos ({filteredEstoque.length})
+          </TabsTrigger>
           <TabsTrigger value="padronizados" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
             Padronizados ({padronizados.length})
           </TabsTrigger>
           <TabsTrigger value="nao_padronizados" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
             Não Padronizados ({naoPadronizados.length})
-          </TabsTrigger>
-          <TabsTrigger value="todos" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
-            Todos os Itens ({filteredEstoque.length})
           </TabsTrigger>
         </TabsList>
 

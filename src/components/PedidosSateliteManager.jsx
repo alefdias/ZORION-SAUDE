@@ -163,10 +163,30 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
     ativas.forEach(p => {
       const medId = p.medicamentoId || p.medicamento_id;
-      const med = medicamentos.find(m => 
-        (medId && String(m.id) === String(medId)) ||
-        (p.medicamentoNome && m.nome && m.nome.trim().toLowerCase() === p.medicamentoNome.trim().toLowerCase())
-      ) || {
+      const targetConc = (p.concentracao || "").replace(/\s+/g, "").toLowerCase();
+
+      // 1. Prioridade: ID exato
+      let med = medId ? medicamentos.find(m => String(m.id) === String(medId)) : null;
+
+      // 2. Se não encontrou por ID, busca por Nome E Concentração (ex: Valproato 500mg não bate com 250mg)
+      if (!med && p.medicamentoNome) {
+        const pNome = p.medicamentoNome.trim().toLowerCase();
+        med = medicamentos.find(m => {
+          if (!m.nome || m.nome.trim().toLowerCase() !== pNome) return false;
+          if (targetConc) {
+            const mConc = (m.concentracao || m.unidade_medida || "").replace(/\s+/g, "").toLowerCase();
+            return mConc === targetConc || mConc.includes(targetConc) || targetConc.includes(mConc);
+          }
+          return true;
+        });
+
+        // 3. Fallback se não bater concentração
+        if (!med) {
+          med = medicamentos.find(m => m.nome && m.nome.trim().toLowerCase() === pNome);
+        }
+      }
+
+      const finalMed = med || {
         nome: p.medicamentoNome || p.nome || "Medicamento",
         codigo: p.medicamentoCodigo || p.codigo || "-",
         apresentacao: p.apresentacao || "",
@@ -198,17 +218,21 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         calculatedTotal = dailyDose * effectiveDays;
       }
 
-      // Chave única para nunca colidir em undefined e não sobrescrever medicamentos
-      const groupKey = medId ? String(medId) : (med.id ? String(med.id) : (med.nome ? med.nome.trim().toLowerCase() : String(p.id)));
+      // Chave única para nunca colidir em dosagens diferentes (250mg x 500mg)
+      const groupKey = med?.id
+        ? String(med.id)
+        : (medId
+            ? String(medId)
+            : `${finalMed.nome}_${p.concentracao || finalMed.concentracao || ''}_${p.apresentacao || finalMed.apresentacao || ''}`.toLowerCase().replace(/\s+/g, '_'));
 
       if (!medMap[groupKey]) {
         medMap[groupKey] = {
-          medicamentoId: med.id || medId || groupKey,
-          nome: med.nome || p.medicamentoNome || "Medicamento",
-          codigo: med.codigo || p.medicamentoCodigo || "-",
-          apresentacao: med.apresentacao || p.apresentacao || "",
-          concentracao: med.concentracao || p.concentracao || "",
-          estoqueSatelite: Number(med.estoque_satelite) || 0,
+          medicamentoId: med?.id || medId || groupKey,
+          nome: finalMed.nome || p.medicamentoNome || "Medicamento",
+          codigo: finalMed.codigo || p.medicamentoCodigo || "-",
+          apresentacao: p.apresentacao || finalMed.apresentacao || "",
+          concentracao: p.concentracao || finalMed.concentracao || "",
+          estoqueSatelite: Number(finalMed.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdCalculada: 0,
           totalPacientes: 0

@@ -407,7 +407,15 @@ export default function Entradas({ isTab = false }) {
                   <td className="py-2 px-3 border border-slate-200 text-[10px] font-mono whitespace-nowrap">
                     {med?.codigo || "S/C"}
                   </td>
-                  <td className="py-2 px-3 border border-slate-200 text-sm font-medium">{entrada.medicamento_nome}</td>
+                  <td className="py-2 px-3 border border-slate-200 text-sm font-medium">
+                    <div>{entrada.medicamento_nome}</div>
+                    {(med?.concentracao || med?.apresentacao) && (
+                      <div className="text-xs text-slate-500 font-normal">
+                        {med?.concentracao ? med.concentracao : (med?.unidade_medida || "")}
+                        {med?.concentracao && med?.apresentacao ? ` • ${med.apresentacao}` : (med?.apresentacao || "")}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 px-3 border border-slate-200 text-sm">{entrada.numero_lote}</td>
                   <td className="py-2 px-3 border border-slate-200 text-center font-bold text-emerald-700 text-sm">
                     +{entrada.quantidade}
@@ -607,7 +615,7 @@ export default function Entradas({ isTab = false }) {
                         </div>
                         <div className="flex gap-2 items-center text-xs mt-1">
                           <span className="text-slate-500 font-medium">
-                            {med?.unidade_medida ? `Concentração: ${med.unidade_medida}` : "Concentração não definida"}
+                            {(med?.concentracao || med?.unidade_medida) ? `Concentração: ${med?.concentracao || med?.unidade_medida}` : "Concentração não definida"}
                           </span>
                           <span className="text-slate-500 font-medium px-2 border-l border-slate-200">
                             {apr}

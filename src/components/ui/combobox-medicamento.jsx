@@ -30,12 +30,12 @@ export function ComboboxMedicamento({
     const selectedMed = medicamentos.find((m) => m.id === value);
 
     const filteredMedicamentos = React.useMemo(() => {
-        if (!search) return medicamentos.slice(0, 100);
-        const term = search.toLowerCase();
+        if (!search || !search.trim()) return medicamentos.slice(0, 100);
+        const term = search.toLowerCase().trim();
+        const terms = term.split(/\s+/).filter(Boolean);
         return medicamentos.filter(m => {
-            const nomeStr = m.nome ? String(m.nome).toLowerCase() : "";
-            const codigoStr = m.codigo ? String(m.codigo).toLowerCase() : "";
-            return nomeStr.includes(term) || codigoStr.includes(term);
+            const fullText = `${m.nome || ""} ${m.codigo || ""} ${m.concentracao || ""} ${m.unidade_medida || ""} ${m.apresentacao || ""}`.toLowerCase();
+            return terms.every(t => fullText.includes(t));
         }).slice(0, 100);
     }, [medicamentos, search]);
 
@@ -47,7 +47,7 @@ export function ComboboxMedicamento({
         const dose = (m.concentracao || (m.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(m.unidade_medida.toLowerCase()) ? m.unidade_medida : "")).trim();
         const apres = m.apresentacao ? ` [${m.apresentacao}]` : "";
         const doseStr = dose ? ` - ${dose}` : "";
-        return `${m.nome}${apres}${doseStr}`;
+        return `${m.nome}${doseStr}${apres}`;
     };
 
     const renderItem = (m) => {

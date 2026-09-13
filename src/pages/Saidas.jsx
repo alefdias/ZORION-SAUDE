@@ -447,7 +447,15 @@ export default function Saidas({ isTab = false }) {
                   <td className="py-2 px-3 border border-slate-200 text-[10px] font-mono whitespace-nowrap">
                     {med?.codigo || "S/C"}
                   </td>
-                  <td className="py-2 px-3 border border-slate-200 text-sm font-medium">{saida.medicamento_nome}</td>
+                  <td className="py-2 px-3 border border-slate-200 text-sm font-medium">
+                    <div>{saida.medicamento_nome}</div>
+                    {(med?.concentracao || med?.apresentacao) && (
+                      <div className="text-xs text-slate-500 font-normal">
+                        {med?.concentracao ? med.concentracao : (med?.unidade_medida || "")}
+                        {med?.concentracao && med?.apresentacao ? ` • ${med.apresentacao}` : (med?.apresentacao || "")}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 px-3 border border-slate-200 text-sm">{saida.numero_lote}</td>
                   <td className="py-2 px-3 border border-slate-200 text-center font-bold text-red-700 text-sm">
                     -{saida.quantidade}
@@ -889,10 +897,10 @@ export default function Saidas({ isTab = false }) {
                               </span>
                             )}
                           </div>
-                          {(med?.unidade_medida || med?.apresentacao) && (
+                          {(med?.concentracao || med?.unidade_medida || med?.apresentacao) && (
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-medium">
-                              {med?.unidade_medida && <span>{med.unidade_medida}</span>}
-                              {med?.unidade_medida && med?.apresentacao && <span>•</span>}
+                              {(med?.concentracao || med?.unidade_medida) && <span>{med?.concentracao || med?.unidade_medida}</span>}
+                              {(med?.concentracao || med?.unidade_medida) && med?.apresentacao && <span>•</span>}
                               {med?.apresentacao && <span>{med.apresentacao}</span>}
                             </div>
                           )}
