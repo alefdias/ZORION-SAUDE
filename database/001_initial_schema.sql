@@ -18,17 +18,24 @@ ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "is_adiantamento" BOOLEAN DEF
 ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "nota_fiscal" TEXT;
 ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "valor_compra" REAL;
 ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "fornecedor_nome" TEXT;
+ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "is_liquido" BOOLEAN DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS "Lote" (
     "id" TEXT PRIMARY KEY,
     "medicamento_id" TEXT,
     "numero_lote" TEXT,
     "data_validade" TEXT,
+    "quantidade_inicial" INTEGER,
     "quantidade_atual" INTEGER,
+    "volume_frasco_ml" NUMERIC,
     "status" TEXT,
     "created_at" TEXT,
     "deleted_at" TEXT
 );
+
+ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "quantidade_inicial" INTEGER;
 
 CREATE TABLE IF NOT EXISTS "Entrada" (
     "id" TEXT PRIMARY KEY,
@@ -53,6 +60,7 @@ ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "data_validade" TEXT;
 ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "fornecedor_nome" TEXT;
 ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "numero_nota_fiscal" TEXT;
 ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "tipo" TEXT;
+ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
 
 CREATE TABLE IF NOT EXISTS "Saida" (
     "id" TEXT PRIMARY KEY,
@@ -236,6 +244,13 @@ ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "viaAdministracao" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "via_administracao" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "horarioInicio" TEXT DEFAULT '08:00';
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "is_liquido" BOOLEAN DEFAULT false;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "unidade_dose" TEXT DEFAULT 'comp';
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "duracao_frasco_dias" INTEGER;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_ultimo_frasco" TEXT;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_proximo_frasco" TEXT;
+ALTER TABLE "PrescricaoPaciente" ALTER COLUMN "totalDiario" TYPE NUMERIC USING "totalDiario"::numeric;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
 

@@ -135,29 +135,33 @@ export default function Entradas({ isTab = false }) {
           l => l.medicamento_id === data.medicamento_id && l.numero_lote === data.numero_lote
         );
 
+        const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
+
         let finalLoteId;
         if (loteParam) {
           console.log("Lote existente encontrado:", loteParam);
-          // Atualizar quantidade do lote existente
+          // Atualizar quantidade do lote existente e volume se informado
           await db.entities.Lote.update(loteParam.id, {
             quantidade_atual: (loteParam.quantidade_atual || 0) + data.quantidade,
+            volume_frasco_ml: volFrasco || loteParam.volume_frasco_ml || null,
           });
           finalLoteId = loteParam.id;
         } else {
           console.log("Criando novo lote...");
-          // Criar novo lote
+          // Criar novo lote com volume do frasco
           const newLote = await db.entities.Lote.create({
             medicamento_id: data.medicamento_id,
             numero_lote: data.numero_lote,
             data_validade: data.data_validade,
             quantidade_inicial: data.quantidade,
             quantidade_atual: data.quantidade,
+            volume_frasco_ml: volFrasco,
             status: "disponivel",
           });
           finalLoteId = newLote.id;
         }
 
-        // 2. Criar a entrada com o lote_id vinculado
+        // 2. Criar a entrada com o lote_id vinculado e volume_frasco_ml
         console.log("Criando registro de entrada...");
         const entradaData = {
           medicamento_id: data.medicamento_id,
@@ -166,6 +170,7 @@ export default function Entradas({ isTab = false }) {
           data_validade: data.data_validade,
           data_entrada: data.data_entrada,
           quantidade: data.quantidade,
+          volume_frasco_ml: volFrasco,
           fornecedor_id: data.fornecedor_id,
           fornecedor_nome: data.fornecedor_nome,
           lote_id: finalLoteId
@@ -174,14 +179,19 @@ export default function Entradas({ isTab = false }) {
         const entrada = await db.entities.Entrada.create(entradaData);
         console.log("Entrada criada com sucesso:", entrada);
 
-        // 3. Atualizar estoque do medicamento
+        // 3. Atualizar estoque do medicamento (e volume cadastrado se solicitado)
         const existingMeds = await db.entities.Medicamento.list();
         const medicamento = existingMeds.find(m => m.id === data.medicamento_id);
         if (medicamento) {
           console.log("Atualizando estoque do medicamento:", medicamento.nome);
-          await db.entities.Medicamento.update(medicamento.id, {
+          const medUpdate = {
             estoque_atual: (medicamento.estoque_atual || 0) + data.quantidade,
-          });
+          };
+          if (data.atualizar_cadastro_med && volFrasco) {
+            medUpdate.volume_frasco_ml = volFrasco;
+            medUpdate.is_liquido = true;
+          }
+          await db.entities.Medicamento.update(medicamento.id, medUpdate);
         }
 
         return entrada;
@@ -218,11 +228,13 @@ export default function Entradas({ isTab = false }) {
         // Mas o formulário de Entrada geralmente edita o MESMO registro de entrada vinculado a um lote específico.
         // Se o usuário mudou a quantidade, ajustamos o lote.
         
+        const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
         if (oldLote) {
           console.log("Ajustando lote vinculado:", oldLote.numero_lote, "Diff:", qtyDiff);
           await db.entities.Lote.update(oldLote.id, {
             quantidade_atual: (oldLote.quantidade_atual || 0) + qtyDiff,
             data_validade: data.data_validade, // Atualizar validade se mudou
+            volume_frasco_ml: volFrasco || oldLote.volume_frasco_ml || null,
           });
         }
 
@@ -230,9 +242,14 @@ export default function Entradas({ isTab = false }) {
         const oldMed = medicamentos.find(m => m.id === oldEntrada.medicamento_id);
         if (oldMed) {
           console.log("Ajustando estoque do medicamento:", oldMed.nome);
-          await db.entities.Medicamento.update(oldMed.id, {
+          const medUp = {
             estoque_atual: (oldMed.estoque_atual || 0) + qtyDiff,
-          });
+          };
+          if (data.atualizar_cadastro_med && volFrasco) {
+            medUp.volume_frasco_ml = volFrasco;
+            medUp.is_liquido = true;
+          }
+          await db.entities.Medicamento.update(oldMed.id, medUp);
         }
 
         // 3. Atualizar a entrada
@@ -243,6 +260,7 @@ export default function Entradas({ isTab = false }) {
           data_validade: data.data_validade,
           data_entrada: data.data_entrada,
           quantidade: data.quantidade,
+          volume_frasco_ml: volFrasco,
           fornecedor_id: data.fornecedor_id,
           fornecedor_nome: data.fornecedor_nome,
         };
@@ -626,7 +644,14 @@ export default function Entradas({ isTab = false }) {
                   })()}
                   {visibleColumns.lote && (
                     <TableCell>
-                      <Badge variant="outline">{entrada.numero_lote}</Badge>
+                      <div className="flex flex-col gap-1 items-start">
+                        <Badge variant="outline">{entrada.numero_lote}</Badge>
+                        {entrada.volume_frasco_ml && (
+                          <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] font-bold">
+                            💧 {entrada.volume_frasco_ml} mL
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                   )}
                   {visibleColumns.validade && (
@@ -658,7 +683,12 @@ export default function Entradas({ isTab = false }) {
                   )}
                   {visibleColumns.qtd && (
                     <TableCell className="text-center">
-                      <Badge className="bg-emerald-100 text-emerald-700">+{entrada.quantidade}</Badge>
+                      <Badge className="bg-emerald-100 text-emerald-700 font-bold">+{entrada.quantidade}</Badge>
+                      {entrada.volume_frasco_ml && (
+                        <span className="block text-[10px] text-slate-500 font-medium mt-0.5 whitespace-nowrap">
+                          frascos ({entrada.quantidade * Number(entrada.volume_frasco_ml)} mL)
+                        </span>
+                      )}
                     </TableCell>
                   )}
                   {visibleColumns.fornecedor && (

@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { ComboboxFornecedor } from "@/components/ui/combobox-fornecedor";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2, Droplet } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { db } from "@/api/db";
@@ -25,6 +26,8 @@ const emptyForm = {
     data_validade: "",
     data_entrada: getLocalDateString(),
     quantidade: "",
+    volume_frasco_ml: "",
+    atualizar_cadastro_med: false,
     valor_unitario: "",
     valor_total: "",
     fornecedor_id: "",
@@ -44,6 +47,8 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
                     data_entrada: entrada.data_entrada ? entrada.data_entrada.split("T")[0] : getLocalDateString(),
                     data_validade: entrada.data_validade ? entrada.data_validade.split("T")[0] : "",
                     quantidade: entrada.quantidade?.toString() || "",
+                    volume_frasco_ml: entrada.volume_frasco_ml?.toString() || "",
+                    atualizar_cadastro_med: false,
                     valor_unitario: entrada.valor_unitario?.toString() || "",
                     valor_total: entrada.valor_total?.toString() || "",
                 });
@@ -63,7 +68,15 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
 
     const handleMedicamento = (id) => {
         const med = medicamentos.find((m) => m.id === id);
-        setForm((prev) => ({ ...prev, medicamento_id: id, medicamento_nome: med?.nome || "" }));
+        const isLiq = med ? (isLiquido(med) || med.is_liquido) : false;
+        const vol = isLiq ? (med.volume_frasco_ml || extrairVolumeMl(med) || "") : "";
+        setForm((prev) => ({ 
+            ...prev, 
+            medicamento_id: id, 
+            medicamento_nome: med?.nome || "",
+            volume_frasco_ml: vol ? String(vol) : prev.volume_frasco_ml,
+            atualizar_cadastro_med: false
+        }));
     };
 
     const handleFornecedor = (id) => {
@@ -131,6 +144,8 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
         onSave({
             ...form,
             quantidade: Number(form.quantidade),
+            volume_frasco_ml: form.volume_frasco_ml ? Number(form.volume_frasco_ml) : null,
+            atualizar_cadastro_med: Boolean(form.atualizar_cadastro_med),
             valor_unitario: form.valor_unitario ? Number(form.valor_unitario) : null,
             valor_total: form.valor_total ? Number(form.valor_total) : null,
             fornecedor_id: form.fornecedor_id || null, // Garantir NULL para FK opcional
@@ -148,17 +163,18 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="max-w-lg">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
+            <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden shadow-2xl">
+                <DialogHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                    <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-slate-100">
                         {entrada ? "Editar Entrada de Medicamento" : "Nova Entrada de Medicamento"}
                     </DialogTitle>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Medicamento */}
-                    <div>
-                        <Label htmlFor="med-select">Medicamento <span className="text-red-500">*</span></Label>
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden min-h-0">
+                    <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                        {/* Medicamento */}
+                        <div>
+                            <Label htmlFor="med-select">Medicamento <span className="text-red-500">*</span></Label>
                         <ComboboxMedicamento
                             medicamentos={medicamentos}
                             value={form.medicamento_id}
@@ -209,23 +225,61 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
                             </div>
                         )}
 
-                        {/* Indicador de Medicamento Líquido / Volume Frasco */}
+                        {/* Indicador e Ajuste de Volume por Frasco/Lote para Medicamento Líquido */}
                         {selectedMed && (isLiquido(selectedMed) || selectedMed.is_liquido) && (
-                            <div className="mt-2.5 rounded-xl p-3 border bg-blue-50/80 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-xs flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-base">💧</span>
+                            <div className="mt-2.5 rounded-xl p-3.5 border bg-sky-50/90 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 text-xs space-y-3 shadow-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <Droplet className="w-5 h-5 text-sky-600 animate-pulse shrink-0" />
+                                        <div>
+                                            <p className="font-bold text-sky-950 dark:text-sky-100 text-sm">
+                                                Medicamento Líquido Multidose
+                                            </p>
+                                            <p className="text-[11px] text-sky-700 dark:text-sky-300">
+                                                A quantidade desta entrada deve ser registrada em <strong>unidades de FRASCOS</strong>.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Badge className="bg-sky-600 text-white font-mono text-xs px-2.5 py-0.5 shadow-sm">
+                                        {form.volume_frasco_ml ? `${form.volume_frasco_ml} mL / frasco` : "Defina o volume"}
+                                    </Badge>
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-sky-200 dark:border-sky-900 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                                     <div>
-                                        <p className="font-bold text-blue-900 dark:text-blue-200">
-                                            Medicamento Líquido Multidose (Frasco de {selectedMed.volume_frasco_ml || extrairVolumeMl(selectedMed)} mL)
-                                        </p>
-                                        <p className="text-[11px] text-blue-700 dark:text-blue-400">
-                                            A quantidade desta entrada deve ser registrada em <strong>unidades de FRASCOS</strong>.
+                                        <Label htmlFor="vol-frasco-lote" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                            Volume do Frasco deste Lote (mL):
+                                        </Label>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <Input
+                                                id="vol-frasco-lote"
+                                                type="number"
+                                                min="1"
+                                                placeholder="Ex: 10, 20, 100, 120"
+                                                value={form.volume_frasco_ml}
+                                                onChange={(e) => setForm(prev => ({ ...prev, volume_frasco_ml: e.target.value }))}
+                                                className="h-8 font-bold text-sky-900 dark:text-sky-100 bg-sky-50/60 border-sky-300 focus:bg-white"
+                                            />
+                                            <span className="text-xs font-bold text-slate-500">mL</span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">
+                                            * Se este lote veio com frasco diferente (ex: 100 mL em vez de 120 mL), altere aqui.
                                         </p>
                                     </div>
+
+                                    <div className="flex items-start space-x-2 pt-1 sm:pt-0">
+                                        <input
+                                            type="checkbox"
+                                            id="chk-atualizar-cadastro"
+                                            checked={Boolean(form.atualizar_cadastro_med)}
+                                            onChange={(e) => setForm(prev => ({ ...prev, atualizar_cadastro_med: e.target.checked }))}
+                                            className="h-4 w-4 mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                                        />
+                                        <Label htmlFor="chk-atualizar-cadastro" className="text-xs text-slate-600 dark:text-slate-300 font-normal cursor-pointer leading-tight">
+                                            Atualizar também o cadastro padrão deste medicamento para <strong>{form.volume_frasco_ml || '...'} mL</strong>
+                                        </Label>
+                                    </div>
                                 </div>
-                                <span className="bg-blue-100 text-blue-800 border border-blue-300 font-bold px-2 py-0.5 rounded text-[10px] shrink-0">
-                                    {selectedMed.volume_frasco_ml || extrairVolumeMl(selectedMed)} mL/frasco
-                                </span>
                             </div>
                         )}
                     </div>
@@ -314,19 +368,20 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
                             onChange={handleChange("observacao")}
                         />
                     </div>
+                </div>
 
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                        <Button
-                            type="submit"
-                            disabled={isLoading}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                            {isLoading ? "Salvando..." : "Registrar Entrada"}
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
+                <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-100 dark:border-slate-800 shrink-0 flex items-center justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                    <Button
+                        type="submit"
+                        disabled={isLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 font-semibold text-white shadow-sm"
+                    >
+                        {isLoading ? "Salvando..." : "Registrar Entrada"}
+                    </Button>
+                </DialogFooter>
+            </form>
+        </DialogContent>
+    </Dialog>
+);
 }

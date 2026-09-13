@@ -104,6 +104,23 @@ const ensureTableQuery = {
     ALTER TABLE "Entrada" ALTER COLUMN "lote_id" DROP NOT NULL;
     ALTER TABLE "Entrada" ALTER COLUMN "fornecedor_id" DROP NOT NULL;
     ALTER TABLE "Entrada" ALTER COLUMN "nota_fiscal" DROP NOT NULL;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+  `,
+  Lote: `
+    CREATE TABLE IF NOT EXISTS "Lote" (
+        "id" TEXT PRIMARY KEY,
+        "medicamento_id" TEXT,
+        "numero_lote" TEXT,
+        "data_validade" TEXT,
+        "quantidade_inicial" INTEGER,
+        "quantidade_atual" INTEGER,
+        "volume_frasco_ml" NUMERIC,
+        "status" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+    ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "quantidade_inicial" INTEGER;
   `,
   PedidoSatelite: `
     CREATE TABLE IF NOT EXISTS "PedidoSatelite" (
