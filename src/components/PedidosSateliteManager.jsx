@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   ShoppingCart, 
   PackageCheck, 
@@ -31,7 +32,11 @@ import {
   Ban,
   AlertTriangle,
   XCircle,
-  Printer
+  Printer,
+  Building2,
+  ChevronDown,
+  Check,
+  X
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -39,7 +44,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const queryClient = useQueryClient();
 
   // State for order creation (satelite)
-  const [selectedAlaId, setSelectedAlaId] = useState("all");
+  const [selectedAlaIds, setSelectedAlaIds] = useState(["all"]);
   const [diasCalculo, setDiasCalculo] = useState(1);
   const [customDias, setCustomDias] = useState("");
   const [margemPercentual, setMargemPercentual] = useState(0); // 0, 10, 20, 25, 30, "custom"
@@ -99,7 +104,6 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     }
     return Number(diasCalculo) || 1;
   }, [diasCalculo, customDias]);
-
   // Effective safety margin percentage
   const effectiveMargem = useMemo(() => {
     if (margemPercentual === "custom") {
@@ -109,7 +113,18 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     return Number(margemPercentual) || 0;
   }, [margemPercentual, customMargem]);
 
-  // Calculation of medication needs per selected Ala, Days, Safety Margin, and Stock Discount
+  // Se todas as alas estão selecionadas
+  const isAllAlas = useMemo(() => {
+    return selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
+  }, [selectedAlaIds]);
+
+  // Objetos das alas selecionadas
+  const selectedAlasObjects = useMemo(() => {
+    if (isAllAlas) return [];
+    return alas.filter(a => selectedAlaIds.includes(String(a.id)));
+  }, [isAllAlas, selectedAlaIds, alas]);
+
+  // Calculation of medication needs per selected Ala(s), Days, Safety Margin, and Stock Discount
   const calculoNecessidade = useMemo(() => {
     const ativas = prescricoes.filter(p => {
       // 1. Status check: aceita Ativa, Ativo (case-insensitive) ou sem status definido
@@ -124,17 +139,20 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       );
       if (pac && (pac.status === "Alta" || pac.status === "alta" || pac.ativo === false)) return false;
 
-      // 3. Ala check
-      if (selectedAlaId !== "all") {
-        const alaObj = alas.find(a => String(a.id) === String(selectedAlaId));
-        const alaNomeSelected = alaObj?.nome?.trim().toLowerCase();
+      // 3. Ala check: suporta selecionar e somar múltiplas alas (ex: Ala X + Ala Y)
+      if (!isAllAlas) {
         const pacAlaId = pac ? String(pac.alaId || pac.ala_id || "") : "";
         const pacAlaNome = (pac?.alaNome || pac?.ala_nome || p.alaNome || p.ala_nome || "").trim().toLowerCase();
 
-        const matchAlaId = pacAlaId && pacAlaId === String(selectedAlaId);
-        const matchAlaNome = Boolean(alaNomeSelected && pacAlaNome && pacAlaNome === alaNomeSelected);
+        const match = selectedAlaIds.some(aid => {
+          const alaObj = alas.find(a => String(a.id) === String(aid));
+          const alaNomeSelected = alaObj?.nome?.trim().toLowerCase();
+          const matchAlaId = pacAlaId && pacAlaId === String(aid);
+          const matchAlaNome = Boolean(alaNomeSelected && pacAlaNome && pacAlaNome === alaNomeSelected);
+          return matchAlaId || matchAlaNome;
+        });
 
-        if (!matchAlaId && !matchAlaNome) {
+        if (!match) {
           return false;
         }
       }
@@ -211,7 +229,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         qtdSugerida
       };
     }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
-  }, [prescricoes, pacientes, medicamentos, selectedAlaId, alas, effectiveDays, effectiveMargem, descontarEstoque]);
+  }, [prescricoes, pacientes, medicamentos, selectedAlaIds, isAllAlas, alas, effectiveDays, effectiveMargem, descontarEstoque]);
 
   // Resumo macro do pedido calculado
   const resumoPedido = useMemo(() => {
@@ -244,8 +262,12 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         throw new Error("Nenhuma medicação necessária encontrada para os filtros selecionados.");
       }
 
-      const alaObj = alas.find(a => a.id === selectedAlaId);
-      const alaNomeStr = selectedAlaId === "all" ? "Todas as Alas" : (alaObj?.nome || "Ala Selecionada");
+      const isAllAlasCalc = selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
+      const alasEncontradas = alas.filter(a => selectedAlaIds.includes(String(a.id)));
+      const alaNomeStr = isAllAlasCalc 
+        ? "Todas as Alas" 
+        : (alasEncontradas.length > 0 ? alasEncontradas.map(a => a.nome).join(" + ") : "Alas Selecionadas");
+      const alaIdStr = isAllAlasCalc ? "all" : selectedAlaIds.join(",");
 
       const itens = calculoNecessidade.map(item => {
         const finalQtd = customQuantities[item.medicamentoId] !== undefined 
@@ -288,7 +310,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const novoPedido = {
         id: pedidoId,
         codigo: `PED-${timestampCode}`,
-        ala_id: selectedAlaId,
+        ala_id: alaIdStr,
         ala_nome: alaNomeStr,
         dias_calculados: effectiveDays,
         margem_seguranca: effectiveMargem,
@@ -354,8 +376,11 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         }))
       });
     } else {
-      const alaObj = alas.find(a => String(a.id) === String(selectedAlaId));
-      const alaNomeStr = selectedAlaId === "all" ? "Todas as Alas" : (alaObj?.nome || "Ala Selecionada");
+      const isAllAlasCalc = selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
+      const alasEncontradas = alas.filter(a => selectedAlaIds.includes(String(a.id)));
+      const alaNomeStr = isAllAlasCalc 
+        ? "Todas as Alas" 
+        : (alasEncontradas.length > 0 ? alasEncontradas.map(a => a.nome).join(" + ") : "Alas Selecionadas");
 
       const itens = calculoNecessidade.map(item => {
         const finalQtd = customQuantities[item.medicamentoId] !== undefined 
@@ -567,20 +592,175 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
           {/* Painel de Controles e Parâmetros */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
-            {/* Seletor de Ala */}
-            <div className="md:col-span-3">
-              <Label className="text-[11px] text-slate-500 font-semibold mb-1 block">Ala / Setor</Label>
-              <Select value={selectedAlaId} onValueChange={(val) => { setSelectedAlaId(val); setCustomQuantities({}); }}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Selecione a Ala..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as Alas</SelectItem>
-                  {alas.map(a => (
-                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+            {/* Seletor de Ala / Setor (Multi-Ala com Checklist) */}
+            <div className="md:col-span-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-slate-500 font-semibold block">Ala / Setor</Label>
+                {!isAllAlas && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedAlaIds(["all"]); setCustomQuantities({}); }}
+                    className="text-[10px] text-blue-600 hover:underline font-semibold"
+                  >
+                    Somar Todas
+                  </button>
+                )}
+              </div>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-xs justify-between font-normal bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 px-2.5"
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span className="truncate font-medium text-slate-800 dark:text-slate-200">
+                        {isAllAlas
+                          ? "Todas as Alas"
+                          : selectedAlasObjects.length === 1
+                          ? selectedAlasObjects[0].nome
+                          : `${selectedAlasObjects.length} Alas (${selectedAlasObjects.map(a => a.nome).join(" + ")})`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                      {!isAllAlas && (
+                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 font-bold">
+                          {selectedAlaIds.length}
+                        </Badge>
+                      )}
+                      <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+                    </div>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-2.5 shadow-lg" align="start">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800 text-xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                      Somar Alas no Pedido
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedAlaIds(["all"]); setCustomQuantities({}); }}
+                        className="text-blue-600 font-semibold hover:underline"
+                      >
+                        Todas
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (alas.length > 0) {
+                            setSelectedAlaIds([String(alas[0].id)]);
+                            setCustomQuantities({});
+                          }
+                        }}
+                        className="text-slate-500 hover:underline"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2">
+                    Marque as alas que deseja somar no pedido (ex: Ala X + Ala Y):
+                  </p>
+
+                  <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                    <label
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-xs font-medium transition-colors",
+                        isAllAlas && "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isAllAlas}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAlaIds(["all"]);
+                          } else {
+                            setSelectedAlaIds(alas.map(a => String(a.id)));
+                          }
+                          setCustomQuantities({});
+                        }}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span>Todas as Alas (Consolidado Geral)</span>
+                    </label>
+
+                    {alas.map(a => {
+                      const aIdStr = String(a.id);
+                      const isChecked = isAllAlas || selectedAlaIds.includes(aIdStr);
+                      return (
+                        <label
+                          key={a.id}
+                          className={cn(
+                            "flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-xs transition-colors",
+                            !isAllAlas && selectedAlaIds.includes(aIdStr) && "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              setCustomQuantities({});
+                              if (isAllAlas) {
+                                if (!e.target.checked) {
+                                  const remaining = alas.filter(item => String(item.id) !== aIdStr).map(item => String(item.id));
+                                  setSelectedAlaIds(remaining.length > 0 ? remaining : ["all"]);
+                                }
+                              } else {
+                                if (e.target.checked) {
+                                  const updated = [...selectedAlaIds, aIdStr];
+                                  if (updated.length === alas.length) {
+                                    setSelectedAlaIds(["all"]);
+                                  } else {
+                                    setSelectedAlaIds(updated);
+                                  }
+                                } else {
+                                  const updated = selectedAlaIds.filter(id => id !== aIdStr);
+                                  setSelectedAlaIds(updated.length > 0 ? updated : ["all"]);
+                                }
+                              }
+                            }}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span className="flex-1 truncate">{a.nome}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Badges de Alas Ativas Selecionadas */}
+              {!isAllAlas && selectedAlasObjects.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {selectedAlasObjects.map(a => (
+                    <span
+                      key={a.id}
+                      className="inline-flex items-center gap-1 text-[10px] bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-1.5 py-0.5 rounded-md"
+                    >
+                      {a.nome}
+                      {selectedAlasObjects.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = selectedAlaIds.filter(id => id !== String(a.id));
+                            setSelectedAlaIds(updated.length > 0 ? updated : ["all"]);
+                            setCustomQuantities({});
+                          }}
+                          className="hover:text-rose-600"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </span>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
 
             {/* Seletor de Dias */}

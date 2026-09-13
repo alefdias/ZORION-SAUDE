@@ -44,6 +44,7 @@ import {
   Clock,
   X, 
   Bed, 
+  RotateCcw,
   Sparkles, 
   History 
 } from "lucide-react";
@@ -318,6 +319,18 @@ export default function PacientesMedicao() {
   const [transferSingleLeito, setTransferSingleLeito] = useState("");
   const [transferMotivo, setTransferMotivo] = useState("");
 
+  // Estados para Modal de Impressão de Prescrições & Aprazamento (Checklist por Ala e Paciente)
+  const [printPrescModalOpen, setPrintPrescModalOpen] = useState(false);
+  const [printSelectedAlas, setPrintSelectedAlas] = useState(["all"]);
+  const [printSelectedPatientIds, setPrintSelectedPatientIds] = useState([]);
+  const [printPeriodoDias, setPrintPeriodoDias] = useState(1);
+  const [printSearchPatient, setPrintSearchPatient] = useState("");
+  const [printIncludeConsolidado, setPrintIncludeConsolidado] = useState(true);
+  const [printIncludeKits, setPrintIncludeKits] = useState(true);
+
+  // Estado para indicar reinternação de paciente de alta
+  const [isReinternando, setIsReinternando] = useState(false);
+
   // Queries
   const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
     queryKey: ['pacientes'],
@@ -432,8 +445,24 @@ export default function PacientesMedicao() {
   // Patient Mutations
   const savePatientMutation = useMutation({
     mutationFn: async (data) => {
+      // 1. Validação de duplicidade: não permite múltiplos pacientes ativos com o mesmo prontuário
+      const rawProntuario = (data.prontuario || "").trim().toLowerCase();
+      const duplicateActive = pacientes.find(p => 
+        (p.prontuario || "").trim().toLowerCase() === rawProntuario &&
+        p.status !== "Alta" &&
+        (!editingPatient || p.id !== editingPatient.id)
+      );
+      if (duplicateActive) {
+        throw new Error(`Já existe um paciente ativo cadastrado com o prontuário "${data.prontuario}": ${duplicateActive.nome} (${duplicateActive.alaNome || 'Ala Geral'} • Leito: ${duplicateActive.leito || 'S/L'}).`);
+      }
+
       if (editingPatient) {
-        const res = await db.entities.Paciente.update(editingPatient.id, data);
+        const payload = {
+          ...data,
+          status: "Ativo",
+          dataAlta: null
+        };
+        const res = await db.entities.Paciente.update(editingPatient.id, payload);
         if (data.alaNome !== editingPatient.alaNome || data.leito !== editingPatient.leito) {
           const pacPrescs = prescricoes.filter(pr => (pr.pacienteId === editingPatient.id || pr.paciente_id === editingPatient.id) && pr.status === "Ativa");
           for (const presc of pacPrescs) {
@@ -451,8 +480,14 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       setPatientModalOpen(false);
+      const wasReinternando = isReinternando;
       setEditingPatient(null);
-      toast.success(editingPatient ? "Paciente atualizado com sucesso!" : "Paciente cadastrado com sucesso!");
+      setIsReinternando(false);
+      toast.success(
+        wasReinternando 
+          ? "Paciente reinternado e reativado com sucesso!" 
+          : (editingPatient ? "Paciente atualizado com sucesso!" : "Paciente cadastrado com sucesso!")
+      );
     },
     onError: (err) => toast.error("Erro ao salvar paciente: " + (err?.message || (typeof err === "string" ? err : "Erro desconhecido")))
   });
@@ -1104,9 +1139,47 @@ export default function PacientesMedicao() {
     }
   });
 
+  // Validação em tempo real do prontuário digitado (detecção de duplicidade ativa e histórico de alta)
+  const prontuarioCheck = useMemo(() => {
+    const raw = (patientFormData.prontuario || "").trim().toLowerCase();
+    if (!raw) return { active: null, alta: null };
+
+    const active = pacientes.find(p => 
+      (p.prontuario || "").trim().toLowerCase() === raw &&
+      p.status !== "Alta" &&
+      (!editingPatient || p.id !== editingPatient.id)
+    );
+
+    const alta = pacientes.find(p => 
+      (p.prontuario || "").trim().toLowerCase() === raw &&
+      p.status === "Alta" &&
+      (!editingPatient || p.id !== editingPatient.id)
+    );
+
+    return { active, alta };
+  }, [patientFormData.prontuario, pacientes, editingPatient]);
+
+  // Restaurar / Reinternar paciente a partir do histórico de altas
+  const handleRestaurarPacienteAlta = (pac) => {
+    setEditingPatient(pac);
+    setIsReinternando(true);
+    setPatientFormData({
+      nome: pac.nome || "",
+      prontuario: pac.prontuario || "",
+      idade: pac.idade || "",
+      alaId: pac.alaId || (alas[0]?.id || ""),
+      alaNome: pac.alaNome || (alas[0]?.nome || ""),
+      leito: "", // Deixa vazio para definir o novo leito nesta internação
+      status: "Ativo",
+      observacoes: pac.observacoes ? `${pac.observacoes} (Reinternação)` : "Reinternação hospitalar"
+    });
+    toast.info(`Dados de ${pac.nome} recuperados do histórico de alta. Defina a ala/leito e salve para confirmar.`);
+  };
+
   // Handlers Modal Paciente
   const handleOpenNewPatient = () => {
     setEditingPatient(null);
+    setIsReinternando(false);
     setPatientFormData({
       nome: "",
       prontuario: `PRONT-${Date.now().toString().slice(-4)}`,
@@ -1122,6 +1195,7 @@ export default function PacientesMedicao() {
 
   const handleOpenEditPatient = (p) => {
     setEditingPatient(p);
+    setIsReinternando(false);
     setPatientFormData({
       nome: p.nome || "",
       prontuario: p.prontuario || "",
@@ -1382,6 +1456,156 @@ export default function PacientesMedicao() {
     return (pacientes || []).filter(p => p.status === "Alta");
   }, [pacientes]);
 
+  // Previsão e Consolidação para Impressão com Filtro de Checklist (por Ala e por Paciente)
+  const calculoImpressao = useMemo(() => {
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
+    const ativas = prescricoes.filter(p => {
+      if (!isPrescricaoAtiva(p, hojeStr)) return false;
+      const pac = pacientes.find(patient => patient.id === p.pacienteId);
+      if (!pac || pac.status === "Alta") return false;
+
+      // 1. Filtro de paciente por checklist: se printSelectedPatientIds tiver seleção, deve estar contido
+      if (printSelectedPatientIds.length > 0) {
+        if (!printSelectedPatientIds.includes(p.pacienteId)) return false;
+      } else if (!printSelectedAlas.includes("all") && printSelectedAlas.length > 0) {
+        // Se nenhum paciente selecionado individualmente, filtra pelas alas marcadas
+        const pacAlaId = pac.alaId || pac.ala_id || "";
+        const pacAlaNome = (pac.alaNome || pac.ala_nome || "").trim().toLowerCase();
+        const matchAla = printSelectedAlas.some(aid => {
+          const alaObj = alas.find(a => String(a.id) === String(aid));
+          const alaNome = alaObj?.nome?.trim().toLowerCase();
+          return (pacAlaId && pacAlaId === String(aid)) || (alaNome && pacAlaNome === alaNome);
+        });
+        if (!matchAla) return false;
+      }
+      return true;
+    });
+
+    const medMap = {};
+    const patientMap = {};
+
+    ativas.forEach(p => {
+      const patient = pacientes.find(pac => pac.id === p.pacienteId) || {
+        nome: p.pacienteNome || "Paciente",
+        prontuario: p.prontuario || "-",
+        alaNome: p.alaNome || "-",
+        leito: p.leito || "-"
+      };
+
+      const med = medicamentos.find(m => m.id === p.medicamentoId) || {
+        nome: p.medicamentoNome || "Medicamento",
+        codigo: p.medicamentoCodigo || "-",
+        apresentacao: p.apresentacao || "-",
+        concentracao: p.concentracao || "-",
+        estoque_atual: 0
+      };
+
+      const dailyDose = p.totalDiario || 0;
+      const periodDose = calculatePrescQtdParaDias(p, printPeriodoDias);
+
+      if (!medMap[p.medicamentoId]) {
+        medMap[p.medicamentoId] = {
+          medicamentoId: p.medicamentoId,
+          nome: med.nome,
+          codigo: med.codigo,
+          apresentacao: med.apresentacao,
+          concentracao: med.concentracao,
+          estoqueAtual: med.estoque_atual || 0,
+          qtdDiaria: 0,
+          qtdPeriodo: 0,
+          pacientesSet: new Set()
+        };
+      }
+      medMap[p.medicamentoId].qtdDiaria += dailyDose;
+      medMap[p.medicamentoId].qtdPeriodo += periodDose;
+      medMap[p.medicamentoId].pacientesSet.add(patient.nome);
+
+      if (!patientMap[p.pacienteId]) {
+        patientMap[p.pacienteId] = {
+          pacienteId: p.pacienteId,
+          nome: patient.nome,
+          prontuario: patient.prontuario,
+          alaNome: patient.alaNome,
+          leito: patient.leito,
+          prescricoes: []
+        };
+      }
+      patientMap[p.pacienteId].prescricoes.push({
+        ...p,
+        medNome: med.nome,
+        medCodigo: med.codigo,
+        qtdPeriodo: periodDose
+      });
+    });
+
+    const consolidadoMeds = Object.values(medMap).map(item => ({
+      ...item,
+      totalPacientes: item.pacientesSet ? item.pacientesSet.size : 0,
+      suficiente: (item.estoqueAtual || 0) >= (item.qtdPeriodo || 0),
+      diferenca: (item.qtdPeriodo || 0) - (item.estoqueAtual || 0)
+    })).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+    const consolidadoPacientes = Object.values(patientMap).sort((a, b) => a.nome.localeCompare(b.nome));
+
+    return {
+      consolidadoMeds,
+      consolidadoPacientes,
+      totalPrescricoesAtivas: ativas.length,
+      totalPacientesComMedicao: Object.keys(patientMap).length
+    };
+  }, [prescricoes, pacientes, medicamentos, printPeriodoDias, printSelectedPatientIds, printSelectedAlas, alas]);
+
+  // Handler para abertura do modal de impressão com pré-seleção flexível
+  const handleOpenPrintPrescModal = (targetPatientIds = null) => {
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
+    if (targetPatientIds && Array.isArray(targetPatientIds) && targetPatientIds.length > 0) {
+      setPrintSelectedPatientIds(targetPatientIds);
+      const relevantAlas = activePatients
+        .filter(p => targetPatientIds.includes(p.id) && p.alaId)
+        .map(p => String(p.alaId));
+      setPrintSelectedAlas(relevantAlas.length > 0 ? Array.from(new Set(relevantAlas)) : ["all"]);
+    } else if (selectedPatientIds.length > 0) {
+      setPrintSelectedPatientIds([...selectedPatientIds]);
+      setPrintSelectedAlas(["all"]);
+    } else {
+      const pacsComMed = activePatients
+        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+        .map(p => p.id);
+      setPrintSelectedPatientIds(pacsComMed.length > 0 ? pacsComMed : activePatients.map(p => p.id));
+      setPrintSelectedAlas(["all"]);
+    }
+    setPrintSearchPatient("");
+    setPrintPrescModalOpen(true);
+  };
+
+  // Pacientes candidatos exibidos no checklist do modal de impressão
+  const displayedPrintCandidates = useMemo(() => {
+    let list = activePatients;
+    if (!printSelectedAlas.includes("all") && printSelectedAlas.length > 0) {
+      list = list.filter(p => {
+        const pAlaId = String(p.alaId || p.ala_id || "");
+        return printSelectedAlas.includes(pAlaId) || printSelectedAlas.some(aid => {
+          const alaObj = alas.find(a => String(a.id) === String(aid));
+          return alaObj && alaObj.nome === p.alaNome;
+        });
+      });
+    }
+    if (printSearchPatient.trim()) {
+      const term = printSearchPatient.trim().toLowerCase();
+      list = list.filter(p => 
+        (p.nome || "").toLowerCase().includes(term) ||
+        (p.prontuario || "").toLowerCase().includes(term) ||
+        (p.leito || "").toLowerCase().includes(term) ||
+        (p.alaNome || "").toLowerCase().includes(term)
+      );
+    }
+    return list;
+  }, [activePatients, printSelectedAlas, printSearchPatient, alas]);
+
+  const handleExecutePrint = () => {
+    window.print();
+  };
+
   // Contagens e KPIs de Pacientes
   const patientCounts = useMemo(() => {
     const ativos = (pacientes || []).filter(p => p.status !== "Alta");
@@ -1521,6 +1745,16 @@ export default function PacientesMedicao() {
           >
             <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
             Transferir Ala
+          </Button>
+
+          <Button 
+            onClick={() => handleOpenPrintPrescModal()} 
+            variant="outline" 
+            className="h-9 text-xs font-semibold border-slate-300 bg-white hover:bg-slate-50 text-slate-800 shadow-xs gap-1.5"
+            title="Imprimir relatório de prescrições e aprazamento dos pacientes com checklist por ala"
+          >
+            <Printer className="w-3.5 h-3.5 text-blue-600" />
+            Imprimir Prescrições
           </Button>
 
           <Button 
@@ -1782,6 +2016,17 @@ export default function PacientesMedicao() {
             >
               <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
               Transferir de Ala ({selectedPatientIds.length})
+            </Button>
+
+            <Button
+              onClick={() => handleOpenPrintPrescModal(selectedPatientIds)}
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs border-blue-300 bg-blue-50/90 text-blue-900 hover:bg-blue-100 font-bold gap-1.5 shadow-xs"
+              title="Imprimir relatório de prescrições dos pacientes selecionados"
+            >
+              <Printer className="w-3.5 h-3.5 text-blue-600" />
+              Imprimir Prescrições ({selectedPatientIds.length})
             </Button>
 
             <Button
@@ -2154,11 +2399,55 @@ export default function PacientesMedicao() {
 
       {/* ─── MODAL: PACIENTE ────────────────────────────────────────────────── */}
       <Dialog open={patientModalOpen} onOpenChange={setPatientModalOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>{editingPatient ? "Editar Paciente" : "Novo Paciente"}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {isReinternando ? (
+                <>
+                  <RotateCcw className="w-5 h-5 text-amber-600" />
+                  <span>Reinternar Paciente (Histórico de Alta)</span>
+                </>
+              ) : editingPatient ? (
+                <>
+                  <Pencil className="w-5 h-5 text-blue-600" />
+                  <span>Editar Paciente</span>
+                </>
+              ) : (
+                <>
+                  <Users className="w-5 h-5 text-blue-600" />
+                  <span>Novo Paciente</span>
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {isReinternando 
+                ? "Este paciente esteve internado anteriormente. Atualize os dados, selecione o novo setor/leito e confirme a reinternação."
+                : "Cadastre as informações clínicas e de localização do paciente internado."
+              }
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Alerta de Reinternação em Andamento */}
+            {isReinternando && (
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 p-2.5 rounded-lg text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-amber-900 dark:text-amber-200 font-semibold">
+                    Reativando histórico do paciente. Defina o novo leito e ala abaixo.
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleOpenNewPatient()}
+                  className="h-6 text-[10px] text-slate-500 hover:text-slate-800"
+                >
+                  Limpar
+                </Button>
+              </div>
+            )}
+
             <div>
               <Label>Nome Completo do Paciente *</Label>
               <Input
@@ -2186,6 +2475,56 @@ export default function PacientesMedicao() {
                 />
               </div>
             </div>
+
+            {/* Aviso 1: Prontuário Duplicado Ativo */}
+            {prontuarioCheck.active && (
+              <div className="bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 p-3 rounded-lg text-xs flex items-start gap-2.5 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-red-900 dark:text-red-200">
+                    Prontuário já em uso por paciente ativo!
+                  </p>
+                  <p className="text-red-700 dark:text-red-300 mt-0.5">
+                    O paciente <strong>{prontuarioCheck.active.nome}</strong> já está internado com o prontuário "{patientFormData.prontuario}" no setor <strong>{prontuarioCheck.active.alaNome || "Geral"}</strong> (Leito: {prontuarioCheck.active.leito || "S/L"}).
+                  </p>
+                  <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 font-medium">
+                    Não é permitido cadastrar dois pacientes ativos com o mesmo número de prontuário.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Aviso 2: Paciente Encontrado no Histórico de Altas com Botão Restaurar */}
+            {!isReinternando && prontuarioCheck.alta && (
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 p-3 rounded-lg text-xs space-y-2 animate-in fade-in">
+                <div className="flex items-start gap-2">
+                  <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-900 dark:text-amber-200">
+                      Paciente encontrado no histórico de altas!
+                    </p>
+                    <p className="text-amber-800 dark:text-amber-300 mt-0.5">
+                      O paciente <strong>{prontuarioCheck.alta.nome}</strong> (Prontuário: {prontuarioCheck.alta.prontuario}) já esteve internado e recebeu alta.
+                    </p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                      Última Ala: {prontuarioCheck.alta.alaNome || "Geral"} • Leito anterior: {prontuarioCheck.alta.leito || "S/L"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleRestaurarPacienteAlta(prontuarioCheck.alta)}
+                    className="h-8 bg-amber-600 hover:bg-amber-700 text-white font-bold gap-1.5 text-xs shadow-xs"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restaurar / Reinternar Paciente
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Ala / Setor</Label>
@@ -2220,8 +2559,15 @@ export default function PacientesMedicao() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPatientModalOpen(false)}>Cancelar</Button>
-            <Button onClick={() => savePatientMutation.mutate(patientFormData)} disabled={!patientFormData.nome || !patientFormData.prontuario}>
-              Salvar Paciente
+            <Button 
+              onClick={() => savePatientMutation.mutate(patientFormData)} 
+              disabled={!patientFormData.nome || !patientFormData.prontuario || Boolean(prontuarioCheck.active) || savePatientMutation.isPending}
+              className={cn(isReinternando && "bg-amber-600 hover:bg-amber-700 text-white font-bold")}
+            >
+              {savePatientMutation.isPending 
+                ? "Salvando..." 
+                : (isReinternando ? "Confirmar Reinternação" : (editingPatient ? "Salvar Alterações" : "Cadastrar Paciente"))
+              }
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2255,6 +2601,15 @@ export default function PacientesMedicao() {
               <div className="text-right flex flex-col items-start sm:items-end gap-2 shrink-0">
                 <div className="text-blue-200 text-xs sm:text-sm mb-1">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
                 <div className="flex gap-2 flex-wrap">
+                  <Button 
+                    variant="outline" 
+                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
+                    onClick={() => handleOpenPrintPrescModal([viewPatientDetails.id])}
+                    title="Imprimir relatório de prescrição deste paciente"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Imprimir Prescrição
+                  </Button>
                   <Button 
                     variant="outline" 
                     className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
@@ -3271,94 +3626,406 @@ export default function PacientesMedicao() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── AREA DE IMPRESSÃO (A4 OCULTA NA TELA) ─────────────────────────── */}
-      <div id="print-area" className="hidden print:block p-8 bg-white text-slate-900 font-sans">
-        <div className="border-b-2 border-blue-900 pb-4 mb-6 flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">ZORION SAÚDE — PREVISÃO E SEPARAÇÃO DE MEDICAÇÃO FIXA</h1>
-            <p className="text-xs text-slate-600 font-bold mt-1">RELATÓRIO DE DISPENSAÇÃO CONTINUADA • PREVISÃO PARA {periodoDias} DIAS</p>
-          </div>
-          <div className="text-right text-xs text-slate-600 font-mono">
-            <p>Emissão: <strong>{format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong></p>
-            <p>Total de Pacientes: <strong>{calculoPrevisao.totalPacientesComMedicao}</strong></p>
-          </div>
-        </div>
+      {/* ─── MODAL: IMPRESSÃO DE PRESCRIÇÕES COM CHECKLIST POR ALA E PACIENTE ─── */}
+      <Dialog open={printPrescModalOpen} onOpenChange={setPrintPrescModalOpen}>
+        <DialogContent className="sm:max-w-[780px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
+            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-bold">
+              <Printer className="w-5 h-5" />
+              <DialogTitle className="text-lg">Imprimir Prescrições & Aprazamento</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Selecione as alas e marque no checklist quais pacientes deseja incluir no relatório de prescrições e kits de medicação.
+            </DialogDescription>
+          </DialogHeader>
 
-        {/* Consolidado Global de Pedido */}
-        <div className="mb-8">
-          <h2 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-3 text-blue-900">
-            1. Consolidado Geral para Compras e Separação ({periodoDias} Dias)
-          </h2>
-          <table className="w-full text-left border-collapse border border-slate-300 text-xs">
-            <thead>
-              <tr className="bg-slate-200 text-slate-900 font-bold uppercase">
-                <th className="border border-slate-300 p-2">Código</th>
-                <th className="border border-slate-300 p-2">Medicamento / Concentração</th>
-                <th className="border border-slate-300 p-2 text-center">Consumo Diário</th>
-                <th className="border border-slate-300 p-2 text-center">Total {periodoDias}D</th>
-                <th className="border border-slate-300 p-2 text-center">Estoque Atual</th>
-                <th className="border border-slate-300 p-2 text-center">Situação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calculoPrevisao.consolidadoMeds.map(item => (
-                <tr key={item.medicamentoId}>
-                  <td className="border border-slate-300 p-2 font-mono">{item.codigo || "-"}</td>
-                  <td className="border border-slate-300 p-2 font-bold">{item.nome} {item.concentracao ? `(${item.concentracao})` : ""}</td>
-                  <td className="border border-slate-300 p-2 text-center font-mono">{item.qtdDiaria}</td>
-                  <td className="border border-slate-300 p-2 text-center font-mono font-bold text-blue-900">{item.qtdPeriodo}</td>
-                  <td className="border border-slate-300 p-2 text-center font-mono">{item.estoqueAtual}</td>
-                  <td className="border border-slate-300 p-2 text-center font-bold">
-                    {item.suficiente ? "SUFICIENTE" : `FALTA ${item.diferenca}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Fichas por Paciente */}
-        <div>
-          <h2 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-3 text-blue-900">
-            2. Kits de Aprazamento por Paciente / Leito ({periodoDias} Dias)
-          </h2>
-          {calculoPrevisao.consolidadoPacientes.map(pac => (
-            <div key={pac.pacienteId} className="mb-6 border border-slate-400 p-4 rounded-md">
-              <div className="flex justify-between border-b border-slate-300 pb-2 mb-2">
-                <span className="font-bold text-sm uppercase">{pac.nome} — Prontuário: {pac.prontuario}</span>
-                <span className="font-mono text-xs">Leito: {pac.alaNome} ({pac.leito})</span>
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {/* Seção 1: Checklist por Ala */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  1. Filtrar por Ala / Setor
+                </Label>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrintSelectedAlas(["all"]);
+                      const hojeStr = format(new Date(), "yyyy-MM-dd");
+                      const allWithMed = activePatients
+                        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+                        .map(p => p.id);
+                      setPrintSelectedPatientIds(allWithMed);
+                    }}
+                    className="text-blue-600 font-semibold hover:underline"
+                  >
+                    Todas as Alas
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrintSelectedAlas([]);
+                      setPrintSelectedPatientIds([]);
+                    }}
+                    className="text-slate-500 hover:underline"
+                  >
+                    Desmarcar Alas
+                  </button>
+                </div>
               </div>
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 font-bold border-b border-slate-300">
-                    <th className="py-1">Medicamento</th>
-                    <th className="py-1 text-center">Grade (08h - 14h - 22h - 06h)</th>
-                    <th className="py-1 text-center">Diário</th>
-                    <th className="py-1 text-right">Total {periodoDias}D</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pac.prescricoes.map(pr => {
-                    const d08 = getDoseForHora(pr.horarios, "08:00");
-                    const d14 = getDoseForHora(pr.horarios, "14:00");
-                    const d22 = getDoseForHora(pr.horarios, "22:00");
-                    const d06 = getDoseForHora(pr.horarios, "06:00");
+
+              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200/80 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hojeStr = format(new Date(), "yyyy-MM-dd");
+                    if (printSelectedAlas.includes("all")) {
+                      setPrintSelectedAlas([]);
+                      setPrintSelectedPatientIds([]);
+                    } else {
+                      setPrintSelectedAlas(["all"]);
+                      const allWithMed = activePatients
+                        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+                        .map(p => p.id);
+                      setPrintSelectedPatientIds(allWithMed);
+                    }
+                  }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-bold transition-all border",
+                    printSelectedAlas.includes("all")
+                      ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100"
+                  )}
+                >
+                  Todas as Alas ({activePatients.length})
+                </button>
+
+                {alas.map(a => {
+                  const aIdStr = String(a.id);
+                  const pacsInAla = activePatients.filter(p => String(p.alaId || p.ala_id) === aIdStr || p.alaNome === a.nome);
+                  const isChecked = printSelectedAlas.includes("all") || printSelectedAlas.includes(aIdStr);
+
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        const pacIdsInAla = pacsInAla.map(p => p.id);
+                        if (printSelectedAlas.includes("all")) {
+                          setPrintSelectedAlas([aIdStr]);
+                          setPrintSelectedPatientIds(pacIdsInAla);
+                        } else if (printSelectedAlas.includes(aIdStr)) {
+                          const updatedAlas = printSelectedAlas.filter(id => id !== aIdStr);
+                          setPrintSelectedAlas(updatedAlas);
+                          setPrintSelectedPatientIds(prev => prev.filter(pid => !pacIdsInAla.includes(pid)));
+                        } else {
+                          const updatedAlas = [...printSelectedAlas, aIdStr];
+                          if (updatedAlas.length === alas.length) {
+                            setPrintSelectedAlas(["all"]);
+                          } else {
+                            setPrintSelectedAlas(updatedAlas);
+                          }
+                          setPrintSelectedPatientIds(prev => Array.from(new Set([...prev, ...pacIdsInAla])));
+                        }
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all border flex items-center gap-1.5",
+                        isChecked
+                          ? "bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-semibold"
+                          : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                      )}
+                    >
+                      <span className={cn("w-2 h-2 rounded-full", isChecked ? "bg-blue-600" : "bg-slate-300")} />
+                      {a.nome}
+                      <span className="text-[10px] text-slate-400">({pacsInAla.length})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Seção 2: Checklist por Paciente */}
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  2. Checklist de Pacientes ({printSelectedPatientIds.length} selecionado{printSelectedPatientIds.length === 1 ? '' : 's'})
+                </Label>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative w-48 sm:w-60">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      placeholder="Buscar paciente / leito..."
+                      value={printSearchPatient}
+                      onChange={(e) => setPrintSearchPatient(e.target.value)}
+                      className="h-8 text-xs pl-8 pr-2"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const filtradosIds = displayedPrintCandidates.map(p => p.id);
+                      setPrintSelectedPatientIds(prev => Array.from(new Set([...prev, ...filtradosIds])));
+                    }}
+                    className="text-[11px] text-blue-600 font-semibold hover:underline whitespace-nowrap"
+                  >
+                    Marcar Todos
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setPrintSelectedPatientIds([])}
+                    className="text-[11px] text-slate-500 hover:underline whitespace-nowrap"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+
+              {/* Lista com Checkboxes */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-lg max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                {displayedPrintCandidates.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-500">
+                    Nenhum paciente encontrado com os filtros selecionados.
+                  </div>
+                ) : (
+                  displayedPrintCandidates.map(pac => {
+                    const isChecked = printSelectedPatientIds.includes(pac.id);
+                    const hojeStr = format(new Date(), "yyyy-MM-dd");
+                    const pacPrescsCount = prescricoes.filter(pr => pr.pacienteId === pac.id && isPrescricaoAtiva(pr, hojeStr)).length;
 
                     return (
-                      <tr key={pr.id} className="border-b border-slate-200">
-                        <td className="py-1 font-semibold">{pr.medNome}</td>
-                        <td className="py-1 text-center font-mono">{d08} - {d14} - {d22} - {d06}</td>
-                        <td className="py-1 text-center font-mono">{pr.totalDiario}</td>
-                        <td className="py-1 text-right font-mono font-bold">{pr.qtdPeriodo}</td>
-                      </tr>
+                      <label
+                        key={pac.id}
+                        className={cn(
+                          "flex items-center gap-3 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors text-xs",
+                          isChecked && "bg-blue-50/40 dark:bg-blue-950/20"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPrintSelectedPatientIds(prev => [...prev, pac.id]);
+                            } else {
+                              setPrintSelectedPatientIds(prev => prev.filter(id => id !== pac.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">{pac.nome}</span>
+                            <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                              Pront: {pac.prontuario || "S/P"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Ala: <strong>{pac.alaNome || "Geral"}</strong> • Leito: <strong>{pac.leito || "S/L"}</strong>
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] px-2 py-0.5 shrink-0",
+                            pacPrescsCount > 0
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40"
+                              : "bg-slate-100 text-slate-500 border-slate-200"
+                          )}
+                        >
+                          {pacPrescsCount} medicação(ões)
+                        </Badge>
+                      </label>
                     );
-                  })}
-                </tbody>
-              </table>
+                  })
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+
+            {/* Seção 3: Parâmetros de Impressão */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-purple-600" />
+                3. Previsão de Dias & Conteúdo do Relatório
+              </Label>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-slate-500 font-medium mr-1">Previsão:</span>
+                  {[1, 2, 3, 5, 7, 14, 30].map(d => (
+                    <Button
+                      key={d}
+                      type="button"
+                      size="sm"
+                      variant={printPeriodoDias === d ? "default" : "outline"}
+                      onClick={() => setPrintPeriodoDias(d)}
+                      className={cn("h-7 text-xs px-2.5", printPeriodoDias === d && "bg-blue-600 font-bold text-white")}
+                    >
+                      {d} {d === 1 ? 'Dia' : 'Dias'}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-4 text-xs font-medium">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={printIncludeConsolidado}
+                      onChange={(e) => setPrintIncludeConsolidado(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                    />
+                    <span>1. Consolidado Geral</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={printIncludeKits}
+                      onChange={(e) => setPrintIncludeKits(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                    />
+                    <span>2. Kits de Aprazamento</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">
+              Total a imprimir: <strong>{calculoImpressao.consolidadoPacientes.length}</strong> paciente(s) e <strong>{calculoImpressao.consolidadoMeds.length}</strong> medicamento(s) ({printPeriodoDias} {printPeriodoDias === 1 ? 'dia' : 'dias'}).
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setPrintPrescModalOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleExecutePrint}
+                disabled={calculoImpressao.consolidadoPacientes.length === 0}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Relatório (A4)
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── AREA DE IMPRESSÃO (A4 OCULTA NA TELA) ─────────────────────────── */}
+      {(() => {
+        const printData = calculoImpressao.consolidadoPacientes.length > 0 ? calculoImpressao : calculoPrevisao;
+        const diasImpressao = printPeriodoDias || periodoDias;
+        const alasTexto = printSelectedAlas.includes("all") 
+          ? "Todas as Alas" 
+          : (alas.filter(a => printSelectedAlas.includes(String(a.id))).map(a => a.nome).join(" + ") || "Alas Selecionadas");
+
+        return (
+          <div id="print-area" className="hidden print:block p-8 bg-white text-slate-900 font-sans">
+            <div className="border-b-2 border-blue-900 pb-4 mb-6 flex justify-between items-end">
+              <div>
+                <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">ZORION SAÚDE — PREVISÃO E SEPARAÇÃO DE MEDICAÇÃO FIXA</h1>
+                <p className="text-xs text-slate-600 font-bold mt-1">
+                  RELATÓRIO DE DISPENSAÇÃO CONTINUADA & APRAZAMENTO • PREVISÃO PARA {diasImpressao} {diasImpressao === 1 ? 'DIA' : 'DIAS'}
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  Setor / Ala(s): <strong>{alasTexto}</strong>
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-600 font-mono">
+                <p>Emissão: <strong>{format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong></p>
+                <p>Pacientes Selecionados: <strong>{printData.totalPacientesComMedicao}</strong></p>
+                <p>Prescrições Ativas: <strong>{printData.totalPrescricoesAtivas}</strong></p>
+              </div>
+            </div>
+
+            {/* Consolidado Global de Pedido */}
+            {printIncludeConsolidado && (
+              <div className="mb-8">
+                <h2 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-3 text-blue-900">
+                  1. Consolidado Geral para Compras e Separação ({diasImpressao} {diasImpressao === 1 ? 'Dia' : 'Dias'})
+                </h2>
+                <table className="w-full text-left border-collapse border border-slate-300 text-xs">
+                  <thead>
+                    <tr className="bg-slate-200 text-slate-900 font-bold uppercase">
+                      <th className="border border-slate-300 p-2">Código</th>
+                      <th className="border border-slate-300 p-2">Medicamento / Concentração</th>
+                      <th className="border border-slate-300 p-2 text-center">Consumo Diário</th>
+                      <th className="border border-slate-300 p-2 text-center">Total {diasImpressao}D</th>
+                      <th className="border border-slate-300 p-2 text-center">Estoque Atual</th>
+                      <th className="border border-slate-300 p-2 text-center">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printData.consolidadoMeds.map(item => (
+                      <tr key={item.medicamentoId}>
+                        <td className="border border-slate-300 p-2 font-mono">{item.codigo || "-"}</td>
+                        <td className="border border-slate-300 p-2 font-bold">{item.nome} {item.concentracao ? `(${item.concentracao})` : ""}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{item.qtdDiaria}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono font-bold text-blue-900">{item.qtdPeriodo}</td>
+                        <td className="border border-slate-300 p-2 text-center font-mono">{item.estoqueAtual}</td>
+                        <td className="border border-slate-300 p-2 text-center font-bold">
+                          {item.suficiente ? "SUFICIENTE" : `FALTA ${item.diferenca}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Fichas por Paciente */}
+            {printIncludeKits && (
+              <div>
+                <h2 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-3 text-blue-900">
+                  2. Kits de Aprazamento por Paciente / Leito ({diasImpressao} {diasImpressao === 1 ? 'Dia' : 'Dias'})
+                </h2>
+                {printData.consolidadoPacientes.map(pac => (
+                  <div key={pac.pacienteId} className="mb-6 border border-slate-400 p-4 rounded-md [break-inside:avoid] page-break">
+                    <div className="flex justify-between border-b border-slate-300 pb-2 mb-2">
+                      <span className="font-bold text-sm uppercase">{pac.nome} — Prontuário: {pac.prontuario}</span>
+                      <span className="font-mono text-xs">Setor: {pac.alaNome} • Leito: ({pac.leito})</span>
+                    </div>
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 font-bold border-b border-slate-300">
+                          <th className="py-1">Medicamento</th>
+                          <th className="py-1 text-center">Grade (08h - 14h - 22h - 06h)</th>
+                          <th className="py-1 text-center">Diário</th>
+                          <th className="py-1 text-right">Total {diasImpressao}D</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pac.prescricoes.map(pr => {
+                          const d08 = getDoseForHora(pr.horarios, "08:00");
+                          const d14 = getDoseForHora(pr.horarios, "14:00");
+                          const d22 = getDoseForHora(pr.horarios, "22:00");
+                          const d06 = getDoseForHora(pr.horarios, "06:00");
+
+                          return (
+                            <tr key={pr.id} className="border-b border-slate-200">
+                              <td className="py-1 font-semibold">{pr.medNome}</td>
+                              <td className="py-1 text-center font-mono">{d08} - {d14} - {d22} - {d06}</td>
+                              <td className="py-1 text-center font-mono">{pr.totalDiario}</td>
+                              <td className="py-1 text-right font-mono font-bold">{pr.qtdPeriodo}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ─── MODAL DE CONFIRMAÇÃO DE ALTA ─────────────────────────── */}
       <Dialog open={altaModalOpen} onOpenChange={setAltaModalOpen}>
@@ -3858,7 +4525,7 @@ export default function PacientesMedicao() {
 
       <style>{`
         @media print {
-          @page { size: A4; margin: 12mm; }
+          @page { size: A4; margin: 10mm; }
           body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background-color: white !important; }
           ${altaReportData ? `
             body * { visibility: hidden; }
@@ -3866,10 +4533,12 @@ export default function PacientesMedicao() {
             [role="dialog"] { position: absolute; left:0; top:0; width: 100%; height: 100%; margin: 0; padding: 0; }
           ` : `
             body * { visibility: hidden; }
-            #print-area, #print-area * { visibility: visible; }
-            #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; }
+            [role="dialog"], .dialog-overlay { display: none !important; visibility: hidden !important; }
+            #print-area, #print-area * { visibility: visible !important; }
+            #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; }
           `}
           .no-print, nav, header, footer, button { display: none !important; }
+          .page-break { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
     </div>
