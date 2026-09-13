@@ -197,9 +197,12 @@ CREATE TABLE IF NOT EXISTS "Paciente" (
     "ala_id" TEXT,
     "leito" TEXT,
     "status" TEXT,
+    "foto" TEXT,
     "created_at" TEXT,
     "deleted_at" TEXT
 );
+
+ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "foto" TEXT;
 
 CREATE TABLE IF NOT EXISTS "PrescricaoPaciente" (
     "id" TEXT PRIMARY KEY,
@@ -413,3 +416,19 @@ INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
 SELECT 'ala-casameninos-uuid', 'Casa Meninos', 'Casa dos Meninos (3 leitos)', 3, NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('casa meninos', 'casa dos meninos', 'ala casa meninos', 'ala casa dos meninos') AND deleted_at IS NULL);
 
+-- ==============================================================================
+-- CHAT ZORION (Comunicação em Tempo Real entre Módulos)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS "ChatMessage" (
+    "id" TEXT PRIMARY KEY,
+    "canal" TEXT DEFAULT 'farmacia_recepcao',
+    "remetente_modulo" TEXT NOT NULL,
+    "remetente_usuario" TEXT NOT NULL,
+    "remetente_cargo" TEXT,
+    "mensagem" TEXT NOT NULL,
+    "lida" BOOLEAN DEFAULT false,
+    "created_at" TEXT NOT NULL,
+    "deleted_at" TEXT
+);
+
+CREATE INDEX IF NOT EXISTS "idx_chat_canal_created" ON "ChatMessage" ("canal", "created_at");

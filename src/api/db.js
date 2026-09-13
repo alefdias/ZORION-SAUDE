@@ -206,6 +206,7 @@ const ensureTableQuery = {
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "leito" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativo';
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "foto" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
@@ -373,6 +374,9 @@ const ensureTableQuery = {
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Em Andamento';
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "recepcionista" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "foto" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "foto_recusada" BOOLEAN DEFAULT false;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "foto_recusada_motivo" TEXT;
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `
@@ -520,7 +524,7 @@ const createEntityProxy = (entityName) => ({
       return `'${v.toString().replace(/'/g, "''")}'`;
     }).join(", ");
     
-    const query = `INSERT INTO "${entityName}" (${cols}) VALUES (${vals})`;
+    const query = `INSERT INTO "${entityName}" (${cols}) VALUES (${vals}); NOTIFY table_change, '${entityName}'; NOTIFY app_update, '${entityName}';`;
     try {
       await invoke("execute_postgres", { ip, dbName, password, query });
       if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {
@@ -556,7 +560,7 @@ const createEntityProxy = (entityName) => ({
     
     if (!updates) return data;
 
-    const query = `UPDATE "${entityName}" SET ${updates} WHERE "id" = '${id}'`;
+    const query = `UPDATE "${entityName}" SET ${updates} WHERE "id" = '${id}'; NOTIFY table_change, '${entityName}'; NOTIFY app_update, '${entityName}';`;
     try {
       await invoke("execute_postgres", { ip, dbName, password, query });
       if (['Medicamento', 'Saida', 'Entrada', 'Emprestimo', 'Usuario', 'PrescricaoPaciente'].includes(entityName)) {

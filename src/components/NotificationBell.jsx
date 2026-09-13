@@ -217,11 +217,11 @@ export function NotificationBell({ activeSection }) {
       <DropdownMenuTrigger asChild>
         <button 
           title={headerTitle}
-          className="relative p-1.5 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-slate-800 transition-colors focus:outline-none"
+          className="relative p-2 rounded-xl text-slate-600 hover:text-amber-600 hover:bg-slate-100 border border-slate-200/80 transition-colors focus:outline-none cursor-pointer"
         >
-          <Bell className={`w-5 h-5 ${count > 0 ? "text-amber-400 animate-bounce" : "text-slate-400"}`} />
+          <Bell className={`w-4 h-4 ${count > 0 ? "text-amber-500 animate-bounce" : "text-slate-600"}`} />
           {count > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white ring-2 ring-[#0F172A] shadow-md animate-pulse">
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white ring-2 ring-white shadow-xs animate-pulse">
               {count > 9 ? "9+" : count}
             </span>
           )}

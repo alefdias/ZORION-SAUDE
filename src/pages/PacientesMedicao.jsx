@@ -50,6 +50,7 @@ import {
   UserCheck,
   Droplet
 } from "lucide-react";
+import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
 
 const getLocalDateString = () => {
@@ -294,6 +295,7 @@ export default function PacientesMedicao() {
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [patientFormData, setPatientFormData] = useState({
+    foto: "",
     nome: "",
     prontuario: "",
     idade: "",
@@ -321,12 +323,14 @@ export default function PacientesMedicao() {
     diasSemana: [0, 1, 2, 3, 4, 5, 6],
     tipoFrequencia: "diaria",
     intervaloDias: "10",
-    dataInicio: format(new Date(), "yyyy-MM-dd"),
+    horarios: "[]",
+    observacoes: "",
+    dataInicio: getLocalDateString(),
     dataFim: "",
     diasTratamento: "",
-    horarioInicio: "08:00",
     status: "Ativa",
-    observacoes: ""
+    alaNome: "",
+    leito: ""
   });
 
   const [baixaModalOpen, setBaixaModalOpen] = useState(false);
@@ -376,20 +380,23 @@ export default function PacientesMedicao() {
   // Estado para indicar reinternação de paciente de alta
   const [isReinternando, setIsReinternando] = useState(false);
 
-  // Queries
+  // Queries - com refetchInterval para sincronização automática entre Zorion Recepção e Zorion Saúde
   const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
     queryKey: ['pacientes'],
     queryFn: () => db.entities.Paciente.list(),
+    refetchInterval: 2000,
   });
 
   const { data: prescricoes = [], isLoading: loadingPrescricoes } = useQuery({
     queryKey: ['prescricoes_paciente'],
     queryFn: () => db.entities.PrescricaoPaciente.list(),
+    refetchInterval: 5000,
   });
 
   const { data: todasVisitas = [] } = useQuery({
     queryKey: ['todas_visitas'],
     queryFn: () => db.entities.Visita.list(),
+    refetchInterval: 2000,
   });
 
   // Suspensão automática de prescrições com período finalizado (dataFim < hoje)
@@ -1231,6 +1238,7 @@ export default function PacientesMedicao() {
     setEditingPatient(pac);
     setIsReinternando(true);
     setPatientFormData({
+      foto: pac.foto || "",
       nome: pac.nome || "",
       prontuario: pac.prontuario || "",
       idade: pac.idade || "",
@@ -1248,6 +1256,7 @@ export default function PacientesMedicao() {
     setEditingPatient(null);
     setIsReinternando(false);
     setPatientFormData({
+      foto: "",
       nome: "",
       prontuario: `PRONT-${Date.now().toString().slice(-4)}`,
       idade: "",
@@ -1264,6 +1273,7 @@ export default function PacientesMedicao() {
     setEditingPatient(p);
     setIsReinternando(false);
     setPatientFormData({
+      foto: p.foto || "",
       nome: p.nome || "",
       prontuario: p.prontuario || "",
       idade: p.idade || "",
@@ -1791,20 +1801,25 @@ export default function PacientesMedicao() {
     p.esquemaPosologico?.includes(searchPrescription)
   );
 
+  const currentViewPatient = useMemo(() => {
+    if (!viewPatientDetails) return null;
+    return pacientes.find(p => p.id === viewPatientDetails.id) || viewPatientDetails;
+  }, [pacientes, viewPatientDetails]);
+
   const selectedPrescPatient = useMemo(() => {
-    const pId = prescFormData.pacienteId || viewPatientDetails?.id || editingPresc?.pacienteId;
-    return pacientes.find(p => p.id === pId) || viewPatientDetails || null;
-  }, [pacientes, prescFormData.pacienteId, viewPatientDetails, editingPresc]);
+    const pId = prescFormData.pacienteId || currentViewPatient?.id || editingPresc?.pacienteId;
+    return pacientes.find(p => p.id === pId) || currentViewPatient || null;
+  }, [pacientes, prescFormData.pacienteId, currentViewPatient, editingPresc]);
 
   const patientVisitas = useMemo(() => {
-    if (!viewPatientDetails?.id) return [];
-    const pId = String(viewPatientDetails.id);
-    const pront = String(viewPatientDetails.prontuario || "").trim();
+    if (!currentViewPatient?.id) return [];
+    const pId = String(currentViewPatient.id);
+    const pront = String(currentViewPatient.prontuario || "").trim();
     return (todasVisitas || []).filter(v => 
       String(v.pacienteId) === pId || 
       (pront && String(v.prontuario || "").trim() === pront)
     );
-  }, [todasVisitas, viewPatientDetails]);
+  }, [todasVisitas, currentViewPatient]);
 
   const isPatientLocked = Boolean(prescFormData.isPatientLocked || viewPatientDetails || editingPresc);
 
@@ -2260,20 +2275,29 @@ export default function PacientesMedicao() {
                         </span>
                       </TableCell>
                       <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                        <div className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                          <button
-                            onClick={() => setViewPatientDetails(p)}
-                            className="text-left font-bold text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-start gap-1.5 group cursor-pointer break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug"
-                            title="Clique para ver o prontuário e prescrições completas"
-                          >
-                            <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{p.nome}</span>
-                            <FileText className="w-3 h-3 opacity-70 group-hover:opacity-100 text-blue-500 shrink-0 mt-0.5" />
-                          </button>
-                          {p.observacoes && (
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 break-words whitespace-normal [overflow-wrap:anywhere] mt-0.5">
-                              Obs: {p.observacoes}
-                            </p>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                            {p.foto ? (
+                              <img src={p.foto} alt={p.nome} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-4 h-4 text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                            <button
+                              onClick={() => setViewPatientDetails(p)}
+                              className="text-left font-bold text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-start gap-1.5 group cursor-pointer break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug"
+                              title="Clique para ver o prontuário e prescrições completas"
+                            >
+                              <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{p.nome}</span>
+                              <FileText className="w-3 h-3 opacity-70 group-hover:opacity-100 text-blue-500 shrink-0 mt-0.5" />
+                            </button>
+                            {p.observacoes && (
+                              <p className="text-[11px] text-amber-600 dark:text-amber-400 break-words whitespace-normal [overflow-wrap:anywhere] mt-0.5">
+                                Obs: {p.observacoes}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -2347,6 +2371,15 @@ export default function PacientesMedicao() {
                           <Button 
                             size="sm" 
                             variant="ghost" 
+                            onClick={() => handleOpenEditPatient(p)} 
+                            className="h-8 w-8 p-0 text-amber-600 hover:bg-amber-50 hover:text-amber-700" 
+                            title="Editar Paciente"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
                             onClick={() => {
                               if (window.confirm(`Tem certeza que deseja DAR ALTA para o paciente ${p.nome}? Todas as prescrições serão suspensas.`)) {
                                 setAltaPacienteId(p.id);
@@ -2385,7 +2418,16 @@ export default function PacientesMedicao() {
                       </span>
                     </TableCell>
                     <TableCell className="font-bold text-xs text-slate-800 dark:text-slate-200">
-                      {p.nome}
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                          {p.foto ? (
+                            <img src={p.foto} alt={p.nome} className="w-full h-full object-cover" />
+                          ) : (
+                            <User className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                        <span>{p.nome}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-slate-600 dark:text-slate-400">
                       <div className="flex items-center gap-1">
@@ -2543,6 +2585,14 @@ export default function PacientesMedicao() {
               </div>
             )}
 
+            {/* Foto do Paciente */}
+            <PhotoCaptureField
+              value={patientFormData.foto}
+              onChange={(foto) => setPatientFormData(prev => ({ ...prev, foto }))}
+              label="Foto do Paciente"
+              helperText="Tire uma foto via webcam ou selecione um arquivo do computador"
+            />
+
             <div>
               <Label>Nome Completo do Paciente *</Label>
               <Input
@@ -2676,20 +2726,28 @@ export default function PacientesMedicao() {
           <div className="bg-[#0e3b8f] text-white p-6 shrink-0 relative">
             <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
               <div className="flex items-start gap-4 min-w-0 flex-1">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5">
-                  <User className="w-8 h-8 sm:w-10 sm:h-10" />
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white/40 shadow-inner flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5 overflow-hidden">
+                  {currentViewPatient?.foto ? (
+                    <img 
+                      src={currentViewPatient.foto} 
+                      alt={currentViewPatient.nome} 
+                      className="w-full h-full object-cover" 
+                    />
+                  ) : (
+                    <User className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                    <h2 className="text-xl sm:text-2xl font-black mb-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-tight">
-                     {viewPatientDetails?.nome}
+                     {currentViewPatient?.nome || viewPatientDetails?.nome}
                    </h2>
                    <div className="text-blue-200 text-xs sm:text-sm flex gap-2 flex-wrap">
-                     <span>ID: {viewPatientDetails?.prontuario}</span> |
-                     <span>{viewPatientDetails?.idade || '--'} anos</span>
+                     <span>ID: {currentViewPatient?.prontuario || viewPatientDetails?.prontuario}</span> |
+                     <span>{currentViewPatient?.idade || viewPatientDetails?.idade || '--'} anos</span>
                    </div>
                    <div className="text-blue-200 text-xs sm:text-sm mt-1 flex items-center gap-2 flex-wrap">
-                     <span>Setor: {viewPatientDetails?.alaNome || "Não informado"}</span> |
-                     <span>Leito: {viewPatientDetails?.leito || "S/L"}</span>
+                     <span>Setor: {currentViewPatient?.alaNome || viewPatientDetails?.alaNome || "Não informado"}</span> |
+                     <span>Leito: {currentViewPatient?.leito || viewPatientDetails?.leito || "S/L"}</span>
                    </div>
                 </div>
               </div>
@@ -2699,7 +2757,7 @@ export default function PacientesMedicao() {
                   <Button 
                     variant="outline" 
                     className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
-                    onClick={() => handleOpenPrintPrescModal([viewPatientDetails.id])}
+                    onClick={() => handleOpenPrintPrescModal([(currentViewPatient || viewPatientDetails).id])}
                     title="Imprimir relatório de prescrição deste paciente"
                   >
                     <Printer className="w-4 h-4" />
@@ -2708,12 +2766,12 @@ export default function PacientesMedicao() {
                   <Button 
                     variant="outline" 
                     className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
-                    onClick={() => handleOpenTransferModal([viewPatientDetails.id])}
+                    onClick={() => handleOpenTransferModal([(currentViewPatient || viewPatientDetails).id])}
                   >
                     <ArrowLeftRight className="w-4 h-4" />
                     Transferir Ala
                   </Button>
-                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 text-xs sm:text-sm" onClick={() => handleOpenEditPatient(viewPatientDetails)}>
+                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 text-xs sm:text-sm" onClick={() => handleOpenEditPatient(currentViewPatient || viewPatientDetails)}>
                      Editar Paciente
                   </Button>
                 </div>

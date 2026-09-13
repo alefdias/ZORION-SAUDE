@@ -82,65 +82,77 @@ function PainelDashboard() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-full">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-5 border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow bg-indigo-50/50 dark:bg-slate-900 dark:border-slate-800">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Unidades Disponíveis</p>
-              <h3 className="text-3xl font-bold text-indigo-700 dark:text-indigo-400 mt-1">{stats.totalSatelite}</h3>
-            </div>
-            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
-              <Package className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+        {/* Unidades Disponíveis */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-indigo-300 transition-all duration-200 hover:-translate-y-0.5 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 transition-colors">
+              Unidades Disponíveis
+            </span>
+            <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 shadow-xs group-hover:scale-110 transition-transform">
+              <Package className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 flex items-center gap-1">
-            Total de comprimidos/frascos
-          </p>
-        </Card>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{stats.totalSatelite}</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-400 font-medium">Total de comprimidos / frascos</p>
+        </div>
 
-        <Card className="p-5 border-l-4 border-l-emerald-500 hover:shadow-md transition-shadow bg-white dark:bg-slate-900 dark:border-slate-800">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Medicamentos Únicos</p>
-              <h3 className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">{stats.uniqueMeds}</h3>
-            </div>
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/40 rounded-lg">
-              <Stethoscope className="w-6 h-6 text-emerald-500 dark:text-emerald-400" />
+        {/* Medicamentos Únicos */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-emerald-300 transition-all duration-200 hover:-translate-y-0.5 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 transition-colors">
+              Medicamentos Únicos
+            </span>
+            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 shadow-xs group-hover:scale-110 transition-transform">
+              <Stethoscope className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 flex items-center gap-1">
-            Tipos diferentes de medicamentos
-          </p>
-        </Card>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{stats.uniqueMeds}</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-400 font-medium">Tipos diferentes no satélite</p>
+        </div>
 
-        <Card className="p-5 border-l-4 border-l-amber-500 hover:shadow-md transition-shadow bg-white dark:bg-slate-900 dark:border-slate-800">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Itens Acabando</p>
-              <h3 className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">{stats.criticoSatelite}</h3>
-            </div>
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/40 rounded-lg">
-              <AlertTriangle className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+        {/* Itens Acabando */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-amber-300 transition-all duration-200 hover:-translate-y-0.5 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 group-hover:text-amber-600 transition-colors">
+              Itens Acabando
+            </span>
+            <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 shadow-xs group-hover:scale-110 transition-transform">
+              <AlertTriangle className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Estoque menor que 5
-          </p>
-        </Card>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{stats.criticoSatelite}</span>
+            {stats.criticoSatelite > 0 && (
+              <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                Crítico
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-400 font-medium">Estoque com menos de 5 unidades</p>
+        </div>
 
-        <Card className="p-5 border-l-4 border-l-blue-500 hover:shadow-md transition-shadow bg-white dark:bg-slate-900 dark:border-slate-800">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Dispensações (Hoje)</p>
-              <h3 className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">{stats.dispensesToday}</h3>
-            </div>
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/40 rounded-lg">
-              <ArrowUpFromLine className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+        {/* Dispensações Hoje */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-sky-300 transition-all duration-200 hover:-translate-y-0.5 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 group-hover:text-sky-600 transition-colors">
+              Dispensações (Hoje)
+            </span>
+            <div className="p-2.5 rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400 shadow-xs group-hover:scale-110 transition-transform">
+              <ArrowUpFromLine className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 flex items-center gap-1">
-            Saídas registradas hoje
-          </p>
-        </Card>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{stats.dispensesToday}</span>
+            <span className="text-xs font-medium text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">
+              Hoje
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-400 font-medium">Saídas registradas na satélite</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">

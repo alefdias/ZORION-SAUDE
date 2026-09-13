@@ -203,17 +203,25 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      {/* Header Clean & Modern */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Visão geral do estoque da farmácia</p>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-50 dark:bg-sky-950/60 border border-sky-200/80 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-xs font-semibold mb-2 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Estoque Central Ativo
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+            Painel Geral da Farmácia Central
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">
+            Visão consolidada em tempo real de produtos, entradas, saídas e movimentações.
+          </p>
         </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 capitalize">
+        <div className="text-right hidden sm:block bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize">
             {format(hoje, "EEEE", { locale: ptBR })}
           </p>
-          <p className="text-xs text-slate-400 capitalize">
+          <p className="text-[11px] text-slate-400 capitalize mt-0.5">
             {format(hoje, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
           </p>
         </div>

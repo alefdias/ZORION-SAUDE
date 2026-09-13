@@ -1,32 +1,40 @@
-const gradients = {
-  blue:   { from: "from-blue-500",   to: "to-blue-700",   icon: "bg-white/20", text: "text-white", shadow: "shadow-blue-500/30" },
-  green:  { from: "from-emerald-500", to: "to-emerald-700", icon: "bg-white/20", text: "text-white", shadow: "shadow-emerald-500/30" },
-  amber:  { from: "from-orange-400",  to: "to-orange-600",  icon: "bg-white/20", text: "text-white", shadow: "shadow-orange-500/30" },
-  purple: { from: "from-violet-500",  to: "to-violet-700",  icon: "bg-white/20", text: "text-white", shadow: "shadow-violet-500/30" },
-  red:    { from: "from-red-500",     to: "to-red-700",     icon: "bg-white/20", text: "text-white", shadow: "shadow-red-500/30" },
+import React from "react";
+
+const colorStyles = {
+  blue:   { pill: "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400", borderHover: "hover:border-sky-300", textHover: "group-hover:text-sky-600" },
+  green:  { pill: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400", borderHover: "hover:border-emerald-300", textHover: "group-hover:text-emerald-600" },
+  amber:  { pill: "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400", borderHover: "hover:border-amber-300", textHover: "group-hover:text-amber-600" },
+  purple: { pill: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400", borderHover: "hover:border-indigo-300", textHover: "group-hover:text-indigo-600" },
+  red:    { pill: "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400", borderHover: "hover:border-rose-300", textHover: "group-hover:text-rose-600" },
 };
 
 export default function StatsCard({ title, value, subtitle, icon: Icon, color = "blue", trend }) {
-  const g = gradients[color] || gradients.blue;
+  const c = colorStyles[color] || colorStyles.blue;
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${g.from} ${g.to} p-5 shadow-lg ${g.shadow} transition-transform duration-200 hover:-translate-y-0.5`}>
-      {/* Decorative circle */}
-      <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
-      <div className="absolute -right-2 -top-8 w-32 h-32 rounded-full bg-white/5" />
-
-      <div className="relative flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-white/70">{title}</p>
-          <p className="text-3xl font-bold text-white mt-1">{value}</p>
-          {subtitle && <p className="text-xs text-white/60 mt-1 capitalize">{subtitle}</p>}
-        </div>
+    <div className={`bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md ${c.borderHover} transition-all duration-200 hover:-translate-y-0.5 group`}>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 transition-colors ${c.textHover}`}>
+          {title}
+        </span>
         {Icon && (
-          <div className={`p-2.5 rounded-xl ${g.icon}`}>
-            <Icon className="w-5 h-5 text-white" />
+          <div className={`p-2.5 rounded-xl ${c.pill} transition-transform group-hover:scale-110 shadow-xs`}>
+            <Icon className="w-5 h-5" />
           </div>
         )}
       </div>
+
+      <div className="mt-4 flex items-baseline gap-2">
+        <span className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+          {value}
+        </span>
+      </div>
+
+      {subtitle && (
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500 font-medium capitalize">
+          {subtitle}
+        </p>
+      )}
     </div>
   );
 }

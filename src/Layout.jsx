@@ -5,6 +5,7 @@ import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useWelcome } from "@/lib/AppInitializer";
 import { TransferenciaAcceptModal } from "@/components/TransferenciaAcceptModal";
+import { ZorionChatWidget } from "@/components/chat/ZorionChatWidget";
 
 import {
   LayoutDashboard,
@@ -168,7 +169,7 @@ function LiveClock() {
   });
 
   return (
-    <div className="fixed bottom-3 right-4 z-50 flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-full shadow-xl backdrop-blur-md text-xs font-mono select-none hover:bg-slate-900 transition-all pointer-events-none print:hidden no-print">
+    <div className="fixed bottom-3 left-4 z-50 flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-full shadow-xl backdrop-blur-md text-xs font-mono select-none hover:bg-slate-900 transition-all pointer-events-none print:hidden no-print">
       <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
       <span className="capitalize text-slate-300 font-medium">{dateStr}</span>
       <span className="font-bold text-cyan-300 tracking-wide">{timeStr}</span>
@@ -229,27 +230,27 @@ export default function Layout({ children, currentPageName }) {
       <TransferenciaAcceptModal activeSection={activeSection} />
 
       {/* TOP HEADER NAVIGATION BAR */}
-      <header className="sticky top-0 z-50 bg-blue-950 border-blue-900 text-white shadow-lg border-b print:hidden transition-colors">
-        <div className="max-w-[1920px] mx-auto px-4 flex items-center justify-between h-14 gap-4">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs px-4 sm:px-6 py-2.5 print:hidden transition-colors">
+        <div className="max-w-[1920px] mx-auto flex items-center justify-between gap-4">
 
           {/* LEFT: ZORION Hospitalar Brand Text Only */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="flex flex-col justify-center">
-              <h1 className="font-extrabold text-[20px] leading-none tracking-tight mb-0.5">
-                <span className="text-blue-500">ZOR</span><span className="text-white">ION</span>
+              <h1 className="font-extrabold text-[22px] leading-none tracking-tight mb-0.5">
+                <span className="text-sky-600">ZOR</span><span className="text-slate-900">ION</span>
               </h1>
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] leading-none text-slate-400 font-medium">Hospitalar</span>
-                <span className="w-1 h-1 rounded-full bg-cyan-500"></span>
-                <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 leading-none">
+                <span className="text-[11px] leading-none text-slate-400 font-semibold">Hospitalar</span>
+                <span className="w-1 h-1 rounded-full bg-sky-500"></span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-sky-600 leading-none">
                   {activeSection.name}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* CENTER: Delphi/POS Style Vertical Navigation Items */}
-          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 flex-1 min-w-0 overflow-x-auto no-scrollbar px-1 py-1">
+          {/* CENTER: Clean Light Navigation Items (Vertical/Compact to save horizontal space) */}
+          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60 overflow-x-auto no-scrollbar">
             {activeSection.menu.map((item) => {
               const isActive = currentPageName === item.page;
               return (
@@ -262,25 +263,24 @@ export default function Layout({ children, currentPageName }) {
                     } catch (e) {}
                   }}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-0.5 px-2 xl:px-2.5 py-1 min-w-[58px] xl:min-w-[68px] rounded-lg transition-all whitespace-nowrap group shrink-0",
+                    "flex flex-col items-center justify-center gap-0.5 px-2.5 xl:px-3 py-1 min-w-[54px] xl:min-w-[62px] rounded-xl transition-all whitespace-nowrap cursor-pointer",
                     isActive
-                      ? "bg-blue-600/20 border border-blue-500/30 text-blue-400 shadow-inner"
-                      : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200 border border-transparent"
+                      ? "bg-white text-sky-700 shadow-sm font-bold"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium"
                   )}
                 >
                   <item.icon className={cn(
-                    "w-4 h-4 xl:w-4.5 xl:h-4.5 shrink-0 transition-colors",
-                    isActive ? "text-blue-400" : "text-slate-500 group-hover:text-cyan-400"
+                    "w-4 h-4 shrink-0 transition-colors",
+                    isActive ? "text-sky-600" : "text-slate-500"
                   )} />
-                  <span className="text-[10px] font-bold tracking-tight uppercase">{item.name}</span>
+                  <span className="text-[10px] leading-tight tracking-tight">{item.name}</span>
                 </Link>
               );
             })}
           </nav>
 
-          {/* RIGHT: Actions (Sync, Notifications, Dark Mode, Profile) */}
-          <div className="flex items-center gap-2 shrink-0 pl-2">
-            <LiveClock />
+          {/* RIGHT: Actions */}
+          <div className="flex items-center gap-2.5 shrink-0 pl-2">
             <NotificationBell activeSection={activeSection} />
             <ServerConnectionBadge />
 
@@ -288,60 +288,32 @@ export default function Layout({ children, currentPageName }) {
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-slate-800 transition-colors">
-                    <div className="w-6 h-6 rounded-full bg-blue-600/20 ring-1 ring-blue-500/40 flex items-center justify-center shrink-0">
-                      <User className="w-3 h-3 text-blue-400" />
+                  <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-colors cursor-pointer">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-cyan-500 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      {user.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
                     </div>
-                    <span className="text-[11px] font-medium text-slate-200 hidden md:inline truncate max-w-[150px]">
-                      {user.full_name}
-                    </span>
-                    <ChevronDown className="w-3 h-3 text-slate-400 hidden md:inline" />
+                    <div className="text-left leading-tight hidden md:block pr-1">
+                      <div className="font-bold text-slate-800 text-xs truncate max-w-[130px]" title={user.full_name}>
+                        {user.full_name}
+                      </div>
+                      <div className="text-[10px] text-slate-400 capitalize">
+                        {user.cargo || "Farmácia"}
+                      </div>
+                    </div>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden md:block" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-blue-950 border-blue-900 text-slate-200">
-                  <DropdownMenuLabel className="text-[11px] font-normal text-slate-400">
-                    Sessão ativa: <strong className="text-white block font-medium truncate">{user.full_name}</strong>
+                <DropdownMenuContent align="end" className="w-56 bg-white border-slate-200 text-slate-800 shadow-xl rounded-2xl p-2">
+                  <DropdownMenuLabel className="text-xs font-normal text-slate-500 pb-1.5">
+                    Sessão ativa: <strong className="text-slate-900 block font-bold text-sm truncate">{user.full_name}</strong>
                   </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-blue-900/50" />
-                  <DropdownMenuSeparator className="bg-blue-900/50" />
-
-                  <div className="px-2 py-1.5">
-                    <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 px-1">
-                      <Palette className="w-3.5 h-3.5" />
-                      <span>Cor do Sistema</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 px-1 pb-1">
-                      {[
-                        { id: "theme-ocean", name: "Oceano", colors: ["bg-blue-600", "bg-blue-900", "bg-slate-100", "bg-white"] },
-                        { id: "theme-emerald", name: "Esmeralda", colors: ["bg-emerald-600", "bg-[#064e3b]", "bg-[#f0fdf4]", "bg-white"] },
-                        { id: "theme-midnight", name: "Meia-noite", colors: ["bg-slate-500", "bg-slate-900", "bg-[#020617]", "bg-slate-800"] },
-                        { id: "theme-sunset", name: "Pôr do Sol", colors: ["bg-orange-500", "bg-[#431407]", "bg-orange-50", "bg-white"] },
-                        { id: "theme-amethyst", name: "Ametista", colors: ["bg-purple-500", "bg-[#3b0764]", "bg-purple-50", "bg-white"] },
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => setThemeColor(t.id)}
-                          className={cn(
-                            "flex items-center gap-3 p-1.5 rounded-lg transition-colors border text-left",
-                            themeColor === t.id ? "bg-blue-900/50 border-blue-500/50" : "hover:bg-blue-900/30 border-transparent"
-                          )}
-                        >
-                          <div className="flex -space-x-1 shrink-0">
-                            {t.colors.map((c, i) => <div key={i} className={cn("w-4 h-4 rounded-full ring-2 ring-blue-950", c)} />)}
-                          </div>
-                          <span className={cn("text-[11px] font-medium transition-colors", themeColor === t.id ? "text-white" : "text-slate-300")}>{t.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <DropdownMenuSeparator className="bg-blue-900/50" />
+                  <DropdownMenuSeparator className="bg-slate-100" />
                   <DropdownMenuItem
                     onClick={handleLogout}
-                    className="flex items-center gap-2 cursor-pointer text-xs text-red-400 hover:bg-red-500/10 focus:text-red-300"
+                    className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 hover:bg-red-50 hover:text-red-600 rounded-xl px-2.5 py-2 transition-colors"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Sair da Conta</span>
+                    <LogOut className="w-4 h-4 text-slate-500" />
+                    <span>Trocar de Módulo / Sair</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -352,21 +324,21 @@ export default function Layout({ children, currentPageName }) {
               variant="ghost"
               size="icon"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden w-7 h-7 text-slate-300 hover:bg-slate-800"
+              className="lg:hidden w-8 h-8 text-slate-600 hover:bg-slate-100 rounded-xl"
             >
-              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
           </div>
         </div>
 
         {/* MOBILE HORIZONTAL NAVIGATION MENU SLIDE-DOWN */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-blue-900 bg-blue-950 px-3 py-2 space-y-2">
+          <div className="lg:hidden border-t border-slate-200/80 bg-white px-3 py-2 space-y-2 mt-2">
             <div>
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                 Navegação: {activeSection.name}
               </p>
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-2 gap-1.5">
                 {activeSection.menu.map((item) => {
                   const isActive = currentPageName === item.page;
                   return (
@@ -380,13 +352,16 @@ export default function Layout({ children, currentPageName }) {
                         setMobileMenuOpen(false);
                       }}
                       className={cn(
-                        "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all",
+                        "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all",
                         isActive
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-300 bg-slate-800/60 hover:bg-slate-800"
+                          ? "bg-sky-50 text-sky-700 border border-sky-200"
+                          : "text-slate-600 hover:bg-slate-100"
                       )}
                     >
-                      <item.icon className="w-3.5 h-3.5 shrink-0" />
+                      <item.icon className={cn(
+                        "w-4 h-4",
+                        isActive ? "text-sky-600" : "text-slate-400"
+                      )} />
                       <span className="truncate">{item.name}</span>
                     </Link>
                   );
@@ -402,8 +377,11 @@ export default function Layout({ children, currentPageName }) {
         {children}
       </main>
 
-      {/* Relógio Flutuante no Canto Inferior Direito */}
+      {/* Relógio Flutuante no Canto Inferior Esquerdo */}
       <LiveClock />
+
+      {/* Chat Zorion Flutuante no Canto Inferior Direito */}
+      <ZorionChatWidget activeSection={activeSection} />
     </div>
   );
 }
