@@ -46,7 +46,8 @@ import {
   Bed, 
   RotateCcw,
   Sparkles, 
-  History 
+  History,
+  UserCheck
 } from "lucide-react";
 
 const getLocalDateString = () => {
@@ -121,6 +122,25 @@ export const formatDiasSemana = (dias) => {
   return labels.join(', ');
 };
 
+export const formatFrequenciaPrescricao = (pr) => {
+  if (!pr) return "";
+  const tipo = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
+  if (tipo === "intervalo_dias") {
+    const inter = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
+    if (inter === 1) return "Todos os dias (Diário)";
+    if (inter === 2) return "A cada 2 dias (Dia sim / Dia não)";
+    if (inter === 7) return "A cada 7 dias (Semanal)";
+    if (inter === 10) return "A cada 10 dias (Ex: Haldol Decanoato)";
+    if (inter === 14) return "A cada 14 dias (Quinzenal)";
+    if (inter === 15) return "A cada 15 dias";
+    if (inter === 21) return "A cada 21 dias (3 semanas)";
+    if (inter === 28) return "A cada 28 dias (4 semanas)";
+    if (inter === 30) return "A cada 30 dias (Mensal)";
+    return `A cada ${inter} dias`;
+  }
+  return formatDiasSemana(pr.diasSemana);
+};
+
 export function isMedicamentoAntibiotico(med) {
   if (!med) return false;
   if (med.antimicrobiano) return true;
@@ -192,6 +212,15 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
+  const tipoFreq = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
+  const intervalo = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
+  let dataInicioDate = null;
+  if (dataInicioStr) {
+    const pIni = dataInicioStr.split("-");
+    dataInicioDate = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10));
+    dataInicioDate.setHours(0, 0, 0, 0);
+  }
+
   for (let i = 0; i < diasCount; i++) {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
@@ -200,7 +229,19 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
       break;
     }
 
-    if (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay())) {
+    let isDiaDeAdministracao = false;
+    if (tipoFreq === "intervalo_dias") {
+      if (dataInicioDate) {
+        const diffDays = Math.round((d.getTime() - dataInicioDate.getTime()) / (1000 * 60 * 60 * 24));
+        isDiaDeAdministracao = diffDays >= 0 && (diffDays % intervalo === 0);
+      } else {
+        isDiaDeAdministracao = (i % intervalo === 0);
+      }
+    } else {
+      isDiaDeAdministracao = (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay()));
+    }
+
+    if (isDiaDeAdministracao) {
       const dStr = format(d, "yyyy-MM-dd");
 
       // No dia exato de início da prescrição, apenas as doses a partir do horário de início são administradas
@@ -276,6 +317,8 @@ export default function PacientesMedicao() {
     isMetade06: false,
     esquemaPosologico: "0-0-0-0",
     diasSemana: [0, 1, 2, 3, 4, 5, 6],
+    tipoFrequencia: "diaria",
+    intervaloDias: "10",
     dataInicio: format(new Date(), "yyyy-MM-dd"),
     dataFim: "",
     diasTratamento: "",
@@ -325,7 +368,7 @@ export default function PacientesMedicao() {
   const [printSelectedPatientIds, setPrintSelectedPatientIds] = useState([]);
   const [printPeriodoDias, setPrintPeriodoDias] = useState(1);
   const [printSearchPatient, setPrintSearchPatient] = useState("");
-  const [printIncludeConsolidado, setPrintIncludeConsolidado] = useState(true);
+  const [printIncludeConsolidado, setPrintIncludeConsolidado] = useState(false);
   const [printIncludeKits, setPrintIncludeKits] = useState(true);
 
   // Estado para indicar reinternação de paciente de alta
@@ -340,6 +383,11 @@ export default function PacientesMedicao() {
   const { data: prescricoes = [], isLoading: loadingPrescricoes } = useQuery({
     queryKey: ['prescricoes_paciente'],
     queryFn: () => db.entities.PrescricaoPaciente.list(),
+  });
+
+  const { data: todasVisitas = [] } = useQuery({
+    queryKey: ['todas_visitas'],
+    queryFn: () => db.entities.Visita.list(),
   });
 
   // Suspensão automática de prescrições com período finalizado (dataFim < hoje)
@@ -550,6 +598,8 @@ export default function PacientesMedicao() {
         horarioInicio: data.horarioInicio || "08:00",
         status: data.status || "Ativa",
         diasSemana: JSON.stringify(data.diasSemana || [0, 1, 2, 3, 4, 5, 6]),
+        tipoFrequencia: data.tipoFrequencia || "diaria",
+        intervaloDias: Math.max(1, parseInt(data.intervaloDias, 10) || 1),
         observacoes: data.observacoes || ""
       };
 
@@ -1284,7 +1334,9 @@ export default function PacientesMedicao() {
       observacoes: "",
       motivoAlteracao: "",
       gerarHistorico: false,
-      diasSemana: [0, 1, 2, 3, 4, 5, 6]
+      diasSemana: [0, 1, 2, 3, 4, 5, 6],
+      tipoFrequencia: "diaria",
+      intervaloDias: "10"
     });
     setPrescModalOpen(true);
   };
@@ -1321,7 +1373,9 @@ export default function PacientesMedicao() {
       observacoes: p.observacoes || "",
       motivoAlteracao: "",
       gerarHistorico: true,
-      diasSemana: parseDiasSemana(p.diasSemana)
+      diasSemana: parseDiasSemana(p.diasSemana),
+      tipoFrequencia: p.tipoFrequencia || p.tipo_frequencia || "diaria",
+      intervaloDias: String(p.intervaloDias || p.intervalo_dias || 10)
     });
     setPrescModalOpen(true);
   };
@@ -1426,6 +1480,8 @@ export default function PacientesMedicao() {
         ...p,
         medNome: med.nome,
         medCodigo: med.codigo,
+        medConcentracao: med.concentracao,
+        medApresentacao: med.apresentacao,
         qtdPeriodo: periodDose
       });
     });
@@ -1534,6 +1590,8 @@ export default function PacientesMedicao() {
         ...p,
         medNome: med.nome,
         medCodigo: med.codigo,
+        medConcentracao: med.concentracao,
+        medApresentacao: med.apresentacao,
         qtdPeriodo: periodDose
       });
     });
@@ -1575,6 +1633,8 @@ export default function PacientesMedicao() {
       setPrintSelectedAlas(["all"]);
     }
     setPrintSearchPatient("");
+    setPrintIncludeConsolidado(false);
+    setPrintIncludeKits(true);
     setPrintPrescModalOpen(true);
   };
 
@@ -1710,6 +1770,16 @@ export default function PacientesMedicao() {
     const pId = prescFormData.pacienteId || viewPatientDetails?.id || editingPresc?.pacienteId;
     return pacientes.find(p => p.id === pId) || viewPatientDetails || null;
   }, [pacientes, prescFormData.pacienteId, viewPatientDetails, editingPresc]);
+
+  const patientVisitas = useMemo(() => {
+    if (!viewPatientDetails?.id) return [];
+    const pId = String(viewPatientDetails.id);
+    const pront = String(viewPatientDetails.prontuario || "").trim();
+    return (todasVisitas || []).filter(v => 
+      String(v.pacienteId) === pId || 
+      (pront && String(v.prontuario || "").trim() === pront)
+    );
+  }, [todasVisitas, viewPatientDetails]);
 
   const isPatientLocked = Boolean(prescFormData.isPatientLocked || viewPatientDetails || editingPresc);
 
@@ -2628,17 +2698,174 @@ export default function PacientesMedicao() {
 
           {/* Tabs Section */}
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 shrink-0 pt-2 overflow-x-auto hide-scrollbar">
-             <button onClick={() => setPatientTab('resumo')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'resumo' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Resumo</button>
-             <button onClick={() => setPatientTab('historico_clinico')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'historico_clinico' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Histórico Clínico</button>
-             <button onClick={() => setPatientTab('medicacoes')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'medicacoes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Medicações</button>
-             <button onClick={() => setPatientTab('exames')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'exames' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Exames</button>
-             <button onClick={() => setPatientTab('alergias')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'alergias' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Alergias</button>
-             <button onClick={() => setPatientTab('documentos')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'documentos' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}>Documentos</button>
+             <button onClick={() => setPatientTab('resumo')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'resumo' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Resumo</button>
+             <button onClick={() => setPatientTab('historico_clinico')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'historico_clinico' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Histórico Clínico</button>
+             <button onClick={() => setPatientTab('medicacoes')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'medicacoes' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Medicações</button>
+             <button onClick={() => setPatientTab('visitas')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5", patientTab === 'visitas' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>
+               <UserCheck className="w-4 h-4 text-emerald-600" />
+               Visitas ({patientVisitas.length})
+             </button>
+             <button onClick={() => setPatientTab('exames')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'exames' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Exames</button>
+             <button onClick={() => setPatientTab('alergias')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'alergias' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Alergias</button>
+             <button onClick={() => setPatientTab('documentos')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'documentos' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Documentos</button>
           </div>
 
           {/* Body Section */}
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-900">
-            {patientTab !== 'medicacoes' ? (
+            {patientTab === 'visitas' ? (
+              <div className="space-y-6 max-w-6xl mx-auto pb-10">
+                {/* Header Card de Resumo de Visitas do Paciente */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total de Visitas Registradas</span>
+                      <p className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{patientVisitas.length}</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-xl">
+                      <UserCheck className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Status no Leito</span>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2">
+                        {patientVisitas.some(v => !v.dataHoraSaida || v.status === "Em Andamento") ? (
+                          <>
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className="text-emerald-600 dark:text-emerald-400">Visitante no Leito</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500">Sem visitas no momento</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                      <Bed className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Última Visita</span>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">
+                        {patientVisitas.length > 0 && patientVisitas[0].dataHoraEntrada
+                          ? format(new Date(patientVisitas[0].dataHoraEntrada), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                          : "Nenhum registro"}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-900 text-slate-500 rounded-xl">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabela de Histórico de Visitas */}
+                <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="bg-sky-100 dark:bg-sky-950/50 p-2 rounded-lg text-sky-700 dark:text-sky-400">
+                      <UserCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight">Histórico de Visitas ao Paciente</h3>
+                      <p className="text-sm text-slate-500">Entradas e saídas registradas na Recepção e Portaria</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50">
+                        <TableRow>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Visitante</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Documento</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Parentesco / Vínculo</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Horário de Entrada</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Horário de Saída</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Status</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Recepcionista</TableHead>
+                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Observações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {patientVisitas.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-12 text-slate-400">
+                              <UserCheck className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                              <p className="font-semibold text-slate-600 dark:text-slate-300">Nenhuma visita registrada para este paciente.</p>
+                              <p className="text-xs text-slate-400 mt-1">Todas as visitas registradas na recepção aparecerão aqui automaticamente.</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          patientVisitas.map((v) => {
+                            const isEmAndamento = !v.dataHoraSaida || v.status === "Em Andamento";
+                            return (
+                              <TableRow key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
+                                <TableCell className="font-bold text-slate-800 dark:text-slate-200">
+                                  {v.visitanteNome}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge variant="outline" className={`text-[10px] font-bold px-1.5 py-0.5 ${
+                                      v.tipoDocumento === "CPF"
+                                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                                        : "bg-blue-50 text-blue-700 border-blue-200"
+                                    }`}>
+                                      {v.tipoDocumento || "RG"}
+                                    </Badge>
+                                    <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                                      {v.documentoNumero}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                                  {v.parentesco || "Visitante"}
+                                </TableCell>
+                                <TableCell className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                  <div className="flex items-center gap-1.5">
+                                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>
+                                      {v.dataHoraEntrada ? format(new Date(v.dataHoraEntrada), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "--"}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                                  {v.dataHoraSaida ? (
+                                    <div className="flex items-center gap-1">
+                                      <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>{format(new Date(v.dataHoraSaida), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {isEmAndamento ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 flex items-center gap-1.5 w-max">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      Em Andamento
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
+                                      Concluída
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-slate-500">
+                                  {v.recepcionista || "Recepção"}
+                                </TableCell>
+                                <TableCell className="text-xs text-slate-600 dark:text-slate-400 max-w-[180px] truncate" title={v.observacoes}>
+                                  {v.observacoes || "—"}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : patientTab !== 'medicacoes' ? (
                <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 pb-20">
                  <Building2 className="w-12 h-12 text-slate-300" />
                  <h3 className="text-lg font-bold text-slate-500">Módulo em Construção</h3>
@@ -2704,7 +2931,11 @@ export default function PacientesMedicao() {
                                       </TableCell>
                                       <TableCell className="text-slate-600 text-sm font-medium">
                                          <div>{pr.totalDiario} un/dia</div>
-                                         {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
+                                         {pr.tipoFrequencia === "intervalo_dias" ? (
+                                           <Badge variant="outline" className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 text-[10px] font-bold mt-1 block w-max">
+                                             ⏱️ A cada {pr.intervaloDias || 1} dias
+                                           </Badge>
+                                         ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
                                              📅 {formatDiasSemana(pr.diasSemana)}
                                            </Badge>
@@ -2886,7 +3117,11 @@ export default function PacientesMedicao() {
                                        </TableCell>
                                        <TableCell className="text-slate-600 text-sm font-medium opacity-60">
                                           <div>{pr.totalDiario} un/dia</div>
-                                          {formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" && (
+                                          {pr.tipoFrequencia === "intervalo_dias" ? (
+                                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-bold mt-0.5 block w-max">
+                                              ⏱️ A cada {pr.intervaloDias || 1} dias
+                                            </Badge>
+                                          ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" && (
                                             <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-bold mt-0.5 block w-max">
                                               📅 {formatDiasSemana(pr.diasSemana)}
                                             </Badge>
@@ -3083,7 +3318,7 @@ export default function PacientesMedicao() {
                     <History className="w-4 h-4 text-blue-600" /> Prescrição Atual em Uso:
                   </span>
                   <Badge variant="outline" className="bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-mono font-bold border-blue-300">
-                    Esquema: {editingPresc.esquemaPosologico} ({editingPresc.totalDiario} un/dia) • {formatDiasSemana(editingPresc.diasSemana)}
+                    Esquema: {editingPresc.esquemaPosologico} ({editingPresc.totalDiario} un/dia) • {formatFrequenciaPrescricao(editingPresc)}
                   </Badge>
                 </div>
                 <p className="text-slate-700 dark:text-slate-300">
@@ -3335,81 +3570,205 @@ export default function PacientesMedicao() {
               </p>
             </div>
 
-            {/* Frequência: Dias da Semana */}
-            <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+            {/* Frequência: Dias da Semana ou Intervalo em Dias */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-blue-600" />
-                  Dias da Semana de Administração *
+                  Frequência de Administração *
                 </Label>
                 <Badge variant="outline" className="bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold text-[11px]">
-                  {formatDiasSemana(prescFormData.diasSemana)}
+                  {prescFormData.tipoFrequencia === "intervalo_dias" 
+                    ? `⏱️ A cada ${prescFormData.intervaloDias || 1} dias`
+                    : formatDiasSemana(prescFormData.diasSemana)}
                 </Badge>
               </div>
 
-              {/* 7 Day Toggles */}
-              <div className="grid grid-cols-7 gap-1.5">
-                {DIAS_SEMANA_MAP.map(d => {
-                  const currentDias = parseDiasSemana(prescFormData.diasSemana);
-                  const isSelected = currentDias.includes(d.id);
-                  return (
-                    <button
-                      type="button"
-                      key={d.id}
-                      onClick={() => toggleDiaSemana(d.id)}
-                      className={cn(
-                        "py-2 px-1 text-xs font-bold rounded-lg border transition-all text-center flex flex-col items-center justify-center cursor-pointer",
-                        isSelected
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                          : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
-                      )}
-                      title={d.full}
-                    >
-                      <span>{d.label}</span>
-                    </button>
-                  );
-                })}
+              {/* Seletor do Modo de Frequência */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, tipoFrequencia: "diaria" }))}
+                  className={cn(
+                    "py-1.5 px-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                    (prescFormData.tipoFrequencia || "diaria") === "diaria"
+                      ? "bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  )}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Dias da Semana / Diário</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrescFormData(prev => ({ ...prev, tipoFrequencia: "intervalo_dias" }))}
+                  className={cn(
+                    "py-1.5 px-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                    prescFormData.tipoFrequencia === "intervalo_dias"
+                      ? "bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  )}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>A cada N dias (Intervalo)</span>
+                </button>
               </div>
 
-              {/* Atalhos rápidos de seleção */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
-                <span className="text-[10px] text-slate-400 font-medium mr-0.5">Atalhos:</span>
-                <button
-                  type="button"
-                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 1, 2, 3, 4, 5, 6] }))}
-                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  Diário
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3, 4, 5] }))}
-                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  Seg a Sex
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 3, 5] }))}
-                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  Seg/Qua/Sex
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3] }))}
-                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  Seg/Ter/Qua
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 6] }))}
-                  className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  Fim de Semana
-                </button>
-              </div>
+              {/* MODO 1: Dias da Semana */}
+              {(!prescFormData.tipoFrequencia || prescFormData.tipoFrequencia === "diaria") && (
+                <div className="space-y-2">
+                  {/* 7 Day Toggles */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {DIAS_SEMANA_MAP.map(d => {
+                      const currentDias = parseDiasSemana(prescFormData.diasSemana);
+                      const isSelected = currentDias.includes(d.id);
+                      return (
+                        <button
+                          type="button"
+                          key={d.id}
+                          onClick={() => toggleDiaSemana(d.id)}
+                          className={cn(
+                            "py-2 px-1 text-xs font-bold rounded-lg border transition-all text-center flex flex-col items-center justify-center cursor-pointer",
+                            isSelected
+                              ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                          )}
+                          title={d.full}
+                        >
+                          <span>{d.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Atalhos rápidos de seleção */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                    <span className="text-[10px] text-slate-400 font-medium mr-0.5">Atalhos:</span>
+                    <button
+                      type="button"
+                      onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 1, 2, 3, 4, 5, 6] }))}
+                      className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Diário
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3, 4, 5] }))}
+                      className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Seg a Sex
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 3, 5] }))}
+                      className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Seg/Qua/Sex
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [1, 2, 3] }))}
+                      className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Seg/Ter/Qua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrescFormData(prev => ({ ...prev, diasSemana: [0, 6] }))}
+                      className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Fim de Semana
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* MODO 2: Intervalo em Dias (Ex: a cada 10 dias Haldol Decanoato) */}
+              {prescFormData.tipoFrequencia === "intervalo_dias" && (
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Administrar a cada:</span>
+                    <div className="flex items-center gap-1.5 w-28">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={prescFormData.intervaloDias || ""}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                          setPrescFormData(prev => ({ ...prev, intervaloDias: String(val) }));
+                        }}
+                        className="h-8 text-center font-bold text-sm bg-white dark:bg-slate-900 border-indigo-300 dark:border-indigo-700 focus:border-indigo-500"
+                      />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">dias</span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      (Ex: Haldol Decanoato a cada 10 dias)
+                    </span>
+                  </div>
+
+                  {/* Atalhos rápidos para medicações de depósito / intervalo */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="text-[10px] text-slate-400 font-medium mr-0.5">Atalhos rápidos:</span>
+                    {[
+                      { label: "A cada 2 dias (Dia sim/não)", dias: 2 },
+                      { label: "A cada 3 dias", dias: 3 },
+                      { label: "A cada 7 dias (Semanal)", dias: 7 },
+                      { label: "A cada 10 dias (Ex: Haldol)", dias: 10 },
+                      { label: "A cada 14 dias (Quinzenal)", dias: 14 },
+                      { label: "A cada 15 dias", dias: 15 },
+                      { label: "A cada 21 dias (3 sem)", dias: 21 },
+                      { label: "A cada 28 dias (4 sem)", dias: 28 },
+                      { label: "A cada 30 dias (Mensal)", dias: 30 }
+                    ].map(item => {
+                      const isSel = String(prescFormData.intervaloDias) === String(item.dias);
+                      return (
+                        <button
+                          key={item.dias}
+                          type="button"
+                          onClick={() => setPrescFormData(prev => ({ ...prev, intervaloDias: String(item.dias) }))}
+                          className={cn(
+                            "px-2 py-0.5 rounded border text-[11px] font-medium transition-all cursor-pointer",
+                            isSel
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs font-bold"
+                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
+                          )}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Previsão visual das próximas administrações */}
+                  {(() => {
+                    const intervaloNum = Math.max(1, parseInt(prescFormData.intervaloDias, 10) || 1);
+                    const baseDate = prescFormData.dataInicio ? new Date(prescFormData.dataInicio + "T00:00:00") : new Date();
+                    const dates = [];
+                    for (let step = 0; step < 4; step++) {
+                      const nextD = new Date(baseDate);
+                      nextD.setDate(baseDate.getDate() + (step * intervaloNum));
+                      dates.push(format(nextD, "dd/MM/yyyy"));
+                    }
+                    return (
+                      <div className="p-2.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-xs text-indigo-900 dark:text-indigo-300">
+                        <div className="font-semibold flex items-center gap-1 text-[11px]">
+                          <CalendarCheck className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Próximas datas calculadas a partir do início:</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {dates.map((dt, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                              {idx === 0 ? `1ª dose: ${dt}` : `${idx + 1}ª dose: ${dt}`}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-indigo-500 font-medium">e assim por diante...</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Período de Tratamento (Início, Dias e Término com Suspensão Automática) */}
@@ -4010,7 +4369,12 @@ export default function PacientesMedicao() {
 
                           return (
                             <tr key={pr.id} className="border-b border-slate-200">
-                              <td className="py-1 font-semibold">{pr.medNome}</td>
+                              <td className="py-1 font-semibold">
+                                {pr.medNome} {pr.medConcentracao ? `(${pr.medConcentracao})` : (pr.concentracao ? `(${pr.concentracao})` : "")}
+                                {pr.tipoFrequencia === 'intervalo_dias' && (
+                                  <span className="text-[10px] text-indigo-700 font-bold ml-1.5">(A cada {pr.intervaloDias || 1} dias)</span>
+                                )}
+                              </td>
                               <td className="py-1 text-center font-mono">{d08} - {d14} - {d22} - {d06}</td>
                               <td className="py-1 text-center font-mono">{pr.totalDiario}</td>
                               <td className="py-1 text-right font-mono font-bold">{pr.qtdPeriodo}</td>

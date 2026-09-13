@@ -130,7 +130,7 @@ pub async fn start_db_listener(
                 }
             };
             
-            if client.batch_execute("LISTEN app_update").is_err() {
+            if client.batch_execute("LISTEN app_update; LISTEN table_change; LISTEN nova_admissao;").is_err() {
                 std::thread::sleep(std::time::Duration::from_secs(3));
                 continue;
             }
@@ -142,19 +142,28 @@ pub async fn start_db_listener(
                 }
                 
                 let mut has_update = false;
+                let mut novas_admissoes = Vec::new();
                 {
                     let mut notifs = client.notifications();
                     let mut iter = notifs.timeout_iter(std::time::Duration::from_millis(100));
-                    while let Ok(Some(_)) = iter.next() {
-                        has_update = true;
+                    while let Ok(Some(notif)) = iter.next() {
+                        if notif.channel() == "nova_admissao" {
+                            novas_admissoes.push(notif.payload().to_string());
+                        } else {
+                            has_update = true;
+                        }
                     }
                 }
                 
+                for payload in novas_admissoes {
+                    let _ = app.emit("nova_admissao", payload);
+                }
+
                 if has_update {
                     let _ = app.emit("db_update", "update");
                 }
                 
-                std::thread::sleep(std::time::Duration::from_millis(2000));
+                std::thread::sleep(std::time::Duration::from_millis(1500));
             }
             
             // Espera antes de tentar reconectar

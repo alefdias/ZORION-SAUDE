@@ -185,7 +185,18 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         dailyDose = sumDoses > 0 ? sumDoses : (Number(p.dose) || 1);
       }
 
-      const calculatedTotal = dailyDose * effectiveDays;
+      const tipoFreq = p.tipoFrequencia || p.tipo_frequencia || "diaria";
+      const intervalo = Math.max(1, parseInt(p.intervaloDias || p.intervalo_dias, 10) || 1);
+
+      let calculatedTotal = 0;
+      let effectiveDailyDose = dailyDose;
+      if (tipoFreq === "intervalo_dias" && intervalo > 1) {
+        const dosesNoPeriodo = Math.max(1, Math.ceil(effectiveDays / intervalo));
+        calculatedTotal = dailyDose * dosesNoPeriodo;
+        effectiveDailyDose = Number((dailyDose / intervalo).toFixed(2));
+      } else {
+        calculatedTotal = dailyDose * effectiveDays;
+      }
 
       // Chave única para nunca colidir em undefined e não sobrescrever medicamentos
       const groupKey = medId ? String(medId) : (med.id ? String(med.id) : (med.nome ? med.nome.trim().toLowerCase() : String(p.id)));
@@ -204,7 +215,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         };
       }
 
-      medMap[groupKey].qtdDiaria += dailyDose;
+      medMap[groupKey].qtdDiaria += effectiveDailyDose;
       medMap[groupKey].qtdCalculada += calculatedTotal;
       medMap[groupKey].totalPacientes += 1;
     });

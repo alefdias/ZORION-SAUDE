@@ -168,7 +168,7 @@ function LiveClock() {
   });
 
   return (
-    <div className="fixed bottom-3 right-4 z-50 flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-full shadow-xl backdrop-blur-md text-xs font-mono select-none hover:bg-slate-900 transition-all pointer-events-none">
+    <div className="fixed bottom-3 right-4 z-50 flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-full shadow-xl backdrop-blur-md text-xs font-mono select-none hover:bg-slate-900 transition-all pointer-events-none print:hidden no-print">
       <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
       <span className="capitalize text-slate-300 font-medium">{dateStr}</span>
       <span className="font-bold text-cyan-300 tracking-wide">{timeStr}</span>

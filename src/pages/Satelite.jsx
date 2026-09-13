@@ -59,9 +59,20 @@ function PainelDashboard() {
         "Volume em Estoque": m.estoque_satelite || 0,
       }));
 
-    // Recent Dispenses (Last 10)
+    // Recent Dispenses (Last 8) - Oculta transferências, exclusões e estornos
     const recentSaidas = saidas
-      .filter(s => s.motivo !== "Transferência de Estoque")
+      .filter(s => {
+        if (!s) return false;
+        if (s.motivo === "Transferência de Estoque") return false;
+        const text = `${s.motivo || ""} ${s.observacoes || ""} ${s.observacao || ""} ${s.tipo || ""} ${s.destino || ""} ${s.ala_nome || ""}`.toLowerCase();
+        if (text.includes("exclus") || text.includes("cancel") || text.includes("estorno") || text.includes("excluid") || text.includes("excluíd")) {
+          return false;
+        }
+        if (s.status === "Cancelada" || s.status === "Cancelado" || s.deleted_at) {
+          return false;
+        }
+        return true;
+      })
       .sort((a, b) => new Date(b.created_at || b.data_saida) - new Date(a.created_at || a.data_saida))
       .slice(0, 8);
 

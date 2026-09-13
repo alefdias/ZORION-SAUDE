@@ -1416,7 +1416,7 @@ export default function LivroRegistro() {
             min-height: 0 !important;
             overflow: visible !important;
           }
-          .no-print, nav, header, footer, button, aside { display: none !important; }
+          .no-print, .fixed, nav, header, footer, button, aside, [data-sonner-toaster], [role="status"] { display: none !important; }
           .p-4, .sm\\:p-8 { padding: 0 !important; }
           .max-w-6xl { max-width: 100% !important; border: none !important; box-shadow: none !important; margin: 0 !important; }
           table { width: 100% !important; border-collapse: collapse !important; }

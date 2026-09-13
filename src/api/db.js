@@ -251,6 +251,8 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "viaAdministracao" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "via_administracao" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "diasSemana" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "tipoFrequencia" TEXT DEFAULT 'diaria';
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "intervaloDias" INTEGER DEFAULT 1;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "horarioInicio" TEXT DEFAULT '08:00';
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
@@ -317,6 +319,37 @@ const ensureTableQuery = {
         "created_at" TEXT,
         "deleted_at" TEXT
     );
+  `,
+  Visita: `
+    CREATE TABLE IF NOT EXISTS "Visita" (
+      "id" TEXT PRIMARY KEY,
+      "pacienteId" TEXT NOT NULL,
+      "pacienteNome" TEXT NOT NULL,
+      "prontuario" TEXT,
+      "alaNome" TEXT,
+      "leito" TEXT,
+      "visitanteNome" TEXT NOT NULL,
+      "tipoDocumento" TEXT NOT NULL DEFAULT 'RG',
+      "documentoNumero" TEXT NOT NULL,
+      "parentesco" TEXT,
+      "dataHoraEntrada" TEXT NOT NULL,
+      "dataHoraSaida" TEXT,
+      "status" TEXT DEFAULT 'Em Andamento',
+      "observacoes" TEXT,
+      "recepcionista" TEXT,
+      "created_at" TEXT,
+      "deleted_at" TEXT
+    );
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "tipoDocumento" TEXT DEFAULT 'RG';
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "documentoNumero" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "parentesco" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "dataHoraEntrada" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "dataHoraSaida" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Em Andamento';
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "recepcionista" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
+    ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `
 };
 
@@ -377,7 +410,7 @@ const createEntityProxy = (entityName) => ({
     }
     let query = `SELECT * FROM "${entityName}"`;
     
-    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario", "PlantaoOcorrencia"];
+    const deletedColTables = ["Medicamento", "Lote", "Entrada", "Saida", "Emprestimo", "Fornecedor", "Ala", "Categoria", "InventarioItem", "Usuario", "PlantaoOcorrencia", "Visita"];
     if (deletedColTables.includes(entityName)) {
         query += ` WHERE deleted_at IS NULL`;
     }
@@ -633,6 +666,7 @@ export const db = {
     TransferenciaPendente: createEntityProxy("TransferenciaPendente"),
     PedidoSatelite: createEntityProxy("PedidoSatelite"),
     Usuario: createEntityProxy("Usuario"),
-    GavetaPaciente: createEntityProxy("GavetaPaciente")
+    GavetaPaciente: createEntityProxy("GavetaPaciente"),
+    Visita: createEntityProxy("Visita")
   }
 };
