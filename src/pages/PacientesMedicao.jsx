@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { 
@@ -47,8 +47,10 @@ import {
   RotateCcw,
   Sparkles, 
   History,
-  UserCheck
+  UserCheck,
+  Droplet
 } from "lucide-react";
+import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
 
 const getLocalDateString = () => {
   const d = new Date();
@@ -566,6 +568,15 @@ export default function PacientesMedicao() {
       const totalDiario = d08 + d14 + d22 + d06;
       const esquema = `${d08}-${d14}-${d22}-${d06}`;
 
+      const isLiq = isLiquido(med);
+      const unDose = isLiq ? (data.unidadeDose || "ml") : "comp";
+      const volMl = isLiq ? (Number(data.volumeFrascoMl) || extrairVolumeMl(med) || 100) : null;
+      let consumoDiarioMl = totalDiario;
+      if (isLiq && unDose === "gotas") {
+        consumoDiarioMl = converterGotasParaMl(totalDiario);
+      }
+      const duracaoDias = isLiq ? (calcularDuracaoFrascoDias(volMl, consumoDiarioMl) || 10) : null;
+
       const payload = {
         pacienteId: pacienteId,
         pacienteNome: patient ? patient.nome : (data.pacienteNome || "Paciente não informado"),
@@ -587,6 +598,12 @@ export default function PacientesMedicao() {
         isMetade06: Boolean(data.isMetade06),
         esquemaPosologico: esquema,
         totalDiario: totalDiario,
+        is_liquido: isLiq,
+        unidade_dose: unDose,
+        volume_frasco_ml: volMl,
+        duracao_frasco_dias: duracaoDias,
+        data_ultimo_frasco: editingPresc ? editingPresc.data_ultimo_frasco : null,
+        data_proximo_frasco: editingPresc ? editingPresc.data_proximo_frasco : null,
         horarios: JSON.stringify([
           { hora: "08:00", turno: "Manhã", dose: d08 },
           { hora: "14:00", turno: "Tarde", dose: d14 },
@@ -1317,6 +1334,10 @@ export default function PacientesMedicao() {
       pacienteId: targetId,
       isPatientLocked: Boolean(targetId),
       medicamentoId: "",
+      isLiquido: false,
+      unidadeDose: "comp",
+      volumeFrascoMl: "",
+      duracaoFrascoDias: "",
       dose08: "0",
       dose14: "0",
       dose22: "0",
@@ -1356,6 +1377,10 @@ export default function PacientesMedicao() {
       pacienteId: p.pacienteId || (viewPatientDetails ? viewPatientDetails.id : ""),
       isPatientLocked: true,
       medicamentoId: p.medicamentoId || "",
+      isLiquido: Boolean(p.is_liquido),
+      unidadeDose: p.unidade_dose || (p.is_liquido ? "ml" : "comp"),
+      volumeFrascoMl: p.volume_frasco_ml || "",
+      duracaoFrascoDias: p.duracao_frasco_dias || "",
       dose08: String(d08 || 0),
       isMetade08: false,
       dose14: String(d14 || 0),
@@ -2930,19 +2955,38 @@ export default function PacientesMedicao() {
                                         <Badge variant="outline" className="inline-block w-auto max-w-full truncate mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
                                       </TableCell>
                                       <TableCell className="text-slate-600 text-sm font-medium">
-                                         <div>{pr.totalDiario} un/dia</div>
-                                         {pr.tipoFrequencia === "intervalo_dias" ? (
-                                           <Badge variant="outline" className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 text-[10px] font-bold mt-1 block w-max">
-                                             ⏱️ A cada {pr.intervaloDias || 1} dias
-                                           </Badge>
-                                         ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
-                                           <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
-                                             📅 {formatDiasSemana(pr.diasSemana)}
-                                           </Badge>
-                                         ) : (
-                                           <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
-                                         )}
-                                       </TableCell>
+                                         {pr.is_liquido ? (
+                                            <div>
+                                              <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                                <Droplet className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                                {pr.totalDiario} {pr.unidade_dose === 'gotas' ? 'gotas/dia' : 'mL/dia'}
+                                              </div>
+                                              {pr.unidade_dose === 'gotas' && (
+                                                <span className="text-[10px] text-slate-400 block font-normal">
+                                                  ({(Number(pr.totalDiario) / 20).toFixed(1)} mL/dia)
+                                                </span>
+                                              )}
+                                              <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] font-bold mt-1 block w-max">
+                                                💧 Frasco {pr.volume_frasco_ml || 100} mL ({pr.duracao_frasco_dias || 10}d)
+                                              </Badge>
+                                            </div>
+                                          ) : (
+                                            <div>
+                                              <div>{pr.totalDiario} un/dia</div>
+                                              {pr.tipoFrequencia === "intervalo_dias" ? (
+                                                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 text-[10px] font-bold mt-1 block w-max">
+                                                  ⏱️ A cada {pr.intervaloDias || 1} dias
+                                                </Badge>
+                                              ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
+                                                <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
+                                                  📅 {formatDiasSemana(pr.diasSemana)}
+                                                </Badge>
+                                              ) : (
+                                                <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </TableCell>
                                       <TableCell className="text-slate-600 text-sm font-medium">
                                          <div className="font-mono font-bold text-slate-900 dark:text-slate-100">{pr.esquemaPosologico}</div>
                                          <div className="mt-1">
@@ -3019,38 +3063,103 @@ export default function PacientesMedicao() {
                                              );
                                            }
 
-                                           return (
-                                             <div className="space-y-0.5">
-                                               <div className="font-medium text-slate-800 dark:text-slate-200">
-                                                 Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
-                                               </div>
-                                               {pr.horarioInicio && pr.horarioInicio !== "08:00" && (
-                                                 <div className="text-[10px] text-slate-500">
-                                                   Início às {pr.horarioInicio}
-                                                 </div>
-                                               )}
-                                               <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
-                                                 Uso Contínuo
-                                               </Badge>
-                                             </div>
-                                           );
-                                         })()}
-                                       </TableCell>
-                                      <TableCell className="text-slate-600 text-sm leading-tight">
-                                         <div className="font-medium text-slate-800">Médico(a) Assist.</div>
-                                         <div className="text-[10px] text-slate-400">CRM N/A</div>
-                                      </TableCell>
-                                      <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
-                                         <Button 
-                                           size="sm" 
-                                           variant="outline" 
-                                           className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
-                                           onClick={() => handleOpenEditPresc(pr)} 
-                                           title="Alterar medicamento ou esquema posológico"
-                                         >
-                                           <Pencil className="w-3.5 h-3.5" />
-                                           Alterar
-                                         </Button>
+                                           if (pr.is_liquido) {
+                                                const prox = pr.data_proximo_frasco ? String(pr.data_proximo_frasco).slice(0, 10) : null;
+                                                const ultimo = pr.data_ultimo_frasco ? String(pr.data_ultimo_frasco).slice(0, 10) : null;
+                                                let diasRest = null;
+                                                if (prox) {
+                                                  try {
+                                                    diasRest = differenceInCalendarDays(parseISO(prox), parseISO(hojeStr));
+                                                  } catch (e) {}
+                                                }
+
+                                                return (
+                                                  <div className="space-y-1">
+                                                    <div className="font-medium text-slate-800 dark:text-slate-200 text-xs">
+                                                      {ultimo 
+                                                        ? `Último: ${new Date(ultimo).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` 
+                                                        : `Início: ${pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}`}
+                                                    </div>
+                                                    {!prox ? (
+                                                      <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-bold block w-max">
+                                                        💧 Aguarda 1º Frasco
+                                                      </Badge>
+                                                    ) : diasRest <= 0 ? (
+                                                      <Badge className="bg-rose-500 text-white text-[10px] font-bold block w-max">
+                                                        ⚠️ Frasco acabou hoje!
+                                                      </Badge>
+                                                    ) : (
+                                                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-300 text-[10px] font-bold block w-max">
+                                                        💧 Frasco no leito (${diasRest}d restantes)
+                                                      </Badge>
+                                                    )}
+                                                    {prox && (
+                                                      <div className="text-[10px] text-slate-500">
+                                                        Próxima troca: {new Date(prox).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              }
+
+                                              return (
+                                                <div className="space-y-0.5">
+                                                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                                                    Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
+                                                  </div>
+                                                  {pr.horarioInicio && pr.horarioInicio !== "08:00" && (
+                                                    <div className="text-[10px] text-slate-500">
+                                                      Início às {pr.horarioInicio}
+                                                    </div>
+                                                  )}
+                                                  <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
+                                                    Uso Contínuo
+                                                  </Badge>
+                                                </div>
+                                              );
+                                            })()}
+                                          </TableCell>
+                                         <TableCell className="text-slate-600 text-sm leading-tight">
+                                            <div className="font-medium text-slate-800">Médico(a) Assist.</div>
+                                            <div className="text-[10px] text-slate-400">CRM N/A</div>
+                                         </TableCell>
+                                         <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
+                                            {pr.is_liquido && (
+                                              <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                className="h-8 px-2 text-xs text-sky-700 bg-sky-50/80 border-sky-200 hover:bg-sky-100 hover:text-sky-800 font-semibold gap-1 shadow-sm" 
+                                                onClick={async () => {
+                                                  const hoje = format(new Date(), "yyyy-MM-dd");
+                                                  const dur = Number(pr.duracao_frasco_dias) || 10;
+                                                  const prox = format(addDays(new Date(), dur), "yyyy-MM-dd");
+                                                  try {
+                                                    await db.entities.PrescricaoPaciente.update(pr.id, {
+                                                      data_ultimo_frasco: hoje,
+                                                      data_proximo_frasco: prox
+                                                    });
+                                                    queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+                                                    toast.success(`Frasco entregue ao paciente! Próxima reposição em ${format(parseISO(prox), "dd/MM/yyyy")} (${dur} dias).`);
+                                                  } catch (e) {
+                                                    toast.error("Erro ao registrar entrega do frasco.");
+                                                  }
+                                                }}
+                                                title="Registrar entrega de frasco ao leito hoje e iniciar contagem"
+                                              >
+                                                <Droplet className="w-3.5 h-3.5 text-sky-600" />
+                                                Entregar Frasco
+                                              </Button>
+                                            )}
+                                            <Button 
+                                              size="sm" 
+                                              variant="outline" 
+                                              className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
+                                              onClick={() => handleOpenEditPresc(pr)} 
+                                              title="Alterar medicamento ou esquema posológico"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5" />
+                                              Alterar
+                                            </Button>
                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
                                            if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
                                              togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
@@ -3389,29 +3498,132 @@ export default function PacientesMedicao() {
                 onChange={(val) => {
                   const m = medicamentos.find(med => med.id === val);
                   const isAnti = isMedicamentoAntibiotico(m);
+                  const isLiq = isLiquido(m);
+                  const volMl = extrairVolumeMl(m);
                   setPrescFormData(prev => {
+                    let next = { 
+                      ...prev, 
+                      medicamentoId: val,
+                      isLiquido: isLiq,
+                      unidadeDose: isLiq ? (prev.unidadeDose === "gotas" ? "gotas" : "ml") : "comp",
+                      volumeFrascoMl: isLiq ? (volMl || prev.volumeFrascoMl || 100) : ""
+                    };
                     if (isAnti && !prev.dataFim) {
                       const inicio = prev.dataInicio || format(new Date(), "yyyy-MM-dd");
                       const hora = prev.horarioInicio || "08:00";
-                      return {
-                        ...prev,
-                        medicamentoId: val,
-                        diasTratamento: "7",
-                        dataFim: calcularDataFim(inicio, 7, hora)
-                      };
+                      next.diasTratamento = "7";
+                      next.dataFim = calcularDataFim(inicio, 7, hora);
                     }
-                    return { ...prev, medicamentoId: val };
+                    return next;
                   });
                 }}
                 placeholder="Selecione ou busque o medicamento com estoque..."
               />
             </div>
 
+            {/* Painel Inteligente se for medicamento líquido (Gotas / Xarope / Solução) */}
+            {(() => {
+              const medSel = medicamentos.find(m => m.id === prescFormData.medicamentoId);
+              const isLiq = prescFormData.isLiquido || isLiquido(medSel);
+              if (!isLiq) return null;
+
+              const totalDose = (Number(prescFormData.dose08) || 0) +
+                                (Number(prescFormData.dose14) || 0) +
+                                (Number(prescFormData.dose22) || 0) +
+                                (Number(prescFormData.dose06) || 0);
+
+              const vol = Number(prescFormData.volumeFrascoMl) || extrairVolumeMl(medSel) || 100;
+              let consumoMlDia = totalDose;
+              if (prescFormData.unidadeDose === "gotas") {
+                consumoMlDia = converterGotasParaMl(totalDose);
+              }
+              const duracaoDias = calcularDuracaoFrascoDias(vol, consumoMlDia);
+
+              return (
+                <div className="bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 p-4 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Droplet className="w-5 h-5 text-sky-600 animate-pulse" />
+                      <div>
+                        <h4 className="font-bold text-sm text-sky-950 dark:text-sky-200">
+                          Medicamento Líquido / Multidose Identificado
+                        </h4>
+                        <p className="text-xs text-sky-700 dark:text-sky-300">
+                          Configure o volume do frasco e a unidade prescrita (20 gotas = 1 mL)
+                        </p>
+                      </div>
+                    </div>
+                    <Badge className="bg-sky-600 text-white font-mono text-xs">
+                      {duracaoDias ? `Dura ~ ${duracaoDias} dias/frasco` : 'Calculando duração...'}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Unidade de Medida da Prescrição:
+                      </Label>
+                      <div className="flex gap-2 mt-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={prescFormData.unidadeDose !== "gotas" ? "default" : "outline"}
+                          className={prescFormData.unidadeDose !== "gotas" ? "bg-sky-600 hover:bg-sky-700 text-white h-8 text-xs font-bold" : "h-8 text-xs"}
+                          onClick={() => setPrescFormData(prev => ({ ...prev, unidadeDose: "ml" }))}
+                        >
+                          💧 Em mL (mililitros)
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={prescFormData.unidadeDose === "gotas" ? "default" : "outline"}
+                          className={prescFormData.unidadeDose === "gotas" ? "bg-sky-600 hover:bg-sky-700 text-white h-8 text-xs font-bold" : "h-8 text-xs"}
+                          onClick={() => setPrescFormData(prev => ({ ...prev, unidadeDose: "gotas" }))}
+                        >
+                          💧 Em Gotas (20 gts = 1 mL)
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Volume Total do Frasco (mL):
+                      </Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder="Ex: 10, 20, 100, 120"
+                          value={prescFormData.volumeFrascoMl}
+                          onChange={(e) => setPrescFormData(prev => ({ ...prev, volumeFrascoMl: e.target.value }))}
+                          className="h-8 bg-white font-bold text-sky-800 dark:text-sky-200"
+                        />
+                        <span className="text-xs text-slate-500 font-semibold">mL</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {totalDose > 0 && duracaoDias && (
+                    <div className="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-sky-900 text-xs flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-300">
+                        Consumo: <b>{totalDose} {prescFormData.unidadeDose || 'mL'}/dia</b> {prescFormData.unidadeDose === 'gotas' && `(~ ${consumoMlDia.toFixed(1)} mL/dia)`}
+                      </span>
+                      <span className="font-bold text-sky-700 dark:text-sky-300">
+                        🚚 O sistema só pedirá novo frasco após {duracaoDias} dias
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Esquema Posológico 0-0-0-0 */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
               <div className="flex justify-between items-center">
                 <Label className="font-bold text-slate-800 dark:text-slate-200">
-                  Esquema Posológico por Horário (Ex: 0-0-0-0)
+                  {prescFormData.isLiquido || (medicamentos.find(m => m.id === prescFormData.medicamentoId) && isLiquido(medicamentos.find(m => m.id === prescFormData.medicamentoId)))
+                    ? `Dose por Horário (${prescFormData.unidadeDose === 'gotas' ? 'Gotas' : 'mL'})`
+                    : 'Esquema Posológico por Horário (Ex: 0-0-0-0)'}
                 </Label>
                 <Input
                   className="w-28 font-mono text-center font-bold text-blue-700 bg-white"
@@ -3423,11 +3635,13 @@ export default function PacientesMedicao() {
 
               <div className="grid grid-cols-4 gap-2.5 text-center">
                 <div className="flex flex-col items-center">
-                  <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 block mb-1">08:00 (Manhã)</span>
+                  <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 block mb-1">
+                    08:00 ({prescFormData.unidadeDose === 'gotas' ? 'gts' : prescFormData.unidadeDose === 'ml' ? 'mL' : 'Manhã'})
+                  </span>
                   <Input
                     type="number"
                     min="0"
-                    step="1"
+                    step="any"
                     className="text-center font-bold h-10 bg-white"
                     value={prescFormData.dose08}
                     onChange={(e) => {

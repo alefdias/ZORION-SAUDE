@@ -11,11 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { isLiquido, extrairVolumeMl, converterGotasParaMl, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
 import { 
   ShoppingCart, 
   PackageCheck, 
@@ -36,7 +37,8 @@ import {
   Building2,
   ChevronDown,
   Check,
-  X
+  X,
+  Droplet
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -125,7 +127,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   }, [isAllAlas, selectedAlaIds, alas]);
 
   // Calculation of medication needs per selected Ala(s), Days, Safety Margin, and Stock Discount
-  const calculoNecessidade = useMemo(() => {
+  const { calculoNecessidade, frascosAtivosNasAlas } = useMemo(() => {
     const ativas = prescricoes.filter(p => {
       // 1. Status check: aceita Ativa, Ativo (case-insensitive) ou sem status definido
       const statusStr = String(p.status || "Ativa").trim().toLowerCase();
@@ -160,6 +162,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     });
 
     const medMap = {};
+    const frascosAtivosNasAlas = [];
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
 
     ativas.forEach(p => {
       const medId = p.medicamentoId || p.medicamento_id;
@@ -194,6 +198,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         estoque_satelite: 0
       };
 
+      const isLiq = Boolean(p.is_liquido || isLiquido(finalMed) || isLiquido(med));
+
       const d08 = Number(p.dose08 ?? p.dose_08 ?? 0) || 0;
       const d14 = Number(p.dose14 ?? p.dose_14 ?? 0) || 0;
       const d22 = Number(p.dose22 ?? p.dose_22 ?? 0) || 0;
@@ -205,6 +211,87 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         dailyDose = sumDoses > 0 ? sumDoses : (Number(p.dose) || 1);
       }
 
+      // TRATAMENTO INTELIGENTE PARA MEDICAMENTOS LÍQUIDOS MULTIDOSE
+      if (isLiq) {
+        const volFrasco = Number(p.volume_frasco_ml) || extrairVolumeMl(finalMed) || extrairVolumeMl(med) || 100;
+        let consumoDiarioMl = dailyDose;
+        if (p.unidade_dose === "gotas") {
+          consumoDiarioMl = converterGotasParaMl(dailyDose);
+        }
+
+        const duracaoDias = Number(p.duracao_frasco_dias) || calcularDuracaoFrascoDias(volFrasco, consumoDiarioMl) || 10;
+        const dataProximo = p.data_proximo_frasco ? String(p.data_proximo_frasco).slice(0, 10) : null;
+        const dataUltimo = p.data_ultimo_frasco ? String(p.data_ultimo_frasco).slice(0, 10) : null;
+
+        // REGRA CRÍTICA: Se o paciente já possui frasco e AINDA NÃO É O DIA DO FRASCO TERMINAR
+        if (dataProximo && hojeStr < dataProximo) {
+          let diasRest = 1;
+          try {
+            diasRest = differenceInCalendarDays(parseISO(dataProximo), parseISO(hojeStr));
+          } catch (e) {
+            diasRest = 1;
+          }
+
+          const pac = pacientes.find(patient => 
+            (p.pacienteId && String(patient.id) === String(p.pacienteId)) ||
+            (p.pacienteNome && patient.nome && patient.nome.trim().toLowerCase() === p.pacienteNome.trim().toLowerCase())
+          );
+
+          frascosAtivosNasAlas.push({
+            prescricaoId: p.id,
+            pacienteNome: p.pacienteNome || pac?.nome || "Paciente",
+            alaNome: pac?.alaNome || p.alaNome || "Ala",
+            leito: pac?.leito || p.leito || "-",
+            medicamentoNome: finalMed.nome,
+            concentracao: p.concentracao || finalMed.concentracao || "",
+            volumeFrascoMl: volFrasco,
+            consumoDiario: `${consumoDiarioMl} mL/dia${p.unidade_dose === 'gotas' ? ` (${dailyDose} gotas)` : ''}`,
+            duracaoDias: duracaoDias,
+            dataUltimoFrasco: dataUltimo,
+            dataProximoFrasco: dataProximo,
+            diasRestantes: Math.max(1, diasRest)
+          });
+
+          // Pula este medicamento do pedido de hoje, pois o frasco ainda está ativo no leito!
+          return;
+        }
+
+        // Se chegou aqui: OU é o 1º frasco OU HOJE É O DIA EXATO QUE O FRASCO ACABOU!
+        const groupKey = med?.id
+          ? String(med.id)
+          : (medId
+              ? String(medId)
+              : `${finalMed.nome}_${p.concentracao || finalMed.concentracao || ''}_${p.apresentacao || finalMed.apresentacao || ''}`.toLowerCase().replace(/\s+/g, '_'));
+
+        if (!medMap[groupKey]) {
+          medMap[groupKey] = {
+            medicamentoId: med?.id || medId || groupKey,
+            nome: finalMed.nome || p.medicamentoNome || "Medicamento",
+            codigo: finalMed.codigo || p.medicamentoCodigo || "-",
+            apresentacao: `FRASCO (${volFrasco} mL)`,
+            concentracao: p.concentracao || finalMed.concentracao || "",
+            estoqueSatelite: Number(finalMed.estoque_satelite) || 0,
+            qtdDiaria: 1,
+            qtdCalculada: 0,
+            totalPacientes: 0,
+            isLiquido: true,
+            volumeFrascoMl: volFrasco,
+            duracaoDias: duracaoDias,
+            unidadeMedida: "FRASCO",
+            motivoReposicao: !dataProximo ? "1º Frasco (Início de tratamento)" : "Frasco anterior acabou hoje!",
+            prescricaoIds: []
+          };
+        }
+
+        medMap[groupKey].qtdCalculada += 1;
+        medMap[groupKey].totalPacientes += 1;
+        if (!medMap[groupKey].prescricaoIds.includes(p.id)) {
+          medMap[groupKey].prescricaoIds.push(p.id);
+        }
+        return;
+      }
+
+      // Sólidos e formulações comuns (comprimidos, cápsulas, ampolas)
       const tipoFreq = p.tipoFrequencia || p.tipo_frequencia || "diaria";
       const intervalo = Math.max(1, parseInt(p.intervaloDias || p.intervalo_dias, 10) || 1);
 
@@ -235,18 +322,23 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           estoqueSatelite: Number(finalMed.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdCalculada: 0,
-          totalPacientes: 0
+          totalPacientes: 0,
+          isLiquido: false,
+          prescricaoIds: []
         };
       }
 
       medMap[groupKey].qtdDiaria += effectiveDailyDose;
       medMap[groupKey].qtdCalculada += calculatedTotal;
       medMap[groupKey].totalPacientes += 1;
+      if (!medMap[groupKey].prescricaoIds.includes(p.id)) {
+        medMap[groupKey].prescricaoIds.push(p.id);
+      }
     });
 
-    return Object.values(medMap).map(item => {
+    const listaCalculada = Object.values(medMap).map(item => {
       // 1. Quantidade com margem de segurança (arredondado para cima)
-      const qtdComMargem = effectiveMargem > 0
+      const qtdComMargem = (effectiveMargem > 0 && !item.isLiquido)
         ? Math.ceil(item.qtdCalculada * (1 + (effectiveMargem / 100)))
         : item.qtdCalculada;
 
@@ -264,6 +356,11 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         qtdSugerida
       };
     }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+
+    return {
+      calculoNecessidade: listaCalculada,
+      frascosAtivosNasAlas
+    };
   }, [prescricoes, pacientes, medicamentos, selectedAlaIds, isAllAlas, alas, effectiveDays, effectiveMargem, descontarEstoque]);
 
   // Resumo macro do pedido calculado
@@ -367,6 +464,29 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         margem: effectiveMargem,
         itens: itens.length
       });
+
+      // Atualiza automaticamente as prescrições de frascos líquidos que foram repostos neste pedido
+      const hoje = format(new Date(), "yyyy-MM-dd");
+      for (const item of calculoNecessidade) {
+        if (item.isLiquido && Array.isArray(item.prescricaoIds) && item.prescricaoIds.length > 0) {
+          for (const prId of item.prescricaoIds) {
+            const pr = prescricoes.find(p => p.id === prId);
+            if (pr) {
+              const dur = Number(pr.duracao_frasco_dias) || Number(item.duracaoDias) || 10;
+              const prox = format(addDays(new Date(), dur), "yyyy-MM-dd");
+              try {
+                await db.entities.PrescricaoPaciente.update(pr.id, {
+                  data_ultimo_frasco: hoje,
+                  data_proximo_frasco: prox
+                });
+              } catch (e) {
+                console.warn("Erro ao atualizar ciclo de frasco líquido:", e);
+              }
+            }
+          }
+        }
+      }
+
       return novoPedido;
     },
     onSuccess: (data) => {
@@ -374,12 +494,43 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       setCustomQuantities({});
       setObservacaoPedido("");
       queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
     },
     onError: (err) => {
       const msg = typeof err === "string" ? err : (err?.message || JSON.stringify(err));
       toast.error(`Erro ao criar pedido: ${msg}`);
     }
   });
+
+  // Handlers para gestão manual de frascos líquidos
+  const handleEntregarFrascoAgora = async (frasco) => {
+    try {
+      const hoje = format(new Date(), "yyyy-MM-dd");
+      const dur = Number(frasco.duracaoDias) || 10;
+      const prox = format(addDays(new Date(), dur), "yyyy-MM-dd");
+      await db.entities.PrescricaoPaciente.update(frasco.prescricaoId, {
+        data_ultimo_frasco: hoje,
+        data_proximo_frasco: prox
+      });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      toast.success(`Frasco entregue para ${frasco.pacienteNome}! Próxima reposição em ${format(parseISO(prox), "dd/MM/yyyy")} (${dur} dias).`);
+    } catch (e) {
+      toast.error("Erro ao registrar entrega do frasco.");
+    }
+  };
+
+  const handleForcarReposicaoHoje = async (frasco) => {
+    try {
+      const hoje = format(new Date(), "yyyy-MM-dd");
+      await db.entities.PrescricaoPaciente.update(frasco.prescricaoId, {
+        data_proximo_frasco: hoje
+      });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      toast.info(`Frasco de ${frasco.medicamentoNome} (${frasco.pacienteNome}) inserido no pedido de hoje para reposição!`);
+    } catch (e) {
+      toast.error("Erro ao solicitar reposição do frasco.");
+    }
+  };
 
   const handleOpenPrintPreview = (pedidoCustom = null) => {
     if (pedidoCustom) {
@@ -989,23 +1140,37 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                         <TableRow key={item.medicamentoId} className="hover:bg-slate-50/80">
                           <TableCell className="font-mono text-xs text-slate-500">{item.codigo || "-"}</TableCell>
                           <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                            <p className="font-bold text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.nome}</p>
-                            <p className="text-xs text-slate-500 break-words whitespace-normal">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
+                            <div className="flex items-center flex-wrap gap-1">
+                              <span className="font-bold text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.nome}</span>
+                              {item.isLiquido && (
+                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300 font-bold inline-flex items-center gap-0.5">
+                                  <Droplet className="w-2.5 h-2.5" /> Frasco {item.volumeFrascoMl} mL
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 break-words whitespace-normal">
+                              {item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}
+                            </p>
+                            {item.isLiquido && item.motivoReposicao && (
+                              <span className="text-[10px] text-sky-600 font-semibold block mt-0.5">
+                                • {item.motivoReposicao}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-center font-mono font-semibold">
-                            {item.qtdDiaria} un/dia
+                            {item.isLiquido ? "1 frasco (reposição)" : `${item.qtdDiaria} un/dia`}
                           </TableCell>
                           <TableCell className="text-center font-mono font-bold text-slate-700 dark:text-slate-300">
-                            {item.qtdCalculada} un
+                            {item.isLiquido ? `${item.qtdCalculada} frasco(s)` : `${item.qtdCalculada} un`}
                           </TableCell>
                           {effectiveMargem > 0 && (
                             <TableCell className="text-center font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20">
-                              <span>{item.qtdComMargem} un</span>
+                              <span>{item.qtdComMargem} {item.isLiquido ? "frasco(s)" : "un"}</span>
                               <span className="text-[10px] text-emerald-600 block">(+{item.qtdMargemExtra})</span>
                             </TableCell>
                           )}
                           <TableCell className="text-center font-mono font-bold text-slate-600">
-                            <div>{item.estoqueSatelite} un</div>
+                            <div>{item.estoqueSatelite} {item.isLiquido ? "frasco(s)" : "un"}</div>
                             {descontarEstoque && (
                               <span className="text-[10px] text-blue-600 font-semibold block">
                                 -{Math.min(item.estoqueSatelite, item.qtdComMargem)} abatido
@@ -1046,6 +1211,91 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                 </TableBody>
               </Table>
             </div>
+
+            {/* ─── PAINEL: FRASCOS LÍQUIDOS ATIVOS NAS ALAS ─── */}
+            {frascosAtivosNasAlas && frascosAtivosNasAlas.length > 0 && (
+              <div className="mt-6 border border-sky-200 dark:border-sky-900/50 bg-sky-50/40 dark:bg-sky-950/20 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-sky-100 dark:border-sky-900/40">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/60 flex items-center justify-center text-sky-600 dark:text-sky-300">
+                      <Droplet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-sky-900 dark:text-sky-100 flex items-center gap-2">
+                        Frascos Líquidos Ativos no Leito / Enfermaria
+                        <Badge variant="secondary" className="bg-sky-100 text-sky-800 border-sky-200 font-bold text-xs">
+                          {frascosAtivosNasAlas.length} frasco(s) em uso
+                        </Badge>
+                      </h4>
+                      <p className="text-[11px] text-sky-700/80 dark:text-sky-300/80">
+                        Estes medicamentos já estão com frasco ativo nas alas. A reposição no pedido só aparecerá automaticamente no dia exato em que o frasco acabar.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {frascosAtivosNasAlas.map((frasco) => (
+                    <div
+                      key={frasco.prescricaoId}
+                      className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-lg p-3 shadow-xs flex flex-col justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-1">
+                          <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
+                            {frasco.pacienteNome}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] bg-slate-50 font-mono shrink-0">
+                            {frasco.alaNome} • Leito {frasco.leito}
+                          </Badge>
+                        </div>
+
+                        <div className="text-xs font-semibold text-sky-800 dark:text-sky-300">
+                          {frasco.medicamentoNome} {frasco.concentracao ? `(${frasco.concentracao})` : ""}
+                        </div>
+
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Frasco {frasco.volumeFrascoMl} mL • Consumo: <strong className="text-slate-800 dark:text-slate-200">{frasco.consumoDiario}</strong>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-1">
+                          <span className="text-slate-500">Duração: {frasco.duracaoDias} dias</span>
+                          <span className="font-bold text-sky-700 dark:text-sky-400">
+                            Próxima troca: {frasco.dataProximoFrasco ? format(parseISO(frasco.dataProximoFrasco), "dd/MM/yyyy") : "--"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                          Restam {frasco.diasRestantes} dia(s)
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-1.5 text-[10px] text-amber-700 hover:bg-amber-50"
+                            onClick={() => handleForcarReposicaoHoje(frasco)}
+                            title="Se o frasco quebrou ou acabou antes, força a inclusão no pedido de hoje"
+                          >
+                            Repor Hoje
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-1.5 text-[10px] text-sky-700 border-sky-200 hover:bg-sky-50"
+                            onClick={() => handleEntregarFrascoAgora(frasco)}
+                            title="Registra entrega de novo frasco agora e reinicia o ciclo"
+                          >
+                            Entregar Novo
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}

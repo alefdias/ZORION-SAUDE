@@ -11,6 +11,7 @@ import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2 } from "lucide-
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { db } from "@/api/db";
+import { isLiquido, extrairVolumeMl } from "@/utils/liquidUtils";
 
 const getLocalDateString = () => {
     const d = new Date();
@@ -205,6 +206,26 @@ export default function EntradaForm({ open, onClose, onSave, medicamentos = [], 
                                         {isAdiantamento ? "Deixar de ser Adiantamento (Tornar Regular)" : "Vincular a Adiantamento"}
                                     </Button>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Indicador de Medicamento Líquido / Volume Frasco */}
+                        {selectedMed && (isLiquido(selectedMed) || selectedMed.is_liquido) && (
+                            <div className="mt-2.5 rounded-xl p-3 border bg-blue-50/80 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-xs flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-base">💧</span>
+                                    <div>
+                                        <p className="font-bold text-blue-900 dark:text-blue-200">
+                                            Medicamento Líquido Multidose (Frasco de {selectedMed.volume_frasco_ml || extrairVolumeMl(selectedMed)} mL)
+                                        </p>
+                                        <p className="text-[11px] text-blue-700 dark:text-blue-400">
+                                            A quantidade desta entrada deve ser registrada em <strong>unidades de FRASCOS</strong>.
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="bg-blue-100 text-blue-800 border border-blue-300 font-bold px-2 py-0.5 rounded text-[10px] shrink-0">
+                                    {selectedMed.volume_frasco_ml || extrairVolumeMl(selectedMed)} mL/frasco
+                                </span>
                             </div>
                         )}
                     </div>

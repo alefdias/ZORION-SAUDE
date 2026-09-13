@@ -107,18 +107,21 @@ const APRESENTACAO_MAP = {
 
 // Inversa para preencher o select
 // Removed CATEGORIA_MAP_INV
-const APRESENTACAO_MAP_INV = Object.fromEntries(Object.entries(APRESENTACAO_MAP).map(([k, v]) => [v, k]));
+import { isLiquido, extrairVolumeMl } from "@/utils/liquidUtils";
 
 export default function MedicamentoForm({ open, onClose, onSave, medicamento, isLoading }) {
     const [form, setForm] = useState({
         nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "",
         concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false,
         origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false,
-        is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: ""
+        is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "",
+        is_liquido: false, volume_frasco_ml: ""
     });
 
     useEffect(() => {
         if (medicamento) {
+            const isLiq = medicamento.is_liquido !== undefined ? Boolean(medicamento.is_liquido) : isLiquido(medicamento);
+            const vol = medicamento.volume_frasco_ml || (isLiq ? extrairVolumeMl(medicamento) : "");
             setForm({
                 nome: medicamento.nome || "",
                 nome_comercial: medicamento.nome_comercial || "",
@@ -144,11 +147,14 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                 nota_fiscal: medicamento.nota_fiscal || "",
                 valor_compra: medicamento.valor_compra || "",
                 fornecedor_nome: medicamento.fornecedor_nome || "",
+                is_liquido: isLiq,
+                volume_frasco_ml: vol || "",
             });
         } else {
-            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "" });
+            setForm({ nome: "", nome_comercial: "", codigo: "", principio_ativo: "", grupo_terapeutico: "", apresentacao: "", concentracao: "", unidade_medida: "", estoque_minimo: 0, localizacao: "", observacoes: "", padronizado: false, is_mav: false, origem: "", forma_farmaceutica: "", via_administracao: "", portaria_344: false, antimicrobiano: false, ccih: false, is_adiantamento: false, nota_fiscal: "", valor_compra: "", fornecedor_nome: "", is_liquido: false, volume_frasco_ml: "" });
         }
     }, [medicamento, open]);
+
 
     const { data: dbMedicamentos = [] } = useQuery({
         queryKey: ['medicamentos'],
@@ -207,10 +213,14 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
 
         // Garante que a apresentação nunca fique vazia nem repetida de forma divergente
         const apresentacaoFinal = normalizeApresentacao(form.apresentacao) || "COMPRIMIDO";
+        const medIsLiq = Boolean(form.is_liquido || isLiquido({ ...form, apresentacao: apresentacaoFinal }));
+        const volMl = medIsLiq ? (Number(form.volume_frasco_ml) || extrairVolumeMl({ ...form, apresentacao: apresentacaoFinal })) : null;
 
         onSave({
             ...form,
-            apresentacao: apresentacaoFinal
+            apresentacao: apresentacaoFinal,
+            is_liquido: medIsLiq,
+            volume_frasco_ml: volMl
         });
     };
 
@@ -292,6 +302,56 @@ export default function MedicamentoForm({ open, onClose, onSave, medicamento, is
                             <Label>Via de Administração</Label>
                             <Input value={form.via_administracao} onChange={(e) => setForm({ ...form, via_administracao: e.target.value.toUpperCase() })} placeholder="Ex: ORAL, IV, IM" />
                         </div>
+                    </div>
+
+                    {/* Bloco Inteligente de Medicamento Líquido / Volume do Frasco */}
+                    <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/30 space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                                <input 
+                                    type="checkbox" 
+                                    id="is_liquido" 
+                                    checked={form.is_liquido || isLiquido(form)} 
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setForm(f => ({
+                                            ...f,
+                                            is_liquido: checked,
+                                            volume_frasco_ml: checked && !f.volume_frasco_ml ? extrairVolumeMl(f) : f.volume_frasco_ml
+                                        }));
+                                    }}
+                                    className="rounded border-blue-400 w-4 h-4 text-blue-600 focus:ring-blue-500" 
+                                />
+                                <Label htmlFor="is_liquido" className="cursor-pointer text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                                    💧 Medicamento Líquido Multidose (Frasco, Xarope, Gotas, Suspensão)
+                                </Label>
+                            </div>
+                            {(form.is_liquido || isLiquido(form)) && (
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold">
+                                    Duração Programada Ativa
+                                </Badge>
+                            )}
+                        </div>
+
+                        {(form.is_liquido || isLiquido(form)) && (
+                            <div className="flex items-center gap-3 pt-1 border-t border-blue-200/60 dark:border-blue-800">
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Volume do Frasco:</Label>
+                                    <Input 
+                                        type="number" 
+                                        min="1" 
+                                        value={form.volume_frasco_ml || ""} 
+                                        onChange={handleChange("volume_frasco_ml")} 
+                                        placeholder="Ex: 100" 
+                                        className="h-8 text-xs w-28 font-bold bg-white dark:bg-slate-900" 
+                                    />
+                                    <span className="text-xs font-bold text-blue-900 dark:text-blue-300">mL</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Com base neste volume, a farmácia satélite saberá exatamente quando o frasco do paciente vai acabar, evitando envio desnecessário de novos frascos todo dia.
+                                </p>
+                            </div>
+                        )}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 pb-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
                         <div className="flex items-center gap-2">
