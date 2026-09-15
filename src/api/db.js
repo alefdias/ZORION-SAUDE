@@ -181,10 +181,32 @@ const ensureTableQuery = {
     );
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "coren" TEXT;
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "crf" TEXT;
+    ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "crm" TEXT;
+    ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "especialidade" TEXT;
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "primeiro_acesso" BOOLEAN DEFAULT true;
     INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil", "primeiro_acesso") 
     VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin', false)
     ON CONFLICT DO NOTHING;
+  `,
+  NotificacaoFarmacia: `
+    CREATE TABLE IF NOT EXISTS "NotificacaoFarmacia" (
+      "id" TEXT PRIMARY KEY,
+      "tipo" TEXT NOT NULL,
+      "pacienteId" TEXT,
+      "pacienteNome" TEXT,
+      "prontuario" TEXT,
+      "alaNome" TEXT,
+      "leito" TEXT,
+      "medicamentoNome" TEXT,
+      "esquemaPosologico" TEXT,
+      "motivo" TEXT,
+      "medicoNome" TEXT,
+      "crm" TEXT,
+      "status" TEXT DEFAULT 'Pendente',
+      "prioridade" TEXT DEFAULT 'Normal',
+      "created_at" TEXT,
+      "deleted_at" TEXT
+    );
   `,
   Paciente: `
     CREATE TABLE IF NOT EXISTS "Paciente" (
@@ -280,6 +302,12 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "duracao_frasco_dias" INTEGER;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_ultimo_frasco" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_proximo_frasco" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medico_nome" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medico_crm" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "motivo_alteracao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medico_alterou" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_alteracao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "historico_alteracoes" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
@@ -696,6 +724,38 @@ export const db = {
     PedidoSatelite: createEntityProxy("PedidoSatelite"),
     Usuario: createEntityProxy("Usuario"),
     GavetaPaciente: createEntityProxy("GavetaPaciente"),
-    Visita: createEntityProxy("Visita")
+    Visita: createEntityProxy("Visita"),
+    NotificacaoFarmacia: createEntityProxy("NotificacaoFarmacia")
+  }
+};
+
+export const PacienteService = {
+  update: (id, data) => db.entities.Paciente.update(id, data),
+  get: (id) => db.entities.Paciente.get(id),
+  list: (opts) => db.entities.Paciente.list(opts)
+};
+
+export const AlaService = {
+  list: () => db.entities.Ala.list()
+};
+
+export const PrescricaoService = {
+  suspend: (id, motivo) => db.entities.PrescricaoPaciente.update(id, { status: "Suspensa", observacoes: motivo }),
+  update: (id, data) => db.entities.PrescricaoPaciente.update(id, data),
+  list: (opts) => db.entities.PrescricaoPaciente.list(opts)
+};
+
+export const VisitaService = {
+  list: async ({ pacienteId } = {}) => {
+    try {
+      if (pacienteId) {
+        const res = await db.entities.Visita.filter({ pacienteId });
+        if (res && res.length) return res;
+      }
+      const all = await db.entities.Visita.list();
+      return pacienteId ? all.filter(v => v.pacienteId === pacienteId || v.paciente_id === pacienteId) : all;
+    } catch {
+      return [];
+    }
   }
 };

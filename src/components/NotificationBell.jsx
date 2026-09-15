@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, ShoppingCart, ArrowRight, PackageCheck, Ban, AlertTriangle, X, Check } from "lucide-react";
+import { Bell, ShoppingCart, ArrowRight, PackageCheck, Ban, AlertTriangle, X, Check, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -148,9 +148,34 @@ export function NotificationBell({ activeSection }) {
     refetchInterval: 1500
   });
 
+  // Notificações em tempo real vindas do Módulo Médico (ZORION-MEDICO)
+  const { data: notificacoesFarmacia = [] } = useQuery({
+    queryKey: ['notificacoes_farmacia_bell'],
+    queryFn: async () => {
+      try {
+        const all = await db.entities.NotificacaoFarmacia.list('-created_at');
+        return all || [];
+      } catch {
+        return [];
+      }
+    },
+    refetchInterval: 2000
+  });
+
+  const pendingNotificacoesMedico = (notificacoesFarmacia || []).filter(n => n.status === "Pendente");
+
+  const handleDismissNotificacaoMedico = async (notifId, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await db.entities.NotificacaoFarmacia.update(notifId, { status: "Atendido" });
+    } catch (err) {
+      console.error("Erro ao atender notificacao de prescricao:", err);
+    }
+  };
+
   // Separação estrita de notificações por módulo:
-  // - ESTOQUE CENTRAL: Apenas pedidos pendentes/em separação vindos da satélite que precisam de atendimento da central
-  // - FARMÁCIA SATÉLITE: Apenas pedidos que foram separados (prontos para recebimento) ou cancelados pela central (com motivo)
+  // - ESTOQUE CENTRAL: Pedidos pendentes/em separação vindos da satélite + prescrições médicas
+  // - FARMÁCIA SATÉLITE: Pedidos separados/cancelados + prescrições médicas de pacientes
   let pendingPedidos = [];
   let readyPedidos = [];
   let cancelledPedidos = [];
@@ -171,14 +196,16 @@ export function NotificationBell({ activeSection }) {
     });
   }
 
-  const count = pendingPedidos.length + readyPedidos.length + cancelledPedidos.length;
+  const count = pendingPedidos.length + readyPedidos.length + cancelledPedidos.length + pendingNotificacoesMedico.length;
   const hasUrgent = pendingPedidos.some(p => p.prioridade === "Emergência" || p.prioridade === "Urgente") 
-    || cancelledPedidos.length > 0;
+    || cancelledPedidos.length > 0
+    || pendingNotificacoesMedico.some(n => n.tipo === "ALTERAÇÃO" || n.tipo === "SUSPENSÃO");
 
   const notifSignature = [
     ...pendingPedidos.map(p => `${p.id}:${p.status}:${p.prioridade}`),
     ...readyPedidos.map(p => `${p.id}:${p.status}`),
-    ...cancelledPedidos.map(p => `${p.id}:${p.status}:${p.data_cancelamento}`)
+    ...cancelledPedidos.map(p => `${p.id}:${p.status}:${p.data_cancelamento}`),
+    ...pendingNotificacoesMedico.map(n => `${n.id}:${n.status}:${n.tipo}`)
   ].join("|");
 
   // Sound alert on new orders or upon initial load/login if count > 0
@@ -253,6 +280,75 @@ export function NotificationBell({ activeSection }) {
             </div>
           ) : (
             <>
+              {/* NOTIFICAÇÕES DO MÉDICO: Prescrições, Alterações e Suspensões */}
+              {pendingNotificacoesMedico.length > 0 && (
+                <div className="p-2 bg-sky-50 dark:bg-sky-950/30 text-[11px] font-bold text-sky-800 dark:text-sky-300 flex items-center justify-between border-b border-sky-200">
+                  <div className="flex items-center gap-1.5">
+                    <Stethoscope className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Prescrições Médicas ({pendingNotificacoesMedico.length})</span>
+                  </div>
+                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono font-bold">Módulo Médico</span>
+                </div>
+              )}
+              {pendingNotificacoesMedico.map(notif => {
+                const isSusp = notif.tipo === "SUSPENSÃO";
+                const isAlt = notif.tipo === "ALTERAÇÃO";
+                return (
+                  <div 
+                    key={notif.id}
+                    onClick={() => {
+                      window.location.hash = "#/PacientesMedicao";
+                    }}
+                    className={`p-3 transition-colors cursor-pointer group relative ${
+                      isSusp 
+                        ? "bg-rose-50/50 hover:bg-rose-100/60" 
+                        : isAlt 
+                        ? "bg-amber-50/50 hover:bg-amber-100/60" 
+                        : "bg-sky-50/40 hover:bg-sky-100/50"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 group-hover:underline flex items-center gap-1">
+                        🩺 {notif.paciente_nome}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Badge className={`text-[10px] font-bold text-white ${
+                          isSusp ? "bg-rose-600" : isAlt ? "bg-amber-600" : "bg-sky-600"
+                        }`}>
+                          {notif.tipo || "PRESCRIÇÃO"}
+                        </Badge>
+                        <button
+                          onClick={(e) => handleDismissNotificacaoMedico(notif.id, e)}
+                          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-black/5"
+                          title="Marcar como ciente"
+                        >
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {notif.medicamento_nome}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Ala: {notif.ala_nome || "-"} {notif.leito ? `• Leito ${notif.leito}` : ""}
+                    </p>
+                    {notif.motivo && (
+                      <p className="text-[10px] text-amber-800 dark:text-amber-300 italic mt-0.5">
+                        Motivo: {notif.motivo}
+                      </p>
+                    )}
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <span className="font-medium text-sky-700 dark:text-sky-400">
+                        {notif.medico_nome || "Médico"} ({notif.crm || "CRM"})
+                      </span>
+                      <span>
+                        {notif.created_at ? format(new Date(notif.created_at), "HH:mm 'hs'", { locale: ptBR }) : ""}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
               {/* SATÉLITE: Pedidos Prontos / Separados pela Central */}
               {readyPedidos.length > 0 && (
                 <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 border-b border-emerald-200">

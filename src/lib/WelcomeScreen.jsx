@@ -269,21 +269,40 @@ export function WelcomeScreen({ onEnter }) {
       try {
         const data = await db.entities.Usuario.list();
         if (data && data.length > 0) {
-          const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao"];
-          const localUsers = data.map(u => ({
+          const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao", "enfermagem"];
+          const localUsers = data.map(u => {
+            let userModules = [];
+            if (u.modulos) {
+              try {
+                userModules = typeof u.modulos === 'string' && u.modulos.startsWith('[') 
+                  ? JSON.parse(u.modulos) 
+                  : (typeof u.modulos === 'string' ? u.modulos.split(',') : u.modulos);
+              } catch { userModules = []; }
+            }
+            if (!userModules || userModules.length === 0) {
+              const role = (u.perfil || u.cargo || "").toLowerCase();
+              userModules = (role === "administrador" || role === "admin") ? allModules : 
+                            (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
+                            (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia"] :
+                            (role === "medico") ? ["medico"] :
+                            (role === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
+                            (role === "enfermeiro") ? ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao", "enfermagem"] :
+                            (role === "tecnico_enfermagem" || role.includes("tec")) ? ["carrinho_parada", "carrinho_enfermagem", "enfermagem"] :
+                            ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"];
+            }
+
+            return {
               id: u.id,
               nome: u.nome,
               username: u.login,
               password: u.senha,
-              cargo: u.perfil,
+              cargo: u.perfil || u.cargo,
               coren: u.coren,
               crf: u.crf,
-              modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
-                       (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
-                       (u.perfil === "recepcionista" || u.cargo === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
-                       ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"],
+              modules: userModules,
               first_login: u.primeiro_acesso !== false
-          }));
+            };
+          });
           localStorage.setItem("axion_users", JSON.stringify(localUsers));
           setAvailableUsers(localUsers);
           return;
@@ -296,7 +315,7 @@ export function WelcomeScreen({ onEnter }) {
       let users = saved ? JSON.parse(saved) : [];
       
       const adminIndex = users.findIndex(u => u.username === "admin");
-      const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia"];
+      const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "enfermagem"];
       
       if (adminIndex === -1) {
         users.push({
@@ -348,21 +367,40 @@ export function WelcomeScreen({ onEnter }) {
     try {
       const data = await db.entities.Usuario.list();
       if (data && data.length > 0) {
-        const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao"];
-        users = data.map(u => ({
+        const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "recepcao", "enfermagem"];
+        users = data.map(u => {
+          let userModules = [];
+          if (u.modulos) {
+            try {
+              userModules = typeof u.modulos === 'string' && u.modulos.startsWith('[') 
+                ? JSON.parse(u.modulos) 
+                : (typeof u.modulos === 'string' ? u.modulos.split(',') : u.modulos);
+            } catch { userModules = []; }
+          }
+          if (!userModules || userModules.length === 0) {
+            const role = (u.perfil || u.cargo || "").toLowerCase();
+            userModules = (role === "administrador" || role === "admin") ? allModules : 
+                          (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
+                          (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia"] :
+                          (role === "medico") ? ["medico"] :
+                          (role === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
+                          (role === "enfermeiro") ? ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao", "enfermagem"] :
+                          (role === "tecnico_enfermagem" || role.includes("tec")) ? ["carrinho_parada", "carrinho_enfermagem", "enfermagem"] :
+                          ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"];
+          }
+
+          return {
             id: u.id,
             nome: u.nome,
             username: u.login,
             password: u.senha,
-            cargo: u.perfil,
+            cargo: u.perfil || u.cargo,
             coren: u.coren,
             crf: u.crf,
-            modules: (u.perfil === "administrador" || u.cargo === "administrador") ? allModules : 
-                     (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
-                     (u.perfil === "recepcionista" || u.cargo === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
-                     ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"],
+            modules: userModules,
             first_login: u.primeiro_acesso !== false
-        }));
+          };
+        });
         localStorage.setItem("axion_users", JSON.stringify(users));
         setAvailableUsers(users);
       }
@@ -371,27 +409,50 @@ export function WelcomeScreen({ onEnter }) {
     }
 
     // A senha mestre admin123 funciona para qualquer usuário cadastrado
-    const user = users.find(u => u.username === username && (u.password === password || password === "admin123"));
+    const user = users.find(u => (u.username === username || (u.coren && u.coren === username)) && (u.password === password || password === "admin123"));
 
     if (!user) {
       toast.error("Usuário ou senha incorretos.");
       return;
     }
 
-    // Permission check for Carrinho de Parada or specific subMode
+    // Permission check for modules and roles
+    const userRoleStr = (user.cargo || "").toLowerCase();
+    const isMasterAdmin = user.cargo === "administrador" || user.cargo === "admin" || password === "admin123";
+
+    // 1. Diretriz: Médico só pode acessar o Módulo Médico
+    if (userRoleStr === "medico" && !isMasterAdmin) {
+      toast.error("Acesso não autorizado: Médicos possuem acesso restrito exclusivamente ao Módulo Médico (ZORION-MEDICO).");
+      return;
+    }
+
+    // 2. Diretriz: Auxiliar de Farmácia apenas Estoque Central
+    if ((userRoleStr === "auxiliar_farmacia" || userRoleStr.includes("auxiliar")) && !isMasterAdmin) {
+      if (selectedModule.key !== "estoque_farmacia") {
+        toast.error("Acesso não autorizado: Auxiliares de farmácia possuem permissão exclusivamente para o Estoque Central.");
+        return;
+      }
+    }
+
     let hasPermission = false;
-    if (user.cargo === "administrador" || password === "admin123" || user.modules.includes("carrinho_parada")) {
+    const isNursingRole = userRoleStr === "enfermeiro" || userRoleStr === "tecnico_enfermagem" || userRoleStr.includes("tec") || userRoleStr.includes("enf");
+
+    if (isMasterAdmin) {
       hasPermission = true;
-    } else if (carrinhoSubMode === "nursing" && (user.cargo === "enfermeiro" || user.modules.includes("carrinho_enfermagem"))) {
-      hasPermission = true;
-    } else if (carrinhoSubMode === "pharmacy" && (user.cargo === "farmaceutico" || user.modules.includes("carrinho_farmacia"))) {
-      hasPermission = true;
-    } else if (!carrinhoSubMode && (user.modules.includes(selectedModule.key) || user.cargo === "administrador" || password === "admin123")) {
+    } else if (selectedModule.key === "carrinho_parada") {
+      if (carrinhoSubMode === "nursing" && (isNursingRole || (user.modules && (user.modules.includes("carrinho_enfermagem") || user.modules.includes("enfermagem"))))) {
+        hasPermission = true;
+      } else if (carrinhoSubMode === "pharmacy" && (userRoleStr === "farmaceutico" || (user.modules && user.modules.includes("carrinho_farmacia")))) {
+        hasPermission = true;
+      } else if (!carrinhoSubMode && user.modules && user.modules.includes("carrinho_parada")) {
+        hasPermission = true;
+      }
+    } else if (user.modules && user.modules.includes(selectedModule.key)) {
       hasPermission = true;
     }
 
     if (!hasPermission) {
-      toast.error(`Você não tem permissão para acessar este perfil.`);
+      toast.error(`Você não tem permissão para acessar o módulo ${selectedModule.label}.`);
       return;
     }
 

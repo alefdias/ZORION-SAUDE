@@ -222,7 +222,27 @@ export default function Layout({ children, currentPageName }) {
     showWelcome();
   };
 
-  const activeSection = getCurrentSection(currentPageName);
+  const isAuxiliar = (user?.cargo || user?.perfil || "").toLowerCase().includes("auxiliar");
+  const isMedico = (user?.cargo || user?.perfil || "").toLowerCase() === "medico";
+
+  const rawSection = getCurrentSection(currentPageName);
+  const activeSection = isAuxiliar ? (moduleSections.find(sec => sec.id === "estoque") || rawSection) : rawSection;
+
+  useEffect(() => {
+    if (isAuxiliar && user) {
+      const allowedPages = ["Dashboard", "Medicamentos", "Movimentacoes", "Estoque", "Vencimentos", "Compras", "Relatorios"];
+      if (!allowedPages.includes(currentPageName)) {
+        navigate("/Dashboard");
+      }
+    }
+  }, [isAuxiliar, user, currentPageName, navigate]);
+
+  useEffect(() => {
+    if (isMedico && user) {
+      toast.error("Médicos possuem acesso restrito exclusivamente ao Módulo Médico (ZORION-MEDICO).");
+      handleLogout();
+    }
+  }, [isMedico, user]);
 
   return (
     <div className="min-h-screen bg-slate-100 transition-colors flex flex-col">

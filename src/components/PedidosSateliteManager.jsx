@@ -62,6 +62,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [printOrderData, setPrintOrderData] = useState(null);
+  const [printDate, setPrintDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   // Queries
   const { data: pacientes = [] } = useQuery({
@@ -542,7 +543,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       setPrintOrderData({
         codigo: pedidoCustom.codigo || "PED-CENTRAL",
         alaNome: pedidoCustom.ala_nome || pedidoCustom.alaNome || "Geral",
-        dataSolicitacao: pedidoCustom.data_solicitacao || pedidoCustom.dataSolicitacao || new Date().toISOString(),
+        dataSolicitacao: pedidoCustom.data_solicitacao || pedidoCustom.dataSolicitacao || new Date(printDate + "T12:00:00").toISOString(),
         dias: pedidoCustom.dias_calculados || pedidoCustom.dias || effectiveDays,
         margem: pedidoCustom.margem_seguranca || pedidoCustom.margem || 0,
         descontarEstoque: pedidoCustom.descontar_estoque === 1 || pedidoCustom.descontarEstoque === true,
@@ -587,7 +588,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       setPrintOrderData({
         codigo: `PREVIA-${Date.now().toString().slice(-4)}`,
         alaNome: alaNomeStr,
-        dataSolicitacao: new Date().toISOString(),
+        dataSolicitacao: new Date(printDate + "T12:00:00").toISOString(),
         dias: effectiveDays,
         margem: effectiveMargem,
         descontarEstoque: descontarEstoque,
@@ -751,6 +752,16 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                     <option value="Urgente">⚠️ Urgente</option>
                     <option value="Emergência">🚨 Emergência</option>
                   </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-600">Data Impressão:</span>
+                  <input
+                    type="date"
+                    value={printDate}
+                    onChange={(e) => setPrintDate(e.target.value)}
+                    className="text-xs font-bold rounded-lg border px-2 py-1.5 outline-none bg-white text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+                  />
                 </div>
 
                 <Button

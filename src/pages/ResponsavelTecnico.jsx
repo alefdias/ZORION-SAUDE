@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText, Building2, Pill, Stethoscope, BadgeCheck, Eye, EyeOff, Lock, Sparkles, HeartHandshake } from "lucide-react";
+import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText, Building2, Pill, Stethoscope, BadgeCheck, Eye, EyeOff, Lock, Sparkles, HeartHandshake, Boxes } from "lucide-react";
 import { toast } from "sonner";
 import { getLogs } from "../lib/logger";
 import { db } from "@/api/db";
@@ -105,15 +105,75 @@ export default function ResponsavelTecnico() {
   const [cargo, setCargo] = useState("farmaceutico");
   const [coren, setCoren] = useState("");
   const [crf, setCrf] = useState("");
+  const [crm, setCrm] = useState("");
+  const [crmUf, setCrmUf] = useState("SP");
+  const [crmNumero, setCrmNumero] = useState("");
+  const [especialidade, setEspecialidade] = useState("");
   const [matricula, setMatricula] = useState("");
   const [selectedUserModules, setSelectedUserModules] = useState(["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"]);
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [userCargoFilter, setUserCargoFilter] = useState("todos");
+  const [medicoSearchQuery, setMedicoSearchQuery] = useState("");
+  const [medicoEspecialidadeFilter, setMedicoEspecialidadeFilter] = useState("todos");
+  const [enfermagemSearchQuery, setEnfermagemSearchQuery] = useState("");
+  const [enfermagemCargoFilter, setEnfermagemCargoFilter] = useState("todos");
+  const [previewCarimboMedico, setPreviewCarimboMedico] = useState(null);
+
+  const ESTADOS_BRASIL = [
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
+    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
+    "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+  ];
+
+  const ESPECIALIDADES_MEDICAS = [
+    "Clínica Médica / Geral",
+    "Cirurgia Geral",
+    "Pediatria",
+    "Psiquiatria",
+    "Cardiologia",
+    "Ortopedia e Traumatologia",
+    "Neurologia",
+    "Ginecologia e Obstetrícia",
+    "Medicina de Emergência / Plantonista",
+    "Medicina Intensiva (UTI)",
+    "Anestesiologia",
+    "Infectologia",
+    "Pneumologia",
+    "Nefrologia",
+    "Dermatologia",
+    "Oftalmologia",
+    "Medicina da Família",
+    "Outra Especialidade"
+  ];
+
+  const handleCrmNumeroChange = (num) => {
+    const clean = num.replace(/\D/g, "");
+    setCrmNumero(clean);
+    if (clean) {
+      setCrm(`CRM/${crmUf} ${clean}`);
+    } else {
+      setCrm("");
+    }
+  };
+
+  const handleCrmUfChange = (uf) => {
+    setCrmUf(uf);
+    if (crmNumero) {
+      setCrm(`CRM/${uf} ${crmNumero}`);
+    } else if (crm) {
+      const match = crm.match(/\d+/);
+      if (match) {
+        setCrm(`CRM/${uf} ${match[0]}`);
+      }
+    }
+  };
 
   const AVAILABLE_MODULES = [
+    { id: "enfermagem", name: "Módulo Enfermagem", desc: "Checagem beira-leito, SAE, sinais vitais e anotações" },
     { id: "estoque_farmacia", name: "Estoque Central", desc: "Entradas, saídas e lotes" },
     { id: "farmacia_satelite", name: "Farmácia Satélite", desc: "Pedidos e distribuição de medicamentos" },
     { id: "pacientes_medicao", name: "Pacientes & Prescrições", desc: "Prontuários e aprazamento" },
+    { id: "medico", name: "Módulo Médico", desc: "Prescrição hospitalar e prontuários" },
     { id: "recepcao", name: "Recepção & Admissão", desc: "Cadastro de pacientes e leitos" },
     { id: "carrinho_parada", name: "Carrinho de Parada", desc: "Kits de emergência e lacres" },
     { id: "responsavel_tecnico", name: "Responsável Técnico", desc: "Gestão RT e auditoria" }
@@ -123,21 +183,46 @@ export default function ResponsavelTecnico() {
     try {
       const data = await db.entities.Usuario.list();
       setUsers(data);
-      // Mapear também para o localStorage por retrocompatibilidade
-      const localUsers = data.map(u => ({
+      // Mapear também para o localStorage por retrocompatibilidade e módulos
+      const localUsers = data.map(u => {
+        let userModules = [];
+        if (u.modulos) {
+          try {
+            userModules = typeof u.modulos === 'string' && u.modulos.startsWith('[') 
+              ? JSON.parse(u.modulos) 
+              : (typeof u.modulos === 'string' ? u.modulos.split(',') : u.modulos);
+          } catch {
+            userModules = [];
+          }
+        }
+        if (!userModules || userModules.length === 0) {
+          const role = u.perfil || u.cargo;
+          userModules = (role === "administrador" || role === "admin") ? AVAILABLE_MODULES.map(m => m.id) : 
+                        (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"] : 
+                        (role === "auxiliar_farmacia" || (role && role.includes("auxiliar"))) ? ["estoque_farmacia"] :
+                        (role === "medico") ? ["medico"] :
+                        (role === "enfermeiro") ? ["enfermagem", "carrinho_parada", "pacientes_medicao"] :
+                        (role === "tecnico_enfermagem" || (role && role.includes("tec"))) ? ["enfermagem", "carrinho_parada"] :
+                        (role === "recepcionista") ? ["recepcao", "pacientes_medicao"] :
+                        ["enfermagem", "carrinho_parada"];
+        }
+
+        return {
           id: u.id,
           nome: u.nome,
           username: u.login,
           password: u.senha,
-          cargo: u.perfil,
+          cargo: u.perfil || u.cargo,
+          perfil: u.perfil || u.cargo,
           coren: u.coren,
           crf: u.crf,
-          modules: (u.perfil === "administrador" || u.cargo === "administrador") ? AVAILABLE_MODULES.map(m => m.id) : 
-                   (u.perfil === "farmaceutico" || u.cargo === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"] : 
-                   (u.perfil === "recepcionista" || u.cargo === "recepcionista") ? ["recepcao", "pacientes_medicao"] :
-                   ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao"],
+          crm: u.crm,
+          especialidade: u.especialidade,
+          modulos: userModules,
+          modules: userModules,
           first_login: u.primeiro_acesso !== false
-      }));
+        };
+      });
       localStorage.setItem("axion_users", JSON.stringify(localUsers));
     } catch (e) {
       console.error("Erro ao carregar usuários do PG", e);
@@ -145,6 +230,29 @@ export default function ResponsavelTecnico() {
   };
 
   useEffect(() => {
+    const ensureColumns = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const ip = localStorage.getItem('pg_ip');
+        const dbName = localStorage.getItem('pg_db');
+        const password = localStorage.getItem('pg_pass');
+        if (!ip || !password) return;
+
+        await invoke('execute_postgres', {
+          ip, dbName, password,
+          query: `
+            ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "cargo" TEXT;
+            ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "coren" TEXT;
+            ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "modulos" TEXT;
+            ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "primeiro_acesso" BOOLEAN DEFAULT true;
+          `,
+        });
+      } catch (e) {
+        // silencioso
+      }
+    };
+
+    ensureColumns();
     carregarUsuarios();
     
     // Load logs
@@ -157,8 +265,14 @@ export default function ResponsavelTecnico() {
       setSelectedUserModules(AVAILABLE_MODULES.map(m => m.id));
     } else if (newCargo === "farmaceutico") {
       setSelectedUserModules(["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"]);
+    } else if (newCargo === "auxiliar_farmacia") {
+      setSelectedUserModules(["estoque_farmacia"]);
+    } else if (newCargo === "medico") {
+      setSelectedUserModules(["medico"]);
     } else if (newCargo === "enfermeiro") {
-      setSelectedUserModules(["carrinho_parada", "pacientes_medicao"]);
+      setSelectedUserModules(["enfermagem", "carrinho_parada", "pacientes_medicao"]);
+    } else if (newCargo === "tecnico_enfermagem") {
+      setSelectedUserModules(["enfermagem", "carrinho_parada"]);
     } else if (newCargo === "recepcionista") {
       setSelectedUserModules(["recepcao", "pacientes_medicao"]);
     }
@@ -166,29 +280,80 @@ export default function ResponsavelTecnico() {
 
   const userStats = useMemo(() => {
     const total = users.length;
-    const admin = users.filter(u => u.perfil === "administrador" || u.cargo === "administrador").length;
+    const admin = users.filter(u => u.perfil === "administrador" || u.cargo === "administrador" || u.perfil === "admin").length;
     const farma = users.filter(u => u.perfil === "farmaceutico" || u.cargo === "farmaceutico").length;
+    const aux = users.filter(u => u.perfil === "auxiliar_farmacia" || u.cargo === "auxiliar_farmacia" || (u.cargo && u.cargo.toLowerCase().includes("auxiliar"))).length;
+    const med = users.filter(u => u.perfil === "medico" || u.cargo === "medico").length;
     const enf = users.filter(u => u.perfil === "enfermeiro" || u.cargo === "enfermeiro").length;
+    const tec = users.filter(u => u.perfil === "tecnico_enfermagem" || u.cargo === "tecnico_enfermagem" || (u.cargo && u.cargo.toLowerCase().includes("tec"))).length;
     const recep = users.filter(u => u.perfil === "recepcionista" || u.cargo === "recepcionista").length;
-    return { total, admin, farma, enf, recep };
+    return { total, admin, farma, aux, med, enf, tec, recep, enfermagemTotal: enf + tec };
   }, [users]);
 
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const role = u.perfil || u.cargo || "farmaceutico";
-      if (userCargoFilter !== "todos" && role !== userCargoFilter) {
-        return false;
+      if (userCargoFilter !== "todos") {
+        if (userCargoFilter === "tecnico_enfermagem") {
+          if (role !== "tecnico_enfermagem" && !(u.cargo && u.cargo.toLowerCase().includes("tec"))) return false;
+        } else if (userCargoFilter === "auxiliar_farmacia") {
+          if (role !== "auxiliar_farmacia" && !(u.cargo && u.cargo.toLowerCase().includes("auxiliar"))) return false;
+        } else if (role !== userCargoFilter) {
+          return false;
+        }
       }
       if (userSearchQuery.trim()) {
         const q = userSearchQuery.toLowerCase();
         const nomeMatch = (u.nome || "").toLowerCase().includes(q);
         const loginMatch = (u.login || u.username || "").toLowerCase().includes(q);
-        const regMatch = (u.crf || u.coren || "").toLowerCase().includes(q);
+        const regMatch = (u.crf || u.coren || u.crm || "").toLowerCase().includes(q);
         if (!nomeMatch && !loginMatch && !regMatch) return false;
       }
       return true;
     });
   }, [users, userCargoFilter, userSearchQuery]);
+
+  const filteredEnfermagem = useMemo(() => {
+    return users.filter(u => {
+      const role = (u.perfil || u.cargo || "").toLowerCase();
+      const isEnf = role === "enfermeiro" || (role.includes("enf") && !role.includes("tec"));
+      const isTec = role === "tecnico_enfermagem" || role.includes("tec");
+      if (!isEnf && !isTec) return false;
+
+      if (enfermagemCargoFilter !== "todos") {
+        if (enfermagemCargoFilter === "enfermeiro" && !isEnf) return false;
+        if (enfermagemCargoFilter === "tecnico_enfermagem" && !isTec) return false;
+      }
+
+      if (enfermagemSearchQuery.trim()) {
+        const q = enfermagemSearchQuery.toLowerCase();
+        const nomeMatch = (u.nome || "").toLowerCase().includes(q);
+        const loginMatch = (u.login || u.username || "").toLowerCase().includes(q);
+        const corenMatch = (u.coren || "").toLowerCase().includes(q);
+        if (!nomeMatch && !loginMatch && !corenMatch) return false;
+      }
+      return true;
+    });
+  }, [users, enfermagemCargoFilter, enfermagemSearchQuery]);
+
+  const filteredMedicos = useMemo(() => {
+    return users.filter(u => {
+      const isMed = u.perfil === "medico" || u.cargo === "medico";
+      if (!isMed) return false;
+      if (medicoEspecialidadeFilter !== "todos" && (u.especialidade || "Clínica Médica / Geral") !== medicoEspecialidadeFilter) {
+        return false;
+      }
+      if (medicoSearchQuery.trim()) {
+        const q = medicoSearchQuery.toLowerCase();
+        const nomeMatch = (u.nome || "").toLowerCase().includes(q);
+        const loginMatch = (u.login || u.username || "").toLowerCase().includes(q);
+        const crmMatch = (u.crm || "").toLowerCase().includes(q);
+        const espMatch = (u.especialidade || "").toLowerCase().includes(q);
+        if (!nomeMatch && !loginMatch && !crmMatch && !espMatch) return false;
+      }
+      return true;
+    });
+  }, [users, medicoSearchQuery, medicoEspecialidadeFilter]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -204,12 +369,30 @@ export default function ResponsavelTecnico() {
       toast.error("CRF é obrigatório para Farmacêuticos");
       return;
     }
-    if (cargo === 'enfermeiro' && !coren) {
-      toast.error("COREN é obrigatório para Enfermeiros");
+    let crmFinal = crm ? crm.trim() : "";
+    if (cargo === 'medico') {
+      if (!crmFinal && crmNumero) {
+        crmFinal = `CRM/${crmUf} ${crmNumero.trim()}`;
+        setCrm(crmFinal);
+      }
+      if (!crmFinal || crmFinal.length < 5) {
+        toast.error("CRM é obrigatório para Médicos (Ex: CRM/SP 123456)");
+        return;
+      }
+    }
+    if ((cargo === 'enfermeiro' || cargo === 'tecnico_enfermagem') && !coren) {
+      toast.error(`COREN é obrigatório para ${cargo === 'enfermeiro' ? 'Enfermeiros' : 'Técnicos de Enfermagem'}`);
       return;
     }
 
-    if (selectedUserModules.length === 0) {
+    let finalModules = selectedUserModules;
+    if (cargo === 'medico') {
+      finalModules = ["medico"];
+    } else if (cargo === 'auxiliar_farmacia') {
+      finalModules = ["estoque_farmacia"];
+    }
+
+    if (finalModules.length === 0) {
       toast.error("Selecione pelo menos um módulo de acesso para este colaborador.");
       return;
     }
@@ -222,8 +405,12 @@ export default function ResponsavelTecnico() {
            login: username,
            senha: password,
            perfil: cargo,
-           coren: cargo === 'enfermeiro' ? coren : "",
+           cargo: cargo,
+           coren: (cargo === 'enfermeiro' || cargo === 'tecnico_enfermagem') ? coren : "",
            crf: (cargo === 'farmaceutico' || cargo === 'administrador') ? crf : "",
+           crm: cargo === 'medico' ? crmFinal : "",
+           especialidade: cargo === 'medico' ? (especialidade || "Clínica Médica / Geral") : "",
+           modulos: JSON.stringify(finalModules),
            primeiro_acesso: true
         });
         toast.success("Colaborador atualizado com sucesso no banco de dados!");
@@ -240,8 +427,12 @@ export default function ResponsavelTecnico() {
            login: username,
            senha: password,
            perfil: cargo,
-           coren: cargo === 'enfermeiro' ? coren : "",
+           cargo: cargo,
+           coren: (cargo === 'enfermeiro' || cargo === 'tecnico_enfermagem') ? coren : "",
            crf: (cargo === 'farmaceutico' || cargo === 'administrador') ? crf : "",
+           crm: cargo === 'medico' ? crmFinal : "",
+           especialidade: cargo === 'medico' ? (especialidade || "Clínica Médica / Geral") : "",
+           modulos: JSON.stringify(finalModules),
            primeiro_acesso: true
         });
         toast.success("Colaborador cadastrado no Postgres com sucesso!");
@@ -263,9 +454,27 @@ export default function ResponsavelTecnico() {
     setShowPassword(false);
     setCoren("");
     setCrf("");
+    setCrm("");
+    setCrmNumero("");
+    setCrmUf("SP");
+    setEspecialidade("Clínica Médica / Geral");
     setMatricula("");
     setCargo("recepcionista");
     setSelectedUserModules(["recepcao", "pacientes_medicao"]);
+  };
+
+  const handleNewEnfermeiro = () => {
+    resetForm();
+    setCargo("enfermeiro");
+    setSelectedUserModules(["enfermagem", "carrinho_parada", "pacientes_medicao"]);
+    setShowForm(true);
+  };
+
+  const handleNewTecnico = () => {
+    resetForm();
+    setCargo("tecnico_enfermagem");
+    setSelectedUserModules(["enfermagem", "carrinho_parada"]);
+    setShowForm(true);
   };
 
   const handleEdit = (u) => {
@@ -278,12 +487,45 @@ export default function ResponsavelTecnico() {
     setCrf(u.crf || "");
     const userRole = u.perfil || u.cargo || "farmaceutico";
     setCargo(userRole);
+    setEspecialidade(u.especialidade || "Clínica Médica / Geral");
     
-    const defaultModules = (userRole === "administrador") ? AVAILABLE_MODULES.map(m => m.id) : 
-             (userRole === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"] : 
-             (userRole === "recepcionista") ? ["recepcao", "pacientes_medicao"] :
-             ["carrinho_parada", "pacientes_medicao"];
-    setSelectedUserModules(defaultModules);
+    if (u.crm) {
+      setCrm(u.crm);
+      const match = u.crm.match(/CRM\/([A-Z]{2})\s*(\d+)/i) || u.crm.match(/(\d+)\/([A-Z]{2})/i);
+      if (match) {
+        if (match[1].length === 2) {
+          setCrmUf(match[1].toUpperCase());
+          setCrmNumero(match[2]);
+        } else {
+          setCrmNumero(match[1]);
+          setCrmUf(match[2].toUpperCase());
+        }
+      } else {
+        const digits = u.crm.replace(/\D/g, "");
+        setCrmNumero(digits);
+      }
+    } else {
+      setCrm("");
+      setCrmNumero("");
+      setCrmUf("SP");
+    }
+    
+    let userMods = [];
+    if (u.modulos) {
+      try {
+        userMods = typeof u.modulos === 'string' && u.modulos.startsWith('[') ? JSON.parse(u.modulos) : (typeof u.modulos === 'string' ? u.modulos.split(',') : u.modulos);
+      } catch { userMods = []; }
+    }
+    if (!userMods || userMods.length === 0) {
+      userMods = (userRole === "administrador" || userRole === "admin") ? AVAILABLE_MODULES.map(m => m.id) : 
+                 (userRole === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"] : 
+                 (userRole === "medico") ? ["medico", "pacientes_medicao"] :
+                 (userRole === "enfermeiro") ? ["enfermagem", "carrinho_parada", "pacientes_medicao"] :
+                 (userRole === "tecnico_enfermagem" || (userRole && userRole.includes("tec"))) ? ["enfermagem", "carrinho_parada"] :
+                 (userRole === "recepcionista") ? ["recepcao", "pacientes_medicao"] :
+                 ["enfermagem", "carrinho_parada"];
+    }
+    setSelectedUserModules(userMods);
     setShowForm(true);
   };
 
@@ -308,7 +550,7 @@ export default function ResponsavelTecnico() {
             Painel do Responsável Técnico (RT)
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Gestão técnica da farmácia e administração de usuários do sistema.
+            Gestão técnica da farmácia, equipe de enfermagem e administração de usuários do sistema.
           </p>
         </div>
         
@@ -318,10 +560,55 @@ export default function ResponsavelTecnico() {
               if (showForm) resetForm();
               setShowForm(!showForm);
             }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-blue-600/20 font-medium"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-blue-600/20 font-medium cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             {showForm ? "Voltar ao Painel" : "Cadastrar Usuário"}
+          </button>
+        )}
+
+        {activeTab === "enfermagem" && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (showForm && cargo === "enfermeiro") {
+                  setShowForm(false);
+                } else {
+                  handleNewEnfermeiro();
+                }
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-lg shadow-indigo-600/20 font-bold text-xs sm:text-sm cursor-pointer"
+            >
+              <Users className="w-4 h-4" />
+              {showForm && cargo === "enfermeiro" ? "Voltar à Lista" : "+ Novo Enfermeiro"}
+            </button>
+            <button
+              onClick={() => {
+                if (showForm && cargo === "tecnico_enfermagem") {
+                  setShowForm(false);
+                } else {
+                  handleNewTecnico();
+                }
+              }}
+              className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-lg shadow-teal-600/20 font-bold text-xs sm:text-sm cursor-pointer"
+            >
+              <HeartHandshake className="w-4 h-4" />
+              {showForm && cargo === "tecnico_enfermagem" ? "Voltar à Lista" : "+ Novo Técnico de Enfermagem"}
+            </button>
+          </div>
+        )}
+
+        {activeTab === "medicos" && (
+          <button
+            onClick={() => {
+              resetForm();
+              handleCargoChange("medico");
+              setShowForm(!showForm);
+            }}
+            className="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-sky-600/20 font-bold cursor-pointer"
+          >
+            <Stethoscope className="w-4 h-4" />
+            {showForm ? "Voltar ao Corpo Clínico" : "Cadastrar Médico (CRM)"}
           </button>
         )}
       </div>
@@ -329,13 +616,27 @@ export default function ResponsavelTecnico() {
       <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-2">
         <button 
           onClick={() => {setActiveTab("usuarios"); setShowForm(false);}} 
-          className={`font-medium pb-2 ${activeTab === 'usuarios' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+          className={`font-medium pb-2 cursor-pointer ${activeTab === 'usuarios' ? 'text-blue-600 border-b-2 border-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
         >
-          Usuários Cadastrados
+          Todos os Usuários ({userStats.total})
+        </button>
+        <button 
+          onClick={() => {setActiveTab("enfermagem"); setShowForm(false);}} 
+          className={`font-medium pb-2 cursor-pointer flex items-center gap-1.5 ${activeTab === 'enfermagem' ? 'text-teal-600 border-b-2 border-teal-600 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+        >
+          <Users className="w-4 h-4 text-teal-600" />
+          Equipe de Enfermagem ({userStats.enfermagemTotal})
+        </button>
+        <button 
+          onClick={() => {setActiveTab("medicos"); setShowForm(false);}} 
+          className={`font-medium pb-2 cursor-pointer flex items-center gap-1.5 ${activeTab === 'medicos' ? 'text-sky-600 border-b-2 border-sky-600 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+        >
+          <Stethoscope className="w-4 h-4 text-sky-600" />
+          Corpo Clínico & Médicos ({userStats.med})
         </button>
         <button 
           onClick={() => {setActiveTab("auditoria"); setLogs(getLogs()); setShowForm(false);}} 
-          className={`font-medium pb-2 ${activeTab === 'auditoria' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+          className={`font-medium pb-2 cursor-pointer ${activeTab === 'auditoria' ? 'text-blue-600 border-b-2 border-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
         >
           Auditoria e Logs
         </button>
@@ -645,19 +946,45 @@ export default function ResponsavelTecnico() {
                 1. Selecione o Cargo / Perfil de Acesso *
               </label>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
+                {/* Médico */}
+                <button
+                  type="button"
+                  onClick={() => handleCargoChange("medico")}
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
+                    cargo === "medico"
+                      ? "border-sky-500 bg-sky-50/70 dark:bg-sky-950/30 shadow-md ring-2 ring-sky-400/20"
+                      : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`p-2 rounded-xl ${cargo === "medico" ? "bg-sky-600 text-white" : "bg-sky-100 text-sky-700 dark:bg-sky-900/40"}`}>
+                      <Stethoscope className="w-5 h-5" />
+                    </div>
+                    {cargo === "medico" && (
+                      <CheckCircle2 className="w-5 h-5 text-sky-600" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Médico (CRM)</span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Prescrição de medicamentos e receitas.
+                    </span>
+                  </div>
+                </button>
+
                 {/* Administrador */}
                 <button
                   type="button"
                   onClick={() => handleCargoChange("administrador")}
-                  className={`p-4 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 ${
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
                     cargo === "administrador"
                       ? "border-purple-500 bg-purple-50/60 dark:bg-purple-950/30 shadow-md ring-2 ring-purple-400/20"
                       : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`p-2.5 rounded-xl ${cargo === "administrador" ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-700 dark:bg-purple-900/40"}`}>
+                    <div className={`p-2 rounded-xl ${cargo === "administrador" ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-700 dark:bg-purple-900/40"}`}>
                       <ShieldCheck className="w-5 h-5" />
                     </div>
                     {cargo === "administrador" && (
@@ -666,8 +993,8 @@ export default function ResponsavelTecnico() {
                   </div>
                   <div>
                     <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Administrador (RT)</span>
-                    <span className="block text-[11px] text-slate-500 mt-1 leading-snug">
-                      Acesso total, configurações do sistema e auditoria.
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Acesso total, gestão e auditoria.
                     </span>
                   </div>
                 </button>
@@ -676,14 +1003,14 @@ export default function ResponsavelTecnico() {
                 <button
                   type="button"
                   onClick={() => handleCargoChange("farmaceutico")}
-                  className={`p-4 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 ${
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
                     cargo === "farmaceutico"
                       ? "border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30 shadow-md ring-2 ring-emerald-400/20"
                       : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`p-2.5 rounded-xl ${cargo === "farmaceutico" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40"}`}>
+                    <div className={`p-2 rounded-xl ${cargo === "farmaceutico" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40"}`}>
                       <Pill className="w-5 h-5" />
                     </div>
                     {cargo === "farmaceutico" && (
@@ -692,8 +1019,34 @@ export default function ResponsavelTecnico() {
                   </div>
                   <div>
                     <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Farmacêutico</span>
-                    <span className="block text-[11px] text-slate-500 mt-1 leading-snug">
-                      Estoque central, farmácia satélite e dispensação.
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Estoque central, satélite e dispensação.
+                    </span>
+                  </div>
+                </button>
+
+                {/* Auxiliar de Farmácia */}
+                <button
+                  type="button"
+                  onClick={() => handleCargoChange("auxiliar_farmacia")}
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
+                    cargo === "auxiliar_farmacia"
+                      ? "border-cyan-500 bg-cyan-50/70 dark:bg-cyan-950/30 shadow-md ring-2 ring-cyan-400/20"
+                      : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`p-2 rounded-xl ${cargo === "auxiliar_farmacia" ? "bg-cyan-600 text-white" : "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40"}`}>
+                      <Boxes className="w-5 h-5" />
+                    </div>
+                    {cargo === "auxiliar_farmacia" && (
+                      <CheckCircle2 className="w-5 h-5 text-cyan-600" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Auxiliar Farmácia</span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Apenas Estoque Central.
                     </span>
                   </div>
                 </button>
@@ -702,24 +1055,50 @@ export default function ResponsavelTecnico() {
                 <button
                   type="button"
                   onClick={() => handleCargoChange("enfermeiro")}
-                  className={`p-4 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 ${
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
                     cargo === "enfermeiro"
-                      ? "border-sky-500 bg-sky-50/60 dark:bg-sky-950/30 shadow-md ring-2 ring-sky-400/20"
+                      ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/30 shadow-md ring-2 ring-indigo-400/20"
                       : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`p-2.5 rounded-xl ${cargo === "enfermeiro" ? "bg-sky-600 text-white" : "bg-sky-100 text-sky-700 dark:bg-sky-900/40"}`}>
-                      <Stethoscope className="w-5 h-5" />
+                    <div className={`p-2 rounded-xl ${cargo === "enfermeiro" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40"}`}>
+                      <Users className="w-5 h-5" />
                     </div>
                     {cargo === "enfermeiro" && (
-                      <CheckCircle2 className="w-5 h-5 text-sky-600" />
+                      <CheckCircle2 className="w-5 h-5 text-indigo-600" />
                     )}
                   </div>
                   <div>
                     <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Enfermeiro</span>
-                    <span className="block text-[11px] text-slate-500 mt-1 leading-snug">
-                      Checagens de prescrição e carrinho de emergência.
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      SAE, prescrição de cuidados e gestão.
+                    </span>
+                  </div>
+                </button>
+
+                {/* Técnico de Enfermagem */}
+                <button
+                  type="button"
+                  onClick={() => handleCargoChange("tecnico_enfermagem")}
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
+                    cargo === "tecnico_enfermagem"
+                      ? "border-teal-500 bg-teal-50/60 dark:bg-teal-950/30 shadow-md ring-2 ring-teal-400/20"
+                      : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`p-2 rounded-xl ${cargo === "tecnico_enfermagem" ? "bg-teal-600 text-white" : "bg-teal-100 text-teal-700 dark:bg-teal-900/40"}`}>
+                      <HeartHandshake className="w-5 h-5" />
+                    </div>
+                    {cargo === "tecnico_enfermagem" && (
+                      <CheckCircle2 className="w-5 h-5 text-teal-600" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Técnico Enfermagem</span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Checagem beira-leito, sinais e balanço.
                     </span>
                   </div>
                 </button>
@@ -728,14 +1107,14 @@ export default function ResponsavelTecnico() {
                 <button
                   type="button"
                   onClick={() => handleCargoChange("recepcionista")}
-                  className={`p-4 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 ${
+                  className={`p-3.5 rounded-2xl text-left border-2 transition-all flex flex-col justify-between space-y-3 cursor-pointer ${
                     cargo === "recepcionista"
                       ? "border-amber-500 bg-amber-50/60 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-400/20"
                       : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`p-2.5 rounded-xl ${cargo === "recepcionista" ? "bg-amber-600 text-white" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40"}`}>
+                    <div className={`p-2 rounded-xl ${cargo === "recepcionista" ? "bg-amber-600 text-white" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40"}`}>
                       <Building2 className="w-5 h-5" />
                     </div>
                     {cargo === "recepcionista" && (
@@ -743,9 +1122,9 @@ export default function ResponsavelTecnico() {
                     )}
                   </div>
                   <div>
-                    <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Recepção / Admissão</span>
-                    <span className="block text-[11px] text-slate-500 mt-1 leading-snug">
-                      Cadastro de pacientes, leitos e altas hospitalares.
+                    <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Recepção</span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Pacientes, leitos e admissões.
                     </span>
                   </div>
                 </button>
@@ -850,18 +1229,21 @@ export default function ResponsavelTecnico() {
                   </div>
                 )}
 
-                {cargo === "enfermeiro" && (
+                {(cargo === "enfermeiro" || cargo === "tecnico_enfermagem") && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Registro COREN *
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                      <span>Registro COREN *</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        {cargo === "enfermeiro" ? "Ex: 123456-ENF / SP" : "Ex: 654321-TE / SP"}
+                      </span>
                     </label>
                     <input
                       required
                       value={coren}
                       onChange={e => setCoren(e.target.value)}
                       type="text"
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-mono outline-none focus:border-sky-500 transition-colors"
-                      placeholder="Ex: 123456-SP"
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-mono outline-none focus:border-indigo-500 transition-colors"
+                      placeholder={cargo === "enfermeiro" ? "Ex: 123456-ENF" : "Ex: 654321-TE"}
                     />
                   </div>
                 )}
@@ -879,6 +1261,108 @@ export default function ResponsavelTecnico() {
                       placeholder="Ex: Recepção Central - Turno Diurno"
                     />
                   </div>
+                )}
+
+                {cargo === "medico" && (
+                  <>
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Stethoscope className="w-3.5 h-3.5 text-sky-600" />
+                        CRM - Estado (UF) *
+                      </label>
+                      <select
+                        value={crmUf}
+                        onChange={e => handleCrmUfChange(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-bold outline-none focus:border-sky-500 transition-colors"
+                      >
+                        {ESTADOS_BRASIL.map(uf => (
+                          <option key={uf} value={uf}>CRM / {uf}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Número do CRM *
+                      </label>
+                      <input
+                        required
+                        value={crmNumero}
+                        onChange={e => handleCrmNumeroChange(e.target.value)}
+                        type="text"
+                        maxLength={8}
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-mono font-bold outline-none focus:border-sky-500 transition-colors"
+                        placeholder="Ex: 123456"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Especialidade Médica *
+                      </label>
+                      <select
+                        value={ESPECIALIDADES_MEDICAS.includes(especialidade) ? especialidade : (especialidade ? "Outra Especialidade" : "Clínica Médica / Geral")}
+                        onChange={e => {
+                          if (e.target.value === "Outra Especialidade") {
+                            setEspecialidade("");
+                          } else {
+                            setEspecialidade(e.target.value);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-medium outline-none focus:border-sky-500 transition-colors"
+                      >
+                        {ESPECIALIDADES_MEDICAS.map(esp => (
+                          <option key={esp} value={esp}>{esp}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {(!ESPECIALIDADES_MEDICAS.includes(especialidade) || especialidade === "Outra Especialidade") && (
+                      <div className="space-y-1.5 sm:col-span-3">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Especifique o Nome da Especialidade
+                        </label>
+                        <input
+                          value={especialidade}
+                          onChange={e => setEspecialidade(e.target.value)}
+                          type="text"
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm outline-none focus:border-sky-500 transition-colors"
+                          placeholder="Ex: Mastologia, Reumatologia, Nutrologia..."
+                        />
+                      </div>
+                    )}
+
+                    {/* Preview do Carimbo Médico */}
+                    <div className="p-4 rounded-2xl bg-sky-50/80 dark:bg-sky-950/40 border-2 border-dashed border-sky-300 dark:border-sky-700 sm:col-span-3 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-sky-600 text-white flex items-center justify-center font-black shadow-md shrink-0">
+                          <Stethoscope className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/60 px-2 py-0.5 rounded-md">
+                              Carimbo Médico Digital (Preview)
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono font-bold">
+                              {crm || `CRM/${crmUf} ${crmNumero || "000000"}`}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-extrabold text-slate-900 dark:text-slate-100 mt-1">
+                            Dr(a). {nome || "Nome do Profissional"}
+                          </h4>
+                          <p className="text-xs font-bold text-sky-700 dark:text-sky-300">
+                            {especialidade || "Clínica Médica / Geral"} • Hospital Zorion Saúde
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold border border-emerald-300 dark:border-emerald-700">
+                          <BadgeCheck className="w-4 h-4 text-emerald-600" />
+                          Apto para Prescrição & Receituário A4
+                        </span>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -901,17 +1385,41 @@ export default function ResponsavelTecnico() {
                   3. Módulos de Acesso do Colaborador
                 </label>
                 <span className="text-xs text-slate-400 font-medium">
-                  {selectedUserModules.length} módulo(s) habilitado(s)
+                  {cargo === "medico" ? "1 módulo (Apenas Médico)" : cargo === "auxiliar_farmacia" ? "1 módulo (Apenas Estoque Central)" : `${selectedUserModules.length} módulo(s) habilitado(s)`}
                 </span>
               </div>
 
+              {cargo === "medico" && (
+                <div className="p-3.5 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-xs flex items-center gap-2.5 text-sky-800 dark:text-sky-200">
+                  <Stethoscope className="w-5 h-5 text-sky-600 shrink-0" />
+                  <span>
+                    <strong>Restrição de Acesso:</strong> Médicos possuem acesso liberado <strong>exclusivamente ao Módulo Médico</strong> (prescrições, receitas e prontuários). Os demais módulos hospitalares ficam bloqueados.
+                  </span>
+                </div>
+              )}
+
+              {cargo === "auxiliar_farmacia" && (
+                <div className="p-3.5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800 text-xs flex items-center gap-2.5 text-cyan-800 dark:text-cyan-200">
+                  <Boxes className="w-5 h-5 text-cyan-600 shrink-0" />
+                  <span>
+                    <strong>Restrição de Acesso:</strong> Auxiliares de Farmácia possuem acesso liberado <strong>exclusivamente ao Estoque Central</strong> (medicamentos e lotes). Os demais módulos hospitalares ficam bloqueados.
+                  </span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {AVAILABLE_MODULES.map(module => {
-                  const isChecked = selectedUserModules.includes(module.id);
+                  const isChecked = (cargo === "medico" && module.id === "medico") ||
+                                    (cargo === "auxiliar_farmacia" && module.id === "estoque_farmacia") ||
+                                    (cargo !== "medico" && cargo !== "auxiliar_farmacia" && selectedUserModules.includes(module.id));
+                  const isLocked = cargo === "medico" || cargo === "auxiliar_farmacia";
+
                   return (
                     <label
                       key={module.id}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                      className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
+                        isLocked ? "cursor-default opacity-80" : "cursor-pointer"
+                      } ${
                         isChecked
                           ? "border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 dark:border-blue-500 shadow-xs"
                           : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
@@ -920,7 +1428,9 @@ export default function ResponsavelTecnico() {
                       <input
                         type="checkbox"
                         checked={isChecked}
+                        disabled={isLocked}
                         onChange={(e) => {
+                          if (isLocked) return;
                           if (e.target.checked) {
                             setSelectedUserModules([...selectedUserModules, module.id]);
                           } else {
@@ -962,10 +1472,433 @@ export default function ResponsavelTecnico() {
             </div>
           </form>
         </div>
+      ) : activeTab === "enfermagem" ? (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {/* Métricas da Equipe de Enfermagem */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Enfermagem</span>
+                <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{userStats.enfermagemTotal}</div>
+                <span className="text-[11px] text-slate-500">profissionais cadastrados</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">
+                <Users className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">Enfermeiros (SAE & Gestão)</span>
+                <div className="text-2xl font-black text-indigo-700 dark:text-indigo-400 mt-1">
+                  {userStats.enf}
+                </div>
+                <span className="text-[11px] text-slate-500">aptos para SAE e prescrições</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">
+                <BadgeCheck className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-teal-600 uppercase tracking-wider">Técnicos de Enfermagem</span>
+                <div className="text-2xl font-black text-teal-700 dark:text-teal-400 mt-1">{userStats.tec}</div>
+                <span className="text-[11px] text-slate-500">checagem beira-leito e sinais</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-teal-50 text-teal-600 dark:bg-teal-950/40">
+                <HeartHandshake className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de Busca e Filtro de Enfermagem */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={enfermagemSearchQuery}
+                onChange={e => setEnfermagemSearchQuery(e.target.value)}
+                placeholder="Buscar por nome, login ou COREN..."
+                className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              <button
+                type="button"
+                onClick={() => setEnfermagemCargoFilter("todos")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  enfermagemCargoFilter === "todos"
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                Todos ({userStats.enfermagemTotal})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEnfermagemCargoFilter("enfermeiro")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  enfermagemCargoFilter === "enfermeiro"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300"
+                }`}
+              >
+                Enfermeiros ({userStats.enf})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEnfermagemCargoFilter("tecnico_enfermagem")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  enfermagemCargoFilter === "tecnico_enfermagem"
+                    ? "bg-teal-600 text-white shadow-xs"
+                    : "bg-teal-50 text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
+                }`}
+              >
+                Técnicos ({userStats.tec})
+              </button>
+            </div>
+          </div>
+
+          {/* Tabela de Profissionais da Enfermagem */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 dark:bg-slate-800/50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-6">Profissional de Enfermagem</th>
+                    <th className="py-3 px-6">Usuário Login</th>
+                    <th className="py-3 px-6">Cargo Hospitalar</th>
+                    <th className="py-3 px-6">Registro COREN</th>
+                    <th className="py-3 px-6">Módulos Autorizados</th>
+                    <th className="py-3 px-6 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs sm:text-sm">
+                  {filteredEnfermagem.map(u => {
+                    const role = (u.perfil || u.cargo || "").toLowerCase();
+                    const isEnf = role === "enfermeiro" || (role.includes("enf") && !role.includes("tec"));
+                    const isTec = role === "tecnico_enfermagem" || role.includes("tec");
+
+                    let userMods = [];
+                    if (u.modulos) {
+                      try {
+                        userMods = typeof u.modulos === "string" && u.modulos.startsWith("[") 
+                          ? JSON.parse(u.modulos) 
+                          : (typeof u.modulos === "string" ? u.modulos.split(",") : u.modulos);
+                      } catch { userMods = []; }
+                    }
+
+                    return (
+                      <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3.5 px-6">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${
+                              isEnf ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" :
+                              "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
+                            }`}>
+                              {(u.nome || "E").substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                {u.nome}
+                                {u.primeiro_acesso !== false && (
+                                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium">1º Acesso</span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400">ID: {String(u.id).substring(0, 8)}...</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-6 font-mono font-semibold text-slate-700 dark:text-slate-300">
+                          {u.login || u.username}
+                        </td>
+
+                        <td className="py-3.5 px-6">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                            isEnf 
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300"
+                              : "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300"
+                          }`}>
+                            {isEnf ? <Users className="w-3.5 h-3.5 text-indigo-600" /> : <HeartHandshake className="w-3.5 h-3.5 text-teal-600" />}
+                            {isEnf ? "Enfermeiro" : "Técnico de Enfermagem"}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-6 font-mono text-xs">
+                          {u.coren ? (
+                            <span className="font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              COREN: {u.coren}
+                            </span>
+                          ) : (
+                            <span className="text-rose-500 font-semibold text-[11px]">Sem COREN cadastrado</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-6">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {userMods.length > 0 ? (
+                              userMods.map(mId => {
+                                const modObj = AVAILABLE_MODULES.find(m => m.id === mId);
+                                return (
+                                  <span key={mId} className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    {modObj ? modObj.name : mId}
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Padrão do cargo</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-6 text-center space-x-1.5">
+                          <button
+                            onClick={() => handleEdit(u)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
+                            title="Editar Dados / Módulos de Acesso"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(u.id)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors cursor-pointer"
+                            title="Remover Profissional"
+                          >
+                            <Trash className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredEnfermagem.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="py-12 text-center text-slate-500 space-y-3">
+                        <Users className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700 stroke-[1.5]" />
+                        <div className="text-sm font-semibold">Nenhum profissional de enfermagem encontrado</div>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                          Cadastre enfermeiros e técnicos de enfermagem para liberar o acesso ao módulo hospitalar de enfermagem e carrinho de parada.
+                        </p>
+                        <div className="flex items-center justify-center gap-2 pt-2">
+                          <button
+                            onClick={handleNewEnfermeiro}
+                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                          >
+                            + Novo Enfermeiro
+                          </button>
+                          <button
+                            onClick={handleNewTecnico}
+                            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                          >
+                            + Novo Técnico de Enfermagem
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : activeTab === "medicos" ? (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {/* Cards de Métricas dos Médicos */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total de Médicos</span>
+                <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{userStats.med}</div>
+                <span className="text-[11px] text-slate-500">profissionais cadastrados</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-sky-50 text-sky-600">
+                <Stethoscope className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">Com CRM Registrado</span>
+                <div className="text-2xl font-black text-sky-700 mt-1">
+                  {users.filter(u => (u.perfil === "medico" || u.cargo === "medico") && u.crm).length}
+                </div>
+                <span className="text-[11px] text-slate-500">aptos para prescrição</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-sky-50 text-sky-600">
+                <BadgeCheck className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Módulo Médico</span>
+                <div className="text-2xl font-black text-emerald-700 mt-1">{userStats.med}</div>
+                <span className="text-[11px] text-slate-500">emissão de receitas A4</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de Filtros e Busca do Corpo Clínico */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Input de Busca */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                value={medicoSearchQuery}
+                onChange={e => setMedicoSearchQuery(e.target.value)}
+                placeholder="Buscar médico por nome, CRM, login ou especialidade..."
+                className="w-full pl-9 pr-4 py-2 rounded-xl text-xs sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:border-sky-500 transition-colors font-medium"
+              />
+            </div>
+
+            {/* Filtro por Especialidade */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Especialidade:</span>
+              <select
+                value={medicoEspecialidadeFilter}
+                onChange={e => setMedicoEspecialidadeFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none focus:border-sky-500"
+              >
+                <option value="todos">Todas as Especialidades</option>
+                {ESPECIALIDADES_MEDICAS.map(esp => (
+                  <option key={esp} value={esp}>{esp}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Tabela do Corpo Clínico */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-2">
+                  <Stethoscope className="w-4 h-4 text-sky-600" />
+                  Corpo Clínico do Hospital (Médicos Plantonistas & Especialistas)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Exibindo {filteredMedicos.length} médico(s) credenciado(s) com CRM para prescrição eletrônica.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  handleCargoChange("medico");
+                  setShowForm(true);
+                }}
+                className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer transition-colors"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Cadastrar Médico (CRM)
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 dark:bg-slate-800/50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-6">Médico / Nome</th>
+                    <th className="py-3 px-6">Registro CRM / UF</th>
+                    <th className="py-3 px-6">Especialidade</th>
+                    <th className="py-3 px-6">Usuário Login</th>
+                    <th className="py-3 px-6">Status ZORION-MEDICO</th>
+                    <th className="py-3 px-6 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs sm:text-sm">
+                  {filteredMedicos.map(m => (
+                    <tr key={m.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                            <Stethoscope className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-slate-900 dark:text-slate-100">{m.nome}</div>
+                            <div className="text-[11px] text-slate-400">ID: {String(m.id).substring(0, 8)}...</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-6 font-mono">
+                        <span className="font-black text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 px-2.5 py-1 rounded-lg border border-sky-200 dark:border-sky-800">
+                          {m.crm || "NÃO INFORMADO"}
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-6 font-semibold text-slate-700 dark:text-slate-300">
+                        {m.especialidade || "Clínica Geral"}
+                      </td>
+
+                      <td className="py-3.5 px-6 font-mono text-slate-600 dark:text-slate-400 font-medium">
+                        {m.login || m.username}
+                      </td>
+
+                      <td className="py-3.5 px-6">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          Prescrição & Receituário A4
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-6 text-center space-x-1">
+                        <button
+                          onClick={() => setPreviewCarimboMedico(m)}
+                          className="p-1.5 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Visualizar Carimbo Digital"
+                        >
+                          <BadgeCheck className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEdit(m)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Editar Médico"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(m.id)}
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Remover Médico"
+                        >
+                          <Trash className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {filteredMedicos.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="text-center py-12 text-slate-400 space-y-2">
+                        <Stethoscope className="w-10 h-10 mx-auto text-slate-300" />
+                        <p className="font-bold text-slate-600 dark:text-slate-300 text-sm">
+                          {medicoSearchQuery ? "Nenhum médico encontrado para a busca." : "Nenhum médico cadastrado no sistema ainda."}
+                        </p>
+                        <p className="text-xs">
+                          Clique no botão "Cadastrar Médico (CRM)" para cadastrar profissionais com CRM.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="space-y-5 animate-in fade-in duration-200">
           {/* Cards de Métricas da Equipe */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3.5">
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Equipe</span>
               <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{userStats.total}</div>
@@ -973,9 +1906,9 @@ export default function ResponsavelTecnico() {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-              <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Recepção / Admissão</span>
-              <div className="text-2xl font-black text-amber-600 mt-1">{userStats.recep}</div>
-              <span className="text-[11px] text-slate-500">atendentes de leitos</span>
+              <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">Médicos</span>
+              <div className="text-2xl font-black text-sky-600 mt-1">{userStats.med}</div>
+              <span className="text-[11px] text-slate-500">prescritores CRM</span>
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
@@ -985,9 +1918,21 @@ export default function ResponsavelTecnico() {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-              <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">Enfermagem</span>
-              <div className="text-2xl font-black text-sky-600 mt-1">{userStats.enf}</div>
-              <span className="text-[11px] text-slate-500">com registro COREN</span>
+              <span className="text-[11px] font-bold text-cyan-600 uppercase tracking-wider">Aux. Farmácia</span>
+              <div className="text-2xl font-black text-cyan-600 mt-1">{userStats.aux}</div>
+              <span className="text-[11px] text-slate-500">estoque central</span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+              <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">Enfermagem</span>
+              <div className="text-2xl font-black text-indigo-600 mt-1">{userStats.enfermagemTotal}</div>
+              <span className="text-[11px] text-slate-500">enfermeiros e tec.</span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+              <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Recepção</span>
+              <div className="text-2xl font-black text-amber-600 mt-1">{userStats.recep}</div>
+              <span className="text-[11px] text-slate-500">admissão de leitos</span>
             </div>
           </div>
 
@@ -1000,7 +1945,7 @@ export default function ResponsavelTecnico() {
                 type="text"
                 value={userSearchQuery}
                 onChange={e => setUserSearchQuery(e.target.value)}
-                placeholder="Buscar por nome, login ou CRF/COREN..."
+                placeholder="Buscar por nome, login ou CRM/CRF/COREN..."
                 className="w-full pl-9 pr-4 py-2 rounded-xl text-xs sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 transition-colors"
               />
             </div>
@@ -1019,14 +1964,14 @@ export default function ResponsavelTecnico() {
               </button>
 
               <button
-                onClick={() => setUserCargoFilter("recepcionista")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                  userCargoFilter === "recepcionista"
-                    ? "bg-amber-600 text-white"
-                    : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                onClick={() => setUserCargoFilter("medico")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  userCargoFilter === "medico"
+                    ? "bg-sky-600 text-white"
+                    : "bg-sky-50 text-sky-800 hover:bg-sky-100"
                 }`}
               >
-                Recepção ({userStats.recep})
+                Médicos ({userStats.med})
               </button>
 
               <button
@@ -1041,19 +1986,52 @@ export default function ResponsavelTecnico() {
               </button>
 
               <button
-                onClick={() => setUserCargoFilter("enfermeiro")}
+                onClick={() => setUserCargoFilter("auxiliar_farmacia")}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                  userCargoFilter === "enfermeiro"
-                    ? "bg-sky-600 text-white"
-                    : "bg-sky-50 text-sky-800 hover:bg-sky-100"
+                  userCargoFilter === "auxiliar_farmacia"
+                    ? "bg-cyan-600 text-white"
+                    : "bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
                 }`}
               >
-                Enfermagem ({userStats.enf})
+                Auxiliares ({userStats.aux})
+              </button>
+
+              <button
+                onClick={() => setUserCargoFilter("enfermeiro")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  userCargoFilter === "enfermeiro"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300"
+                }`}
+              >
+                Enfermeiros ({userStats.enf})
+              </button>
+
+              <button
+                onClick={() => setUserCargoFilter("tecnico_enfermagem")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  userCargoFilter === "tecnico_enfermagem"
+                    ? "bg-teal-600 text-white"
+                    : "bg-teal-50 text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
+                }`}
+              >
+                Técnicos ({userStats.tec})
+              </button>
+
+              <button
+                onClick={() => setUserCargoFilter("recepcionista")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  userCargoFilter === "recepcionista"
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                }`}
+              >
+                Recepção ({userStats.recep})
               </button>
 
               <button
                 onClick={() => setUserCargoFilter("administrador")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   userCargoFilter === "administrador"
                     ? "bg-purple-600 text-white"
                     : "bg-purple-50 text-purple-800 hover:bg-purple-100"
@@ -1080,9 +2058,12 @@ export default function ResponsavelTecnico() {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs sm:text-sm">
                   {filteredUsers.map(u => {
                     const role = u.perfil || u.cargo || "farmaceutico";
-                    const isAdm = role === "administrador";
+                    const isAdm = role === "administrador" || role === "admin";
                     const isFarma = role === "farmaceutico";
+                    const isAux = role === "auxiliar_farmacia" || (u.cargo && u.cargo.toLowerCase().includes("auxiliar"));
+                    const isMed = role === "medico";
                     const isEnf = role === "enfermeiro";
+                    const isTec = role === "tecnico_enfermagem" || (u.cargo && u.cargo.toLowerCase().includes("tec"));
                     const isRecep = role === "recepcionista";
 
                     return (
@@ -1092,7 +2073,10 @@ export default function ResponsavelTecnico() {
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${
                               isAdm ? "bg-purple-100 text-purple-700" :
                               isFarma ? "bg-emerald-100 text-emerald-700" :
-                              isEnf ? "bg-sky-100 text-sky-700" :
+                              isAux ? "bg-cyan-100 text-cyan-800" :
+                              isMed ? "bg-sky-100 text-sky-700" :
+                              isEnf ? "bg-indigo-100 text-indigo-700" :
+                              isTec ? "bg-teal-100 text-teal-700" :
                               "bg-amber-100 text-amber-800"
                             }`}>
                               {(u.nome || "U").substring(0, 2).toUpperCase()}
@@ -1114,37 +2098,56 @@ export default function ResponsavelTecnico() {
                               ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300" 
                               : isFarma 
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300" 
+                              : isAux
+                              ? "bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300"
+                              : isMed
+                              ? "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300"
                               : isEnf 
-                              ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300"
+                              : isTec
+                              ? "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300"
                               : "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300"
                           }`}>
                             {isAdm && <ShieldCheck className="w-3.5 h-3.5" />}
                             {isFarma && <Pill className="w-3.5 h-3.5" />}
-                            {isEnf && <Stethoscope className="w-3.5 h-3.5" />}
+                            {isAux && <Boxes className="w-3.5 h-3.5 text-cyan-600" />}
+                            {isMed && <Stethoscope className="w-3.5 h-3.5 text-sky-600" />}
+                            {isEnf && <Users className="w-3.5 h-3.5" />}
+                            {isTec && <HeartHandshake className="w-3.5 h-3.5 text-teal-600" />}
                             {isRecep && <Building2 className="w-3.5 h-3.5" />}
 
                             {isAdm ? "Administrador (RT)" :
                              isFarma ? "Farmacêutico" :
+                             isAux ? "Auxiliar de Farmácia" :
+                             isMed ? "Médico (Prescritor)" :
                              isEnf ? "Enfermeiro" :
+                             isTec ? "Técnico de Enfermagem" :
                              "Recepção / Admissão"}
                           </span>
                         </td>
 
                         <td className="py-3.5 px-6 font-mono text-xs text-slate-600 dark:text-slate-400">
-                          {u.crf ? `CRF: ${u.crf}` : u.coren ? `COREN: ${u.coren}` : "—"}
+                          {u.crm ? (
+                            <span className="font-bold text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded border border-sky-200">
+                              CRM: {u.crm}
+                            </span>
+                          ) : u.crf ? `CRF: ${u.crf}` : u.coren ? `COREN: ${u.coren}` : "—"}
+                          {u.especialidade && (
+                            <div className="text-[10px] text-slate-400 font-sans mt-0.5">{u.especialidade}</div>
+                          )}
                         </td>
 
                         <td className="py-3.5 px-6 text-center space-x-1.5">
                           <button
                             onClick={() => handleEdit(u)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
                             title="Editar Dados / Resetar Senha"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(u.id)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors cursor-pointer"
                             title="Remover Colaborador"
                           >
                             <Trash className="w-4 h-4" />
@@ -1165,6 +2168,63 @@ export default function ResponsavelTecnico() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Pré-visualização do Carimbo Médico */}
+      {previewCarimboMedico && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-extrabold text-sm">
+                <BadgeCheck className="w-5 h-5 text-sky-600" />
+                Carimbo Profissional Digital
+              </div>
+              <button
+                onClick={() => setPreviewCarimboMedico(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+
+            {/* Carimbo Visual */}
+            <div className="p-6 rounded-2xl bg-gradient-to-b from-sky-50/70 to-blue-50/50 dark:from-sky-950/40 dark:to-slate-900 border-2 border-dashed border-sky-400 dark:border-sky-700 text-center space-y-2 relative shadow-inner">
+              <div className="w-14 h-14 mx-auto rounded-full bg-sky-600 text-white flex items-center justify-center shadow-md mb-3">
+                <Stethoscope className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">
+                Dr(a). {previewCarimboMedico.nome}
+              </h3>
+              <div className="inline-block font-mono font-black text-sm text-sky-800 dark:text-sky-300 bg-white dark:bg-slate-800 px-3 py-1 rounded-lg border border-sky-200 dark:border-sky-700 shadow-2xs">
+                {previewCarimboMedico.crm || "CRM NÃO INFORMADO"}
+              </div>
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {previewCarimboMedico.especialidade || "Clínica Médica / Geral"}
+              </p>
+              <div className="text-[11px] text-slate-500 pt-2 border-t border-sky-200/60 dark:border-sky-800/60">
+                Hospital Geral Zorion Saúde • Corpo Clínico Credenciado
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+              <div className="flex justify-between">
+                <span>Login de Acesso:</span>
+                <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{previewCarimboMedico.login || previewCarimboMedico.username}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Módulo:</span>
+                <span className="font-bold text-emerald-600">ZORION-MEDICO (Prescrição A4)</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPreviewCarimboMedico(null)}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              Concluir Visualização
+            </button>
           </div>
         </div>
       )}

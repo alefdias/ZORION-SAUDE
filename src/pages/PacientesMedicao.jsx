@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
+import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
 
 const getLocalDateString = () => {
   const d = new Date();
@@ -2717,617 +2718,21 @@ export default function PacientesMedicao() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* ─── MODAL: DETALHES & PRESCRIÇÕES COMPLETAS DO PACIENTE ─────────── */}
-      <Dialog open={!!viewPatientDetails} onOpenChange={(open) => !open && setViewPatientDetails(null)}>
-        <DialogContent className="sm:max-w-[1100px] w-[95vw] h-[90vh] flex flex-col p-0 border-0 shadow-2xl rounded-xl bg-slate-50 dark:bg-slate-900 overflow-hidden">
-          
-          {/* Header Section (Blue) */}
-          <div className="bg-[#0e3b8f] text-white p-6 shrink-0 relative">
-            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-              <div className="flex items-start gap-4 min-w-0 flex-1">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white/40 shadow-inner flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5 overflow-hidden">
-                  {currentViewPatient?.foto ? (
-                    <img 
-                      src={currentViewPatient.foto} 
-                      alt={currentViewPatient.nome} 
-                      className="w-full h-full object-cover" 
-                    />
-                  ) : (
-                    <User className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                   <h2 className="text-xl sm:text-2xl font-black mb-1 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-tight">
-                     {currentViewPatient?.nome || viewPatientDetails?.nome}
-                   </h2>
-                   <div className="text-blue-200 text-xs sm:text-sm flex gap-2 flex-wrap">
-                     <span>ID: {currentViewPatient?.prontuario || viewPatientDetails?.prontuario}</span> |
-                     <span>{currentViewPatient?.idade || viewPatientDetails?.idade || '--'} anos</span>
-                   </div>
-                   <div className="text-blue-200 text-xs sm:text-sm mt-1 flex items-center gap-2 flex-wrap">
-                     <span>Setor: {currentViewPatient?.alaNome || viewPatientDetails?.alaNome || "Não informado"}</span> |
-                     <span>Leito: {currentViewPatient?.leito || viewPatientDetails?.leito || "S/L"}</span>
-                   </div>
-                </div>
-              </div>
-              <div className="text-right flex flex-col items-start sm:items-end gap-2 shrink-0">
-                <div className="text-blue-200 text-xs sm:text-sm mb-1">Última atualização: {new Date().toLocaleDateString('pt-BR')}</div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button 
-                    variant="outline" 
-                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
-                    onClick={() => handleOpenPrintPrescModal([(currentViewPatient || viewPatientDetails).id])}
-                    title="Imprimir relatório de prescrição deste paciente"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Imprimir Prescrição
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm" 
-                    onClick={() => handleOpenTransferModal([(currentViewPatient || viewPatientDetails).id])}
-                  >
-                    <ArrowLeftRight className="w-4 h-4" />
-                    Transferir Ala
-                  </Button>
-                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 text-xs sm:text-sm" onClick={() => handleOpenEditPatient(currentViewPatient || viewPatientDetails)}>
-                     Editar Paciente
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tabs Section */}
-          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 shrink-0 pt-2 overflow-x-auto hide-scrollbar">
-             <button onClick={() => setPatientTab('resumo')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'resumo' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Resumo</button>
-             <button onClick={() => setPatientTab('historico_clinico')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'historico_clinico' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Histórico Clínico</button>
-             <button onClick={() => setPatientTab('medicacoes')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'medicacoes' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Medicações</button>
-             <button onClick={() => setPatientTab('visitas')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5", patientTab === 'visitas' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>
-               <UserCheck className="w-4 h-4 text-emerald-600" />
-               Visitas ({patientVisitas.length})
-             </button>
-             <button onClick={() => setPatientTab('exames')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'exames' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Exames</button>
-             <button onClick={() => setPatientTab('alergias')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'alergias' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Alergias</button>
-             <button onClick={() => setPatientTab('documentos')} className={cn("px-4 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap", patientTab === 'documentos' ? 'border-blue-600 text-blue-700 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700')}>Documentos</button>
-          </div>
-
-          {/* Body Section */}
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-900">
-            {patientTab === 'visitas' ? (
-              <div className="space-y-6 max-w-6xl mx-auto pb-10">
-                {/* Header Card de Resumo de Visitas do Paciente */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total de Visitas Registradas</span>
-                      <p className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{patientVisitas.length}</p>
-                    </div>
-                    <div className="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-xl">
-                      <UserCheck className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Status no Leito</span>
-                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2">
-                        {patientVisitas.some(v => !v.dataHoraSaida || v.status === "Em Andamento") ? (
-                          <>
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span className="text-emerald-600 dark:text-emerald-400">Visitante no Leito</span>
-                          </>
-                        ) : (
-                          <span className="text-slate-500">Sem visitas no momento</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                      <Bed className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Última Visita</span>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">
-                        {patientVisitas.length > 0 && patientVisitas[0].dataHoraEntrada
-                          ? format(new Date(patientVisitas[0].dataHoraEntrada), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
-                          : "Nenhum registro"}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-slate-50 dark:bg-slate-900 text-slate-500 rounded-xl">
-                      <Clock className="w-6 h-6" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabela de Histórico de Visitas */}
-                <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="bg-sky-100 dark:bg-sky-950/50 p-2 rounded-lg text-sky-700 dark:text-sky-400">
-                      <UserCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight">Histórico de Visitas ao Paciente</h3>
-                      <p className="text-sm text-slate-500">Entradas e saídas registradas na Recepção e Portaria</p>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50">
-                        <TableRow>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Visitante</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Documento</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Parentesco / Vínculo</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Horário de Entrada</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Horário de Saída</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Status</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Recepcionista</TableHead>
-                          <TableHead className="font-bold text-slate-600 dark:text-slate-300">Observações</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {patientVisitas.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={8} className="text-center py-12 text-slate-400">
-                              <UserCheck className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                              <p className="font-semibold text-slate-600 dark:text-slate-300">Nenhuma visita registrada para este paciente.</p>
-                              <p className="text-xs text-slate-400 mt-1">Todas as visitas registradas na recepção aparecerão aqui automaticamente.</p>
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          patientVisitas.map((v) => {
-                            const isEmAndamento = !v.dataHoraSaida || v.status === "Em Andamento";
-                            return (
-                              <TableRow key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
-                                <TableCell className="font-bold text-slate-800 dark:text-slate-200">
-                                  {v.visitanteNome}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-1.5">
-                                    <Badge variant="outline" className={`text-[10px] font-bold px-1.5 py-0.5 ${
-                                      v.tipoDocumento === "CPF"
-                                        ? "bg-purple-50 text-purple-700 border-purple-200"
-                                        : "bg-blue-50 text-blue-700 border-blue-200"
-                                    }`}>
-                                      {v.tipoDocumento || "RG"}
-                                    </Badge>
-                                    <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
-                                      {v.documentoNumero}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs text-slate-600 dark:text-slate-400">
-                                  {v.parentesco || "Visitante"}
-                                </TableCell>
-                                <TableCell className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                  <div className="flex items-center gap-1.5">
-                                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>
-                                      {v.dataHoraEntrada ? format(new Date(v.dataHoraEntrada), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : "--"}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs text-slate-600 dark:text-slate-400">
-                                  {v.dataHoraSaida ? (
-                                    <div className="flex items-center gap-1">
-                                      <LogOut className="w-3.5 h-3.5 text-slate-400" />
-                                      <span>{format(new Date(v.dataHoraSaida), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 italic">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {isEmAndamento ? (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 flex items-center gap-1.5 w-max">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                      Em Andamento
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
-                                      Concluída
-                                    </Badge>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-xs text-slate-500">
-                                  {v.recepcionista || "Recepção"}
-                                </TableCell>
-                                <TableCell className="text-xs text-slate-600 dark:text-slate-400 max-w-[180px] truncate" title={v.observacoes}>
-                                  {v.observacoes || "—"}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              </div>
-            ) : patientTab !== 'medicacoes' ? (
-               <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 pb-20">
-                 <Building2 className="w-12 h-12 text-slate-300" />
-                 <h3 className="text-lg font-bold text-slate-500">Módulo em Construção</h3>
-                 <p className="text-sm">Esta aba ({patientTab.replace('_', ' ')}) estará disponível nas próximas atualizações.</p>
-               </div>
-            ) : (
-               <div className="space-y-6 max-w-6xl mx-auto pb-10">
-                  {/* Medicações Ativas */}
-                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-                     <div className="flex justify-between items-start mb-4">
-                        <div className="flex gap-3">
-                           <div className="bg-emerald-100 p-2 rounded-lg text-emerald-700"><Pill className="w-5 h-5" /></div>
-                           <div>
-                             <h3 className="text-lg font-bold text-emerald-800 dark:text-emerald-500 leading-tight">Medicações Ativas</h3>
-                             <p className="text-sm text-slate-500">Medicamentos que o paciente está tomando atualmente</p>
-                           </div>
-                        </div>
-                        <Button className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 gap-2 font-semibold shadow-sm" onClick={() => handleOpenNewPresc(viewPatientDetails?.id)}>
-                          <Plus className="w-4 h-4" />
-                          Adicionar Medicação
-                        </Button>
-                     </div>
-                     
-                     <div className="overflow-x-auto">
-                       <Table>
-                         <TableHeader className="bg-slate-50/50">
-                            <TableRow>
-                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
-                               <TableHead className="font-bold text-slate-600">Dose</TableHead>
-                               <TableHead className="font-bold text-slate-600">Frequência</TableHead>
-                               <TableHead className="font-bold text-slate-600">Via</TableHead>
-                               <TableHead className="font-bold text-slate-600">Período / Duração</TableHead>
-                               <TableHead className="font-bold text-slate-600">Prescrito por</TableHead>
-                               <TableHead className="font-bold text-slate-600 text-right">Ações</TableHead>
-                            </TableRow>
-                         </TableHeader>
-                         <TableBody>
-                            {(() => {
-                               const hojeStr = format(new Date(), "yyyy-MM-dd");
-                               const ativas = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && isPrescricaoAtiva(pr, hojeStr));
-                               if (ativas.length === 0) return (
-                                 <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-500">Nenhuma medicação ativa.</TableCell></TableRow>
-                               );
-                               return ativas.map(pr => {
-                                  const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
-                                  const via = med?.via_administracao || "Oral";
-                                  const apresentacao = med?.apresentacao || "Comprimido";
-                                  const rawConc = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
-                                  const hasConcInName = rawConc && pr.medicamentoNome?.toLowerCase().includes(rawConc.toLowerCase());
-                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
-                                  return (
-                                    <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                                      <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3 max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                                        <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] block leading-snug">
-                                          {pr.medicamentoNome}
-                                          {concentracao && (
-                                            <span className="ml-1 text-slate-600 dark:text-slate-400 font-medium whitespace-normal">
-                                              ({concentracao})
-                                            </span>
-                                          )}
-                                        </span>
-                                        <Badge variant="outline" className="inline-block w-auto max-w-full truncate mt-1 text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 rounded">{apresentacao}</Badge>
-                                      </TableCell>
-                                      <TableCell className="text-slate-600 text-sm font-medium">
-                                         {pr.is_liquido ? (
-                                            <div>
-                                              <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
-                                                <Droplet className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                                                {pr.totalDiario} {pr.unidade_dose === 'gotas' ? 'gotas/dia' : 'mL/dia'}
-                                              </div>
-                                              {pr.unidade_dose === 'gotas' && (
-                                                <span className="text-[10px] text-slate-400 block font-normal">
-                                                  ({(Number(pr.totalDiario) / 20).toFixed(1)} mL/dia)
-                                                </span>
-                                              )}
-                                              <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] font-bold mt-1 block w-max">
-                                                💧 Frasco {pr.volume_frasco_ml || 100} mL ({pr.duracao_frasco_dias || 10}d)
-                                              </Badge>
-                                            </div>
-                                          ) : (
-                                            <div>
-                                              <div>{pr.totalDiario} un/dia</div>
-                                              {pr.tipoFrequencia === "intervalo_dias" ? (
-                                                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 text-[10px] font-bold mt-1 block w-max">
-                                                  ⏱️ A cada {pr.intervaloDias || 1} dias
-                                                </Badge>
-                                              ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" ? (
-                                                <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-[10px] font-bold mt-1 block w-max">
-                                                  📅 {formatDiasSemana(pr.diasSemana)}
-                                                </Badge>
-                                              ) : (
-                                                <span className="text-[10px] text-slate-400 block mt-0.5">Diário</span>
-                                              )}
-                                            </div>
-                                          )}
-                                        </TableCell>
-                                      <TableCell className="text-slate-600 text-sm font-medium">
-                                         <div className="font-mono font-bold text-slate-900 dark:text-slate-100">{pr.esquemaPosologico}</div>
-                                         <div className="mt-1">
-                                           <span className={cn(
-                                             "text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1",
-                                             pr.horarioInicio === "22:00" 
-                                               ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300"
-                                               : pr.horarioInicio === "14:00"
-                                               ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
-                                               : pr.horarioInicio === "06:00"
-                                               ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300"
-                                               : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300"
-                                           )}>
-                                             {pr.horarioInicio === "22:00" ? "🌙 Início: 22h" :
-                                              pr.horarioInicio === "14:00" ? "🌤️ Início: 14h" :
-                                              pr.horarioInicio === "06:00" ? "🌌 Início: 06h" :
-                                              "☀️ Início: 08h"}
-                                           </span>
-                                         </div>
-                                      </TableCell>
-                                      <TableCell className="text-slate-600 text-sm">{via}</TableCell>
-                                      <TableCell className="text-slate-600 text-xs py-3">
-                                         {(() => {
-                                           const isAnti = isMedicamentoAntibiotico(med);
-
-                                           if (pr.dataFim) {
-                                             const dataInicioFmt = pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--';
-                                             const dataFimFmt = new Date(pr.dataFim).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-                                             const diasTotais = pr.dataInicio ? calcularDiasEntre(pr.dataInicio, pr.dataFim, pr.horarioInicio || "08:00") : null;
-                                             
-                                             let diasDecorridos = 0;
-                                             let diasRestantes = 0;
-                                             if (pr.dataInicio) {
-                                               const dInicio = new Date(pr.dataInicio);
-                                               const dHoje = new Date(hojeStr);
-                                               const dFim = new Date(pr.dataFim);
-                                               diasDecorridos = Math.max(1, Math.round((dHoje.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                                               diasRestantes = Math.round((dFim.getTime() - dHoje.getTime()) / (1000 * 60 * 60 * 24));
-                                             }
-
-                                             const isUltimoDia = pr.dataFim === hojeStr;
-                                             const isEncerrado = pr.dataFim < hojeStr;
-
-                                             return (
-                                               <div className="space-y-1">
-                                                 {isAnti && (
-                                                   <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[9px] py-0 px-1.5 font-bold block w-max">
-                                                     🧪 Antibiótico
-                                                   </Badge>
-                                                 )}
-                                                 <div className="font-semibold text-slate-800 dark:text-slate-200">
-                                                   {dataInicioFmt} a {dataFimFmt}
-                                                   {diasTotais && <span className="text-slate-500 font-normal ml-1">({diasTotais}d)</span>}
-                                                 </div>
-                                                 {pr.horarioInicio && (pr.horarioInicio === "22:00" || pr.horarioInicio === "14:00") && (
-                                                   <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
-                                                     Iniciou às {pr.horarioInicio} • Termina de dia
-                                                   </div>
-                                                 )}
-                                                 {isEncerrado ? (
-                                                   <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] font-bold">
-                                                     Finalizado
-                                                   </Badge>
-                                                 ) : isUltimoDia ? (
-                                                   <Badge className="bg-amber-500 text-white text-[10px] font-bold">
-                                                     ⚠️ Último dia hoje!
-                                                   </Badge>
-                                                 ) : (
-                                                   <div className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">
-                                                     Dia {diasDecorridos} de {diasTotais} • Faltam {diasRestantes}d
-                                                   </div>
-                                                 )}
-                                               </div>
-                                             );
-                                           }
-
-                                           if (pr.is_liquido) {
-                                                const prox = pr.data_proximo_frasco ? String(pr.data_proximo_frasco).slice(0, 10) : null;
-                                                const ultimo = pr.data_ultimo_frasco ? String(pr.data_ultimo_frasco).slice(0, 10) : null;
-                                                let diasRest = null;
-                                                if (prox) {
-                                                  try {
-                                                    diasRest = differenceInCalendarDays(parseISO(prox), parseISO(hojeStr));
-                                                  } catch (e) {}
-                                                }
-
-                                                return (
-                                                  <div className="space-y-1">
-                                                    <div className="font-medium text-slate-800 dark:text-slate-200 text-xs">
-                                                      {ultimo 
-                                                        ? `Último: ${new Date(ultimo).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` 
-                                                        : `Início: ${pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}`}
-                                                    </div>
-                                                    {!prox ? (
-                                                      <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-bold block w-max">
-                                                        💧 Aguarda 1º Frasco
-                                                      </Badge>
-                                                    ) : diasRest <= 0 ? (
-                                                      <Badge className="bg-rose-500 text-white text-[10px] font-bold block w-max">
-                                                        ⚠️ Frasco acabou hoje!
-                                                      </Badge>
-                                                    ) : (
-                                                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-300 text-[10px] font-bold block w-max">
-                                                        💧 Frasco no leito (${diasRest}d restantes)
-                                                      </Badge>
-                                                    )}
-                                                    {prox && (
-                                                      <div className="text-[10px] text-slate-500">
-                                                        Próxima troca: {new Date(prox).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                );
-                                              }
-
-                                              return (
-                                                <div className="space-y-0.5">
-                                                  <div className="font-medium text-slate-800 dark:text-slate-200">
-                                                    Início: {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
-                                                  </div>
-                                                  {pr.horarioInicio && pr.horarioInicio !== "08:00" && (
-                                                    <div className="text-[10px] text-slate-500">
-                                                      Início às {pr.horarioInicio}
-                                                    </div>
-                                                  )}
-                                                  <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-100 border-slate-200">
-                                                    Uso Contínuo
-                                                  </Badge>
-                                                </div>
-                                              );
-                                            })()}
-                                          </TableCell>
-                                         <TableCell className="text-slate-600 text-sm leading-tight">
-                                            <div className="font-medium text-slate-800">Médico(a) Assist.</div>
-                                            <div className="text-[10px] text-slate-400">CRM N/A</div>
-                                         </TableCell>
-                                         <TableCell className="text-right py-3 space-x-1.5 whitespace-nowrap">
-                                            {pr.is_liquido && (
-                                              <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                className="h-8 px-2 text-xs text-sky-700 bg-sky-50/80 border-sky-200 hover:bg-sky-100 hover:text-sky-800 font-semibold gap-1 shadow-sm" 
-                                                onClick={async () => {
-                                                  const hoje = format(new Date(), "yyyy-MM-dd");
-                                                  const dur = Number(pr.duracao_frasco_dias) || 10;
-                                                  const prox = format(addDays(new Date(), dur), "yyyy-MM-dd");
-                                                  try {
-                                                    await db.entities.PrescricaoPaciente.update(pr.id, {
-                                                      data_ultimo_frasco: hoje,
-                                                      data_proximo_frasco: prox
-                                                    });
-                                                    queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
-                                                    toast.success(`Frasco entregue ao paciente! Próxima reposição em ${format(parseISO(prox), "dd/MM/yyyy")} (${dur} dias).`);
-                                                  } catch (e) {
-                                                    toast.error("Erro ao registrar entrega do frasco.");
-                                                  }
-                                                }}
-                                                title="Registrar entrega de frasco ao leito hoje e iniciar contagem"
-                                              >
-                                                <Droplet className="w-3.5 h-3.5 text-sky-600" />
-                                                Entregar Frasco
-                                              </Button>
-                                            )}
-                                            <Button 
-                                              size="sm" 
-                                              variant="outline" 
-                                              className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold gap-1.5 shadow-sm" 
-                                              onClick={() => handleOpenEditPresc(pr)} 
-                                              title="Alterar medicamento ou esquema posológico"
-                                            >
-                                              <Pencil className="w-3.5 h-3.5" />
-                                              Alterar
-                                            </Button>
-                                         <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => {
-                                           if (window.confirm("Deseja realmente SUSPENDER este medicamento?")) {
-                                             togglePrescStatusMutation.mutate({ id: pr.id, status: "Ativa" }); // Toggles to Suspensa
-                                           }
-                                         }} title="Suspender medicamento"><Trash2 className="w-4 h-4"/></Button>
-                                      </TableCell>
-                                   </TableRow>
-                                  );
-                               });
-                            })()}
-                         </TableBody>
-                       </Table>
-                     </div>
-                  </div>
-
-                  {/* Histórico de Medicações */}
-                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm mt-6">
-                     <div className="flex gap-3 mb-4">
-                        <div className="bg-slate-100 p-2 rounded-lg text-slate-600"><FileText className="w-5 h-5" /></div>
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-tight">Histórico de Medicações</h3>
-                          <p className="text-sm text-slate-500">Medicamentos que foram suspensos ou alterados</p>
-                        </div>
-                     </div>
-                     
-                     <div className="overflow-x-auto">
-                       <Table>
-                         <TableHeader className="bg-slate-50/50">
-                            <TableRow>
-                               <TableHead className="font-bold text-slate-600">Medicamento</TableHead>
-                               <TableHead className="font-bold text-slate-600">Dose</TableHead>
-                               <TableHead className="font-bold text-slate-600">Frequência</TableHead>
-                               <TableHead className="font-bold text-slate-600">Via</TableHead>
-                               <TableHead className="font-bold text-slate-600">Período de Uso</TableHead>
-                               <TableHead className="font-bold text-slate-600">Motivo da Suspensão</TableHead>
-                               <TableHead className="font-bold text-slate-600">Prescrito por</TableHead>
-                            </TableRow>
-                         </TableHeader>
-                         <TableBody>
-                            {(() => {
-                               const historico = prescricoes.filter(pr => pr.pacienteId === viewPatientDetails?.id && (pr.status === "Suspensa" || pr.status === "Devolvida"));
-                               if (historico.length === 0) return (
-                                 <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-500">Nenhum histórico encontrado.</TableCell></TableRow>
-                               );
-                               return historico.map(pr => {
-                                  const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
-                                  const via = med?.via_administracao || "Oral";
-                                  const apresentacao = med?.apresentacao || "Comprimido";
-                                  const rawConc = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
-                                  const hasConcInName = rawConc && pr.medicamentoNome?.toLowerCase().includes(rawConc.toLowerCase());
-                                  const concentracao = rawConc && !hasConcInName ? rawConc : "";
-                                  return (
-                                    <TableRow key={pr.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                                       <TableCell className="font-semibold text-slate-800 py-3 opacity-60 max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                                         <span className="break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] block leading-snug">
-                                           {pr.medicamentoNome}
-                                           {concentracao && (
-                                             <span className="ml-1 text-slate-600 font-medium whitespace-normal">
-                                               ({concentracao})
-                                             </span>
-                                           )}
-                                         </span>
-                                         <Badge variant="outline" className="inline-block w-auto max-w-full truncate mt-1 text-[10px] bg-slate-50 text-slate-500 border-slate-200 rounded">{apresentacao}</Badge>
-                                       </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">
-                                          <div>{pr.totalDiario} un/dia</div>
-                                          {pr.tipoFrequencia === "intervalo_dias" ? (
-                                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-bold mt-0.5 block w-max">
-                                              ⏱️ A cada {pr.intervaloDias || 1} dias
-                                            </Badge>
-                                          ) : formatDiasSemana(pr.diasSemana) !== "Todos os dias (Diário)" && (
-                                            <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-bold mt-0.5 block w-max">
-                                              📅 {formatDiasSemana(pr.diasSemana)}
-                                            </Badge>
-                                          )}
-                                       </TableCell>
-                                       <TableCell className="text-slate-600 text-sm font-medium opacity-60">
-                                          <div className="flex flex-col items-start gap-1">
-                                            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 font-mono text-xs font-bold">
-                                              {pr.esquemaPosologico}
-                                            </Badge>
-                                            {pr.horarioInicio && (
-                                              <span className="text-[10px] text-slate-500 font-medium">
-                                                Início: {pr.horarioInicio}
-                                              </span>
-                                            )}
-                                          </div>
-                                       </TableCell>
-                                       <TableCell className="text-slate-600 text-sm opacity-60">{via}</TableCell>
-                                       <TableCell className="text-slate-600 text-sm opacity-60">
-                                          {pr.dataInicio ? new Date(pr.dataInicio).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '--'} a {pr.dataFim ? new Date(pr.dataFim).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Hoje'}
-                                       </TableCell>
-                                       <TableCell className="text-slate-600 text-sm opacity-60 max-w-[200px] truncate">{pr.observacoes || "Suspensão Clínica"}</TableCell>
-                                       <TableCell className="text-slate-600 text-sm leading-tight opacity-60">
-                                          <div className="font-medium text-slate-800">Médico(a) Assist.</div>
-                                          <div className="text-[10px] text-slate-400">CRM N/A</div>
-                                       </TableCell>
-                                    </TableRow>
-                                  );
-                               });
-                            })()}
-                         </TableBody>
-                       </Table>
-                     </div>
-                  </div>
-               </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* ─── MODAL: DETALHES & PRONTUÁRIO COMPLETO DO PACIENTE (ZORION SAÚDE & MÉDICO) ─────────── */}
+      <ProntuarioPacienteModal
+        open={!!viewPatientDetails}
+        onOpenChange={(open) => !open && setViewPatientDetails(null)}
+        patient={currentViewPatient || viewPatientDetails}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        onOpenNewPrescricao={(pacienteId) => handleOpenNewPresc(pacienteId)}
+        onEditPrescricao={(pr) => handleOpenEditPresc(pr)}
+        onOpenPrintReceita={(pat) => handleOpenPrintPrescModal([pat.id])}
+        onRefresh={() => {
+          queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes_medicao"] });
+        }}
+      />
 
       {/* ─── MODAL: CONFIRMAÇÃO DE BAIXA EM LOTE DO ESTOQUE ───────────────── */}
       <Dialog open={batchBaixaModalOpen} onOpenChange={setBatchBaixaModalOpen}>
@@ -3693,8 +3098,8 @@ export default function PacientesMedicao() {
 
               <div className="grid grid-cols-4 gap-2.5 text-center">
                 <div className="flex flex-col items-center">
-                  <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 block mb-1">
-                    08:00 ({prescFormData.unidadeDose === 'gotas' ? 'gts' : prescFormData.unidadeDose === 'ml' ? 'mL' : 'Manhã'})
+                  <span className="text-[10px] font-bold text-amber-900 block mb-1 bg-amber-100 rounded px-1 py-0.5 w-full dark:bg-amber-900 dark:text-amber-100">
+                    08:00<br/>{prescFormData.unidadeDose === 'gotas' ? '💧 Gotas' : prescFormData.unidadeDose === 'ml' ? 'mL' : '(Manhã)'}
                   </span>
                   <Input
                     type="number"
@@ -3713,7 +3118,9 @@ export default function PacientesMedicao() {
                   />
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-[11px] font-semibold text-blue-800 dark:text-blue-300 block mb-1">14:00 (Tarde)</span>
+                  <span className="text-[10px] font-bold text-blue-900 block mb-1 bg-blue-100 rounded px-1 py-0.5 w-full dark:bg-blue-900 dark:text-blue-100">
+                    14:00<br/>{prescFormData.unidadeDose === 'gotas' ? '💧 Gotas' : prescFormData.unidadeDose === 'ml' ? 'mL' : '(Tarde)'}
+                  </span>
                   <Input
                     type="number"
                     min="0"
@@ -3731,7 +3138,9 @@ export default function PacientesMedicao() {
                   />
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-[11px] font-semibold text-indigo-800 dark:text-indigo-300 block mb-1">22:00 (Noite)</span>
+                  <span className="text-[10px] font-bold text-indigo-900 block mb-1 bg-indigo-100 rounded px-1 py-0.5 w-full dark:bg-indigo-900 dark:text-indigo-100">
+                    22:00<br/>{prescFormData.unidadeDose === 'gotas' ? '💧 Gotas' : prescFormData.unidadeDose === 'ml' ? 'mL' : '(Noite)'}
+                  </span>
                   <Input
                     type="number"
                     min="0"
@@ -3749,7 +3158,9 @@ export default function PacientesMedicao() {
                   />
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-[11px] font-semibold text-purple-800 dark:text-purple-300 block mb-1">06:00 (Madrug)</span>
+                  <span className="text-[10px] font-bold text-purple-900 block mb-1 bg-purple-100 rounded px-1 py-0.5 w-full dark:bg-purple-900 dark:text-purple-100">
+                    06:00<br/>{prescFormData.unidadeDose === 'gotas' ? '💧 Gotas' : prescFormData.unidadeDose === 'ml' ? 'mL' : '(Madrug)'}
+                  </span>
                   <Input
                     type="number"
                     min="0"
