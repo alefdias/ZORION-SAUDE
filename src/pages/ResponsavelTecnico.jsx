@@ -199,7 +199,7 @@ export default function ResponsavelTecnico() {
           const role = u.perfil || u.cargo;
           userModules = (role === "administrador" || role === "admin") ? AVAILABLE_MODULES.map(m => m.id) : 
                         (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"] : 
-                        (role === "auxiliar_farmacia" || (role && role.includes("auxiliar"))) ? ["estoque_farmacia"] :
+                        (role === "auxiliar_farmacia" || (role && role.includes("auxiliar"))) ? ["estoque_farmacia", "farmacia_satelite"] :
                         (role === "medico") ? ["medico"] :
                         (role === "enfermeiro") ? ["enfermagem", "carrinho_parada", "pacientes_medicao"] :
                         (role === "tecnico_enfermagem" || (role && role.includes("tec"))) ? ["enfermagem", "carrinho_parada"] :
@@ -389,7 +389,7 @@ export default function ResponsavelTecnico() {
     if (cargo === 'medico') {
       finalModules = ["medico"];
     } else if (cargo === 'auxiliar_farmacia') {
-      finalModules = ["estoque_farmacia"];
+      finalModules = ["estoque_farmacia", "farmacia_satelite"];
     }
 
     if (finalModules.length === 0) {
@@ -1385,7 +1385,7 @@ export default function ResponsavelTecnico() {
                   3. Módulos de Acesso do Colaborador
                 </label>
                 <span className="text-xs text-slate-400 font-medium">
-                  {cargo === "medico" ? "1 módulo (Apenas Médico)" : cargo === "auxiliar_farmacia" ? "1 módulo (Apenas Estoque Central)" : `${selectedUserModules.length} módulo(s) habilitado(s)`}
+                  {cargo === "medico" ? "1 módulo (Apenas Médico)" : cargo === "auxiliar_farmacia" ? "2 módulos (Estoque Central e Farmácia Satélite)" : `${selectedUserModules.length} módulo(s) habilitado(s)`}
                 </span>
               </div>
 
@@ -1410,7 +1410,7 @@ export default function ResponsavelTecnico() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {AVAILABLE_MODULES.map(module => {
                   const isChecked = (cargo === "medico" && module.id === "medico") ||
-                                    (cargo === "auxiliar_farmacia" && module.id === "estoque_farmacia") ||
+                                    (cargo === "auxiliar_farmacia" && (module.id === "estoque_farmacia" || module.id === "farmacia_satelite")) ||
                                     (cargo !== "medico" && cargo !== "auxiliar_farmacia" && selectedUserModules.includes(module.id));
                   const isLocked = cargo === "medico" || cargo === "auxiliar_farmacia";
 
