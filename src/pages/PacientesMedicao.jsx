@@ -1,3 +1,4 @@
+import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "@/api/db";
@@ -766,6 +767,17 @@ export default function PacientesMedicao() {
           const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
           const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Continuada";
 
+          let responsavel = "Farmacêutico";
+          let responsavelCrf = "";
+          try {
+            const rawU = localStorage.getItem("pharma_user");
+            if (rawU) {
+              const u = JSON.parse(rawU);
+              responsavel = u.full_name || u.nome || u.login || "Farmacêutico";
+              responsavelCrf = u.crf || "";
+            }
+          } catch (e) {}
+
           await db.entities.Saida.create({
             medicamento_id: med.id,
             medicamento_nome: med.nome,
@@ -777,7 +789,10 @@ export default function PacientesMedicao() {
             motivo: `Baixa programada de medicação fixa para ${periodoDias} ${periodoDias === 1 ? 'dia' : 'dias'} (${item.totalPacientes} paciente${item.totalPacientes === 1 ? '' : 's'})`,
             observacao: `Baixa automática consolidada do relatório de ${periodoDias} ${periodoDias === 1 ? 'dia' : 'dias'}`,
             data_saida: todayDateStr,
-            created_at: nowStr
+            created_at: nowStr,
+            responsavel: responsavel,
+            responsavel_crf: responsavelCrf,
+            usuario_nome: responsavel
           });
         }
       }
@@ -848,6 +863,17 @@ export default function PacientesMedicao() {
         const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
         const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Paciente";
 
+        let responsavel = "Farmacêutico";
+        let responsavelCrf = "";
+        try {
+          const rawU = localStorage.getItem("pharma_user");
+          if (rawU) {
+            const u = JSON.parse(rawU);
+            responsavel = u.full_name || u.nome || u.login || "Farmacêutico";
+            responsavelCrf = u.crf || "";
+          }
+        } catch (e) {}
+
         await db.entities.Saida.create({
           medicamento_id: medId,
           medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),
@@ -861,7 +887,10 @@ export default function PacientesMedicao() {
           motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
           observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un`,
           data_saida: todayDateStr,
-          created_at: nowStr
+          created_at: nowStr,
+          responsavel: responsavel,
+          responsavel_crf: responsavelCrf,
+          usuario_nome: responsavel
         });
       }
 
@@ -1742,11 +1771,10 @@ export default function PacientesMedicao() {
     if (activeCategory === "altas") {
       return (pacientes || []).filter(p => {
         if (p.status !== "Alta") return false;
-        const matchSearch = !search ||
-          (p.nome?.toLowerCase().includes(search)) ||
-          (p.prontuario?.toLowerCase().includes(search)) ||
-          (p.leito?.toLowerCase().includes(search)) ||
-          (p.alaNome?.toLowerCase().includes(search));
+        const qP = normalizeSearch(search);
+        const termsP = qP ? qP.split(/\s+/).filter(Boolean) : [];
+        const fullP = normalizeSearch(`${p.nome || ""} ${p.prontuario || ""} ${p.leito || ""} ${p.alaNome || ""}`);
+        const matchSearch = termsP.length === 0 || termsP.every(t => fullP.includes(t));
         const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
         return matchSearch && matchAla;
       });
@@ -1795,11 +1823,13 @@ export default function PacientesMedicao() {
   }, [alas, transferOriginAlaId]);
 
   const filteredPrescriptions = prescricoes.filter(p =>
-    p.pacienteNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
-    p.medicamentoNome?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
-    p.concentracao?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
-    p.prontuario?.toLowerCase().includes(searchPrescription.toLowerCase()) ||
-    p.esquemaPosologico?.includes(searchPrescription)
+    (() => {
+      const q = normalizeSearch(searchPrescription);
+      if (!q) return true;
+      const terms = q.split(/\s+/).filter(Boolean);
+      const full = normalizeSearch(`${p.pacienteNome || ""} ${p.medicamentoNome || ""} ${p.concentracao || ""} ${p.prontuario || ""} ${p.esquemaPosologico || ""}`);
+      return terms.every(t => full.includes(t));
+    })()
   );
 
   const currentViewPatient = useMemo(() => {

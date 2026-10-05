@@ -1,3 +1,4 @@
+import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -121,7 +122,12 @@ export default function Entradas({ isTab = false }) {
       matchesDate = entradaDate.getTime() >= from.getTime() && entradaDate.getTime() <= (to.getTime() + 86400000);
     }
 
-    return matchesSearch && matchesDate;
+    // Ignora transferências internas e recebimento de pedidos da satélite na tela de compras/entradas
+    const isNotTransferencia = e.tipo !== "Transferência Central -> Satélite" && 
+                               !e.tipo?.toLowerCase().includes("transferência") &&
+                               !e.fornecedor_nome?.toLowerCase().includes("recebimento pedido");
+
+    return matchesSearch && matchesDate && isNotTransferencia;
   });
   }, [entradas, search, dateRange]);
 
@@ -162,6 +168,18 @@ export default function Entradas({ isTab = false }) {
         }
 
         // 2. Criar a entrada com o lote_id vinculado e volume_frasco_ml
+        // Obter dados do usuário logado para vinculação oficial
+        let responsavel = "Farmacêutico";
+        let responsavelCrf = "";
+        try {
+          const rawU = localStorage.getItem("pharma_user");
+          if (rawU) {
+            const u = JSON.parse(rawU);
+            responsavel = u.full_name || u.nome || u.login || "Farmacêutico";
+            responsavelCrf = u.crf || "";
+          }
+        } catch (e) {}
+
         console.log("Criando registro de entrada...");
         const entradaData = {
           medicamento_id: data.medicamento_id,
@@ -173,7 +191,10 @@ export default function Entradas({ isTab = false }) {
           volume_frasco_ml: volFrasco,
           fornecedor_id: data.fornecedor_id,
           fornecedor_nome: data.fornecedor_nome,
-          lote_id: finalLoteId
+          lote_id: finalLoteId,
+          responsavel: responsavel,
+          responsavel_crf: responsavelCrf,
+          usuario_nome: responsavel
         };
         console.log("Dados da entrada a serem salvos:", entradaData);
         const entrada = await db.entities.Entrada.create(entradaData);

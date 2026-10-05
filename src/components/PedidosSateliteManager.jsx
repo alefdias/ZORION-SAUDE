@@ -608,6 +608,122 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         itens_json: JSON.stringify(updatedItens)
       };
 
+      const freshMeds = await db.entities.Medicamento.list();
+      const freshLotes = await db.entities.Lote.list();
+
+      // Função auxiliar para processar baixa de saída da Central por transferência
+      const processarSaidaTransferenciaCentral = async () => {
+        for (const item of updatedItens) {
+          const qtdAtendida = Number(item.qtd_atendida) || 0;
+          if (qtdAtendida <= 0) continue;
+
+          const med = freshMeds.find(m => m.id === item.medicamento_id);
+          if (!med) continue;
+
+          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+          const medLotes = freshLotes
+            .filter(l => l.medicamento_id === med.id && (Number(l.quantidade_atual) || 0) > 0)
+            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+          let pendenteAlocar = qtdAtendida;
+
+          for (const lote of medLotes) {
+            if (pendenteAlocar <= 0) break;
+            const qtdConsumir = Math.min(Number(lote.quantidade_atual) || 0, pendenteAlocar);
+            if (qtdConsumir > 0) {
+              const novaQtd = (Number(lote.quantidade_atual) || 0) - qtdConsumir;
+              await db.entities.Lote.update(lote.id, {
+                quantidade_atual: novaQtd,
+                status: novaQtd <= 0 ? "esgotado" : lote.status
+              });
+              lote.quantidade_atual = novaQtd;
+
+              // 1. Registra a Saída no Estoque Central com motivo 'Transferência de Estoque'
+              await db.entities.Saida.create({
+                medicamento_id: med.id,
+                medicamento_nome: med.nome,
+                lote_id: lote.id,
+                numero_lote: lote.numero_lote || "S/ Lote",
+                quantidade: qtdConsumir,
+                data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                destino: "Farmácia Satélite",
+                motivo: "Transferência de Estoque",
+                observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
+                tipo: "Transferência Central -> Satélite"
+              });
+
+              // 2. Registra na Transferência de Estoque (TransferenciaPendente)
+              await db.entities.TransferenciaPendente.create({
+                medicamento_id: med.id,
+                medicamento_nome: med.nome,
+                lote_id: lote.id,
+                numero_lote: lote.numero_lote || "S/ Lote",
+                quantidade: qtdConsumir,
+                direcao: "para_satelite",
+                status: newStatus === "Concluido" ? "Aceito" : "Pendente",
+                data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
+                origem: "pedido_satelite",
+                pedido_id: pedido.id,
+                pedido_codigo: pedido.codigo,
+                observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
+              });
+
+              pendenteAlocar -= qtdConsumir;
+            }
+          }
+
+          // Se faltar saldo em lotes cadastrados, registra saída e transferência sem lote específico
+          if (pendenteAlocar > 0) {
+            await db.entities.Saida.create({
+              medicamento_id: med.id,
+              medicamento_nome: med.nome,
+              lote_id: "",
+              numero_lote: "S/ LOTE",
+              quantidade: pendenteAlocar,
+              data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+              destino: "Farmácia Satélite",
+              motivo: "Transferência de Estoque",
+              observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
+              tipo: "Transferência Central -> Satélite"
+            });
+
+            await db.entities.TransferenciaPendente.create({
+              medicamento_id: med.id,
+              medicamento_nome: med.nome,
+              lote_id: "",
+              numero_lote: "S/ LOTE",
+              quantidade: pendenteAlocar,
+              direcao: "para_satelite",
+              status: newStatus === "Concluido" ? "Aceito" : "Pendente",
+              data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+              data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
+              origem: "pedido_satelite",
+              pedido_id: pedido.id,
+              pedido_codigo: pedido.codigo,
+              observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
+            });
+          }
+
+          // Atualiza o estoque geral do medicamento no Central
+          const novoEstoqueCentral = Math.max(0, (Number(med.estoque_atual) || 0) - qtdAtendida);
+          await db.entities.Medicamento.update(med.id, {
+            estoque_atual: novoEstoqueCentral
+          });
+          med.estoque_atual = novoEstoqueCentral;
+        }
+
+        payload.saida_gerada = 1;
+        try {
+          await db.logAction(
+            "Transferência de Pedido Satélite",
+            "PedidoSatelite",
+            pedido.id,
+            `Saída por transferência de estoque gerada para o Pedido ${pedido.codigo} (${pedido.ala_nome})`
+          );
+        } catch (e) {}
+      };
+
       if (newStatus === "Cancelado") {
         payload.motivo_cancelamento = motivoCancelamento || "Cancelado pelo operador";
         payload.data_cancelamento = new Date().toISOString();
@@ -615,6 +731,42 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           ? `[CANCELADO: ${motivoCancelamento || "Sem motivo"}] ${pedido.observacao}`
           : `[CANCELADO: ${motivoCancelamento || "Sem motivo"}]`;
         
+        // Se a saída já havia sido gerada para a satélite, estorna ao estoque central
+        if (pedido.saida_gerada) {
+          try {
+            const allTransfers = await db.entities.TransferenciaPendente.list();
+            const pedidoTransfers = (allTransfers || []).filter(
+              t => t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo
+            );
+            for (const tr of pedidoTransfers) {
+              if (tr.status === "Pendente") {
+                if (tr.lote_id) {
+                  const lote = freshLotes.find(l => l.id === tr.lote_id);
+                  if (lote) {
+                    await db.entities.Lote.update(lote.id, {
+                      quantidade_atual: (Number(lote.quantidade_atual) || 0) + (Number(tr.quantidade) || 0),
+                      status: "disponivel"
+                    });
+                  }
+                }
+                if (tr.medicamento_id) {
+                  const med = freshMeds.find(m => m.id === tr.medicamento_id);
+                  if (med) {
+                    await db.entities.Medicamento.update(med.id, {
+                      estoque_atual: (Number(med.estoque_atual) || 0) + (Number(tr.quantidade) || 0)
+                    });
+                  }
+                }
+                await db.entities.TransferenciaPendente.update(tr.id, {
+                  status: "Cancelado"
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Erro ao estornar transferências canceladas:", e);
+          }
+        }
+
         try {
           await db.logAction(
             "Cancelamento Pedido",
@@ -625,38 +777,63 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         } catch (e) {}
       } else if (newStatus === "Separado") {
         payload.data_separacao = new Date().toISOString();
+        if (!pedido.saida_gerada) {
+          await processarSaidaTransferenciaCentral();
+        }
       } else if (newStatus === "Entregue") {
         payload.data_entrega = new Date().toISOString();
+        if (!pedido.saida_gerada) {
+          await processarSaidaTransferenciaCentral();
+        }
       } else if (newStatus === "Concluido") {
         payload.data_recebimento = new Date().toISOString();
 
-        // 🟢 Dar entrada automática no estoque satélite usando a QUANTIDADE REAL RECEBIDA!
+        // Se ainda não gerou saída central (caso tenha pulado para concluído direto)
+        if (!pedido.saida_gerada) {
+          await processarSaidaTransferenciaCentral();
+        }
+
+        // Creditar entrada exclusivamente no estoque satélite conforme a quantidade conferida
         for (const item of updatedItens) {
           const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
+          const qtdEnviada = Number(item.qtd_atendida) || 0;
+
           if (qtdRealRecebida > 0) {
-            const med = medicamentos.find(m => m.id === item.medicamento_id);
+            const med = freshMeds.find(m => m.id === item.medicamento_id);
             if (med) {
               const currentSat = Number(med.estoque_satelite || 0);
               await db.entities.Medicamento.update(med.id, {
                 estoque_satelite: currentSat + qtdRealRecebida
               });
+            }
+          }
 
-              // Registra movimentação de entrada na Satélite com a quantidade real conferida
-              const obsDivergencia = item.qtd_recebida !== undefined && item.qtd_recebida < item.qtd_atendida
-                ? ` [Divergência: Recebido ${item.qtd_recebida} de ${item.qtd_atendida} enviados]`
-                : '';
-
-              await db.entities.Entrada.create({
-                medicamento_id: med.id,
-                medicamento_nome: med.nome,
-                data_entrada: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                quantidade: qtdRealRecebida,
-                fornecedor_nome: `Recebimento Pedido ${pedido.codigo} (${pedido.ala_nome})${obsDivergencia}`,
-                numero_nota_fiscal: pedido.codigo,
-                tipo: "Transferência Central -> Satélite"
+          // Se houve divergência (chegou menos do que a central enviou), devolve a sobra para a Central
+          if (qtdRealRecebida < qtdEnviada) {
+            const dif = qtdEnviada - qtdRealRecebida;
+            const med = freshMeds.find(m => m.id === item.medicamento_id);
+            if (med) {
+              await db.entities.Medicamento.update(med.id, {
+                estoque_atual: (Number(med.estoque_atual) || 0) + dif
               });
             }
           }
+        }
+
+        // Atualiza todas as transferências pendentes deste pedido para 'Aceito'
+        try {
+          const allTransfers = await db.entities.TransferenciaPendente.list();
+          const pedidoTransfers = (allTransfers || []).filter(
+            t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo) && t.status === "Pendente"
+          );
+          for (const tr of pedidoTransfers) {
+            await db.entities.TransferenciaPendente.update(tr.id, {
+              status: "Aceito",
+              data_aceite: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao atualizar status de TransferenciaPendente:", e);
         }
       }
 
@@ -667,12 +844,16 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       if (newStatus === "Cancelado") {
         toast.error(`Pedido ${pedido.codigo} cancelado com sucesso. A Farmácia Satélite foi notificada!`);
       } else if (newStatus === "Em Separação") toast.info("Pedido marcado em separação.");
-      else if (newStatus === "Separado") toast.success("Separação finalizada! Pedido pronto para entrega.");
-      else if (newStatus === "Entregue") toast.success("Pedido entregue ao farmacêutico da satélite.");
+      else if (newStatus === "Separado") toast.success("Separação finalizada! Saída gerada e registrada em Transferência de Estoque.");
+      else if (newStatus === "Entregue") toast.success("Pedido enviado para a Farmácia Satélite!");
       else if (newStatus === "Concluido") toast.success("Recebimento confirmado! Estoque da Satélite atualizado com sucesso!");
       
       queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      queryClient.invalidateQueries({ queryKey: ['entradas'] });
       setModalOpen(false);
       setSelectedPedido(null);
     },

@@ -266,7 +266,7 @@ export default function ResponsavelTecnico() {
     } else if (newCargo === "farmaceutico") {
       setSelectedUserModules(["estoque_farmacia", "farmacia_satelite", "pacientes_medicao", "carrinho_parada"]);
     } else if (newCargo === "auxiliar_farmacia") {
-      setSelectedUserModules(["estoque_farmacia"]);
+      setSelectedUserModules(["estoque_farmacia", "farmacia_satelite"]);
     } else if (newCargo === "medico") {
       setSelectedUserModules(["medico"]);
     } else if (newCargo === "enfermeiro") {
@@ -1046,7 +1046,7 @@ export default function ResponsavelTecnico() {
                   <div>
                     <span className="block font-bold text-sm text-slate-900 dark:text-slate-100">Auxiliar Farmácia</span>
                     <span className="block text-[11px] text-slate-500 mt-0.5 leading-snug">
-                      Apenas Estoque Central.
+                      Estoque Central e Satélite.
                     </span>
                   </div>
                 </button>
@@ -1402,7 +1402,7 @@ export default function ResponsavelTecnico() {
                 <div className="p-3.5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800 text-xs flex items-center gap-2.5 text-cyan-800 dark:text-cyan-200">
                   <Boxes className="w-5 h-5 text-cyan-600 shrink-0" />
                   <span>
-                    <strong>Restrição de Acesso:</strong> Auxiliares de Farmácia possuem acesso liberado <strong>exclusivamente ao Estoque Central</strong> (medicamentos e lotes). Os demais módulos hospitalares ficam bloqueados.
+                    <strong>Restrição de Acesso:</strong> Auxiliares de Farmácia possuem acesso liberado <strong>ao Estoque Central e Farmácia Satélite</strong> (medicamentos e lotes). Os demais módulos hospitalares ficam bloqueados.
                   </span>
                 </div>
               )}

@@ -1,3 +1,4 @@
+import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -106,6 +107,17 @@ export default function Saidas({ isTab = false }) {
         }
       }
 
+      let responsavel = "Farmacêutico";
+      let responsavelCrf = "";
+      try {
+        const rawU = localStorage.getItem("pharma_user");
+        if (rawU) {
+          const u = JSON.parse(rawU);
+          responsavel = u.full_name || u.nome || u.login || "Farmacêutico";
+          responsavelCrf = u.crf || "";
+        }
+      } catch (e) {}
+
       for (const item of itens) {
         const saidaData = {
           ...commonData,
@@ -113,7 +125,10 @@ export default function Saidas({ isTab = false }) {
           medicamento_nome: item.medicamento_nome,
           lote_id: item.lote_id,
           numero_lote: item.numero_lote,
-          quantidade: item.quantidade
+          quantidade: item.quantidade,
+          responsavel: commonData.responsavel || responsavel,
+          responsavel_crf: commonData.responsavel_crf || responsavelCrf,
+          usuario_nome: responsavel
         };
         
         // 1. Criar a saída

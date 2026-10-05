@@ -1,3 +1,4 @@
+import { normalizeSearch } from "@/utils/searchUtils";
 import * as React from "react"
 import { Check, ChevronsUpDown, User } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -31,10 +32,10 @@ export function ComboboxMedicamento({
 
     const filteredMedicamentos = React.useMemo(() => {
         if (!search || !search.trim()) return medicamentos.slice(0, 100);
-        const term = search.toLowerCase().trim();
+        const term = normalizeSearch(search);
         const terms = term.split(/\s+/).filter(Boolean);
         return medicamentos.filter(m => {
-            const fullText = `${m.nome || ""} ${m.codigo || ""} ${m.concentracao || ""} ${m.unidade_medida || ""} ${m.apresentacao || ""}`.toLowerCase();
+            const fullText = normalizeSearch(`${m.nome || ""} ${m.codigo || ""} ${m.concentracao || ""} ${m.unidade_medida || ""} ${m.apresentacao || ""}`);
             return terms.every(t => fullText.includes(t));
         }).slice(0, 100);
     }, [medicamentos, search]);

@@ -18,6 +18,8 @@ export function TransferenciaAcceptModal({ activeSection }) {
         if (!Array.isArray(all)) return [];
         return all.filter(t => {
           if (!t || t.status !== "Pendente") return false;
+          // Pedidos da satélite têm conferência detalhada pelo painel de pedidos à central
+          if (t.origem === "pedido_satelite" || t.pedido_codigo || t.pedido_id) return false;
           
           if (t.direcao === "para_satelite" && activeSection?.id !== "satelite") return false;
           if (t.direcao === "para_estoque" && activeSection?.id !== "estoque") return false;

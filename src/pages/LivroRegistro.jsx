@@ -175,10 +175,107 @@ export default function LivroRegistro() {
     queryFn: () => db.entities.Lote.list('-created_date'),
   });
 
+  const { data: usuariosRaw = [] } = useQuery({
+    queryKey: ['usuarios'],
+    queryFn: () => db.entities.Usuario.list(),
+  });
+
+  const { data: acoesAuditoria = [] } = useQuery({
+    queryKey: ['auditoria_trilha'],
+    queryFn: () => db.entities.Auditoria.list('-created_at'),
+    refetchInterval: 5000
+  });
+
   const medicamentos = useMemo(() => Array.isArray(medicamentosRaw) ? medicamentosRaw : [], [medicamentosRaw]);
   const saidasLivro = useMemo(() => Array.isArray(saidasLivroRaw) ? saidasLivroRaw : [], [saidasLivroRaw]);
   const entradasLivro = useMemo(() => Array.isArray(entradasLivroRaw) ? entradasLivroRaw : [], [entradasLivroRaw]);
   const lotes = useMemo(() => Array.isArray(lotesRaw) ? lotesRaw : [], [lotesRaw]);
+  const usuarios = useMemo(() => Array.isArray(usuariosRaw) ? usuariosRaw : [], [usuariosRaw]);
+
+  // Função para vincular o responsável real que dispensou ou deu entrada
+  const getResponsavelMovimento = useMemo(() => {
+    const userMap = {};
+    usuarios.forEach(u => {
+      if (!u) return;
+      const info = {
+        nome: u.nome || u.login || "Farmacêutico",
+        crf: u.crf ? (u.crf.startsWith("CRF") ? u.crf : `CRF: ${u.crf}`) : (u.coren ? `COREN: ${u.coren}` : (u.crm ? `CRM: ${u.crm}` : ''))
+      };
+      if (u.login) userMap[String(u.login).toLowerCase().trim()] = info;
+      if (u.id) userMap[String(u.id).toLowerCase().trim()] = info;
+      if (u.nome) userMap[String(u.nome).toLowerCase().trim()] = info;
+    });
+
+    const auditMap = {};
+    acoesAuditoria.forEach(a => {
+      if (a && a.entidade_id && a.usuario) {
+        auditMap[String(a.entidade_id).trim()] = a.usuario;
+      }
+    });
+
+    return (mov) => {
+      if (!mov) return { nome: "Farmacêutico", crf: "CRF: _______" };
+
+      // 1. Campo responsavel gravado diretamente no registro
+      if (mov.responsavel && String(mov.responsavel).trim() !== "") {
+        const respTrim = String(mov.responsavel).trim();
+        const u = userMap[respTrim.toLowerCase()];
+        const crf = mov.responsavel_crf || u?.crf || "CRF: _______";
+        return {
+          nome: u?.nome || respTrim,
+          crf: crf
+        };
+      }
+
+      // 2. Campo usuario_nome gravado no registro
+      if (mov.usuario_nome && String(mov.usuario_nome).trim() !== "") {
+        const uNome = String(mov.usuario_nome).trim();
+        const u = userMap[uNome.toLowerCase()];
+        return {
+          nome: u?.nome || uNome,
+          crf: mov.responsavel_crf || u?.crf || "CRF: _______"
+        };
+      }
+
+      // 3. Trilha de Auditoria vinculada pelo ID exato do registro
+      if (mov.id && auditMap[String(mov.id).trim()]) {
+        const userLog = auditMap[String(mov.id).trim()];
+        const u = userMap[String(userLog).toLowerCase().trim()];
+        if (u) {
+          return {
+            nome: u.nome,
+            crf: u.crf || "CRF: _______"
+          };
+        }
+        return {
+          nome: userLog,
+          crf: "CRF: _______"
+        };
+      }
+
+      // 4. Se a movimentação foi Transferência interna
+      if (mov.tipo === 'SAIDA' && (mov.motivo === 'Transferência de Estoque' || mov.destino?.includes('Satélite'))) {
+        return {
+          nome: "Almoxarifado Central",
+          crf: "Transferência"
+        };
+      }
+
+      // 5. Se foi Entrada / Compra
+      if (mov.tipo === 'ENTRADA') {
+        return {
+          nome: "Recepção / Almoxarifado",
+          crf: "Conferido"
+        };
+      }
+
+      // 6. Registro legado sem operador identificado
+      return {
+        nome: "Farmacêutico(a)",
+        crf: "CRF: _______"
+      };
+    };
+  }, [usuarios, acoesAuditoria]);
 
   // Formatação padrão brasileira (separador de milhar com ponto: 28.774, 300.000, 2.000, etc.)
   const formatQtd = (val) => {
@@ -832,14 +929,19 @@ export default function LivroRegistro() {
                         <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
                         <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{formatQtd(mov.saldo)}</TableCell>
                         <TableCell className="border border-slate-300 p-0 align-middle text-center">
-                          <div className="flex flex-col items-center justify-center w-full py-1">
-                            <span className="text-[9px] font-bold text-slate-800 uppercase print:text-[8px]">
-                              {currentUser.full_name}
-                            </span>
-                            <span className="text-[8px] text-slate-600 print:text-[7px]">
-                              {currentUser.crf || 'CRF: _______'}
-                            </span>
-                          </div>
+                          {(() => {
+                            const resp = getResponsavelMovimento(mov);
+                            return (
+                              <div className="flex flex-col items-center justify-center w-full py-1 px-1">
+                                <span className="text-[9px] font-bold text-slate-800 uppercase print:text-[8px] leading-tight">
+                                  {resp.nome}
+                                </span>
+                                <span className="text-[8px] text-slate-600 print:text-[7px] leading-tight mt-0.5">
+                                  {resp.crf}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-[10px] text-slate-600 min-w-[150px] border border-slate-300 px-2 break-words whitespace-normal">
                           Lote: <span className="font-semibold text-slate-800">{mov.numero_lote || mov.lote || "-"}</span>
@@ -1280,7 +1382,7 @@ export default function LivroRegistro() {
                             </div>
                             <div>
                               <span className="text-slate-400 font-semibold block">Responsável:</span>
-                              <span className="font-medium text-slate-700">{tr.responsavel || "Almoxarifado"}</span>
+                              <span className="font-medium text-slate-700">{tr.responsavel || getResponsavelMovimento(tr).nome || "Almoxarifado"}</span>
                             </div>
                           </div>
                         ))}
@@ -1336,7 +1438,7 @@ export default function LivroRegistro() {
                                   {disp.motivo || disp.observacao || "Prescrição regular"}
                                 </TableCell>
                                 <TableCell className="text-slate-700 font-medium">
-                                  {disp.responsavel || currentUser.full_name}
+                                  {disp.responsavel || getResponsavelMovimento(disp).nome}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1374,7 +1476,7 @@ export default function LivroRegistro() {
                             </div>
                             <div>
                               <span className="text-red-400 font-semibold block">Responsável:</span>
-                              <span className="font-medium text-slate-700">{p.responsavel || currentUser.full_name}</span>
+                              <span className="font-medium text-slate-700">{p.responsavel || getResponsavelMovimento(p).nome}</span>
                             </div>
                           </div>
                         ))}

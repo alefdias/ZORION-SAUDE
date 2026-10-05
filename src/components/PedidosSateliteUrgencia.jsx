@@ -262,28 +262,49 @@ export default function PedidosSateliteUrgencia() {
       } else if (newStatus === "Concluido") {
         payload.data_recebimento = new Date().toISOString();
 
+        const freshMeds = await db.entities.Medicamento.list();
+
         // Dá entrada automática no estoque satélite com a quantidade recebida
         for (const item of updatedItens) {
           const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
+          const qtdEnviada = Number(item.qtd_atendida) || 0;
+
           if (qtdRealRecebida > 0) {
-            const med = medicamentos.find(m => m.id === item.medicamento_id);
+            const med = freshMeds.find(m => m.id === item.medicamento_id);
             if (med) {
               const currentSat = Number(med.estoque_satelite || 0);
               await db.entities.Medicamento.update(med.id, {
                 estoque_satelite: currentSat + qtdRealRecebida
               });
+            }
+          }
 
-              await db.entities.Entrada.create({
-                medicamento_id: med.id,
-                medicamento_nome: med.nome,
-                data_entrada: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                quantidade: qtdRealRecebida,
-                fornecedor_nome: `Recebimento Pedido Urgência ${pedido.codigo} (${pedido.ala_nome})`,
-                numero_nota_fiscal: pedido.codigo,
-                tipo: "Transferência Central -> Satélite (Urgência)"
+          // Se houve divergência, estorna sobra para o estoque central
+          if (qtdRealRecebida < qtdEnviada) {
+            const dif = qtdEnviada - qtdRealRecebida;
+            const med = freshMeds.find(m => m.id === item.medicamento_id);
+            if (med) {
+              await db.entities.Medicamento.update(med.id, {
+                estoque_atual: (Number(med.estoque_atual) || 0) + dif
               });
             }
           }
+        }
+
+        // Atualiza transferências pendentes vinculadas a este pedido para Aceito
+        try {
+          const allTransfers = await db.entities.TransferenciaPendente.list();
+          const pedidoTransfers = (allTransfers || []).filter(
+            t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo) && t.status === "Pendente"
+          );
+          for (const tr of pedidoTransfers) {
+            await db.entities.TransferenciaPendente.update(tr.id, {
+              status: "Aceito",
+              data_aceite: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao atualizar status de TransferenciaPendente em PedidosSateliteUrgencia:", e);
         }
       }
 
@@ -295,6 +316,10 @@ export default function PedidosSateliteUrgencia() {
       }
       queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      queryClient.invalidateQueries({ queryKey: ['entradas'] });
       setModalOpen(false);
       setSelectedPedido(null);
     },

@@ -361,10 +361,19 @@ export default function TransferenciaEstoque() {
                          t.direcao === "para_carrinho_parada" ? "Carrinho Parada" :
                          "Estoque Central"}
                       </Badge>
+                      {t.pedido_codigo && (
+                        <span className="block text-[11px] font-mono text-indigo-600 font-bold mt-1">
+                          Pedido: {t.pedido_codigo}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Badge className={t.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>
-                        {t.status || 'Concluída'}
+                      <Badge className={
+                        t.status === 'Pendente' ? 'bg-amber-100 text-amber-700' :
+                        t.status === 'Cancelado' ? 'bg-red-100 text-red-700' :
+                        'bg-emerald-100 text-emerald-700'
+                      }>
+                        {t.status === 'Aceito' ? 'Concluída' : (t.status || 'Concluída')}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">

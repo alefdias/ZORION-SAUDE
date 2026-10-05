@@ -283,7 +283,7 @@ export function WelcomeScreen({ onEnter }) {
               const role = (u.perfil || u.cargo || "").toLowerCase();
               userModules = (role === "administrador" || role === "admin") ? allModules : 
                             (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
-                            (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia"] :
+                            (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia", "farmacia_satelite"] :
                             (role === "medico") ? ["medico"] :
                             (role === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
                             (role === "enfermeiro") ? ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao", "enfermagem"] :
@@ -381,7 +381,7 @@ export function WelcomeScreen({ onEnter }) {
             const role = (u.perfil || u.cargo || "").toLowerCase();
             userModules = (role === "administrador" || role === "admin") ? allModules : 
                           (role === "farmaceutico") ? ["estoque_farmacia", "farmacia_satelite", "carrinho_parada", "carrinho_farmacia", "pacientes_medicao"] : 
-                          (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia"] :
+                          (role === "auxiliar_farmacia" || role.includes("auxiliar")) ? ["estoque_farmacia", "farmacia_satelite"] :
                           (role === "medico") ? ["medico"] :
                           (role === "recepcionista") ? ["pacientes_medicao", "recepcao", "farmacia_satelite"] :
                           (role === "enfermeiro") ? ["carrinho_parada", "carrinho_enfermagem", "pacientes_medicao", "enfermagem"] :
@@ -426,10 +426,10 @@ export function WelcomeScreen({ onEnter }) {
       return;
     }
 
-    // 2. Diretriz: Auxiliar de Farmácia apenas Estoque Central
+    // 2. Diretriz: Auxiliar de Farmácia (Estoque Central e Farmácia Satélite)
     if ((userRoleStr === "auxiliar_farmacia" || userRoleStr.includes("auxiliar")) && !isMasterAdmin) {
-      if (selectedModule.key !== "estoque_farmacia") {
-        toast.error("Acesso não autorizado: Auxiliares de farmácia possuem permissão exclusivamente para o Estoque Central.");
+      if (selectedModule.key !== "estoque_farmacia" && selectedModule.key !== "farmacia_satelite") {
+        toast.error("Acesso não autorizado: Auxiliares de farmácia possuem permissão para o Estoque Central e Farmácia Satélite.");
         return;
       }
     }

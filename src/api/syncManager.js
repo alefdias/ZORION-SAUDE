@@ -49,6 +49,19 @@ export async function initializeApp() {
                     "created_at" TEXT,
                     "deleted_at" TEXT
                 );
+                ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "saida_gerada" INTEGER DEFAULT 0;
+                ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "pedido_id" TEXT;
+                ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "pedido_codigo" TEXT;
+                ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "origem" TEXT;
+                ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+                ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+                ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+                ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
+                ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
             `;
             await invoke("execute_postgres", { ip, dbName, password, query });
 

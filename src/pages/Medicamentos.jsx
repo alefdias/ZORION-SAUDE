@@ -1,3 +1,4 @@
+import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -182,13 +183,10 @@ export default function Medicamentos() {
     
     // Search filter
     if (search.trim()) {
-      const q = search.toLowerCase();
-      const matchNome = m.nome?.toLowerCase().includes(q);
-      const matchPrincipio = m.principio_ativo?.toLowerCase().includes(q);
-      const matchCodigo = m.codigo?.toLowerCase().includes(q);
-      const matchNF = m.nota_fiscal?.toLowerCase().includes(q);
-      const matchFornecedor = m.fornecedor_nome?.toLowerCase().includes(q);
-      return matchNome || matchPrincipio || matchCodigo || matchNF || matchFornecedor;
+      const q = normalizeSearch(search);
+      const terms = q.split(/\s+/).filter(Boolean);
+      const fullText = normalizeSearch(`${m.nome || ""} ${m.principio_ativo || ""} ${m.codigo || ""} ${m.nota_fiscal || ""} ${m.fornecedor_nome || ""}`);
+      return terms.every(t => fullText.includes(t));
     }
     return true;
   }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));

@@ -105,6 +105,47 @@ const ensureTableQuery = {
     ALTER TABLE "Entrada" ALTER COLUMN "fornecedor_id" DROP NOT NULL;
     ALTER TABLE "Entrada" ALTER COLUMN "nota_fiscal" DROP NOT NULL;
     ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
+    ALTER TABLE "Entrada" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+  `,
+  Saida: `
+    CREATE TABLE IF NOT EXISTS "Saida" (
+        "id" TEXT PRIMARY KEY,
+        "medicamento_id" TEXT,
+        "medicamento_nome" TEXT,
+        "lote_id" TEXT,
+        "numero_lote" TEXT,
+        "quantidade" INTEGER,
+        "destino" TEXT,
+        "motivo" TEXT,
+        "observacao" TEXT,
+        "tipo" TEXT,
+        "paciente_id" TEXT,
+        "paciente_nome" TEXT,
+        "ala_id" TEXT,
+        "ala_nome" TEXT,
+        "responsavel" TEXT,
+        "responsavel_crf" TEXT,
+        "usuario_nome" TEXT,
+        "usuario_id" TEXT,
+        "data_saida" TEXT,
+        "created_at" TEXT,
+        "deleted_at" TEXT
+    );
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "tipo" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_id" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_nome" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_id" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_nome" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
   `,
   Lote: `
     CREATE TABLE IF NOT EXISTS "Lote" (
@@ -149,6 +190,7 @@ const ensureTableQuery = {
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "descontar_estoque" INTEGER DEFAULT 0;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT;
     ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "data_cancelamento" TEXT;
+    ALTER TABLE "PedidoSatelite" ADD COLUMN IF NOT EXISTS "saida_gerada" INTEGER DEFAULT 0;
   `,
   TransferenciaPendente: `
     CREATE TABLE IF NOT EXISTS "TransferenciaPendente" (
@@ -166,6 +208,10 @@ const ensureTableQuery = {
         "deleted_at" TEXT
     );
     ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
+    ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "pedido_id" TEXT;
+    ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "pedido_codigo" TEXT;
+    ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "origem" TEXT;
+    ALTER TABLE "TransferenciaPendente" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
   `,
   Usuario: `
     CREATE TABLE IF NOT EXISTS "Usuario" (
