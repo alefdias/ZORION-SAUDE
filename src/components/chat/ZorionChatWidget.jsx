@@ -9,17 +9,20 @@ import {
   ArrowLeft, 
   Check,
   CheckCheck, 
-  Circle, 
   ChevronDown,
   Building2,
   Stethoscope,
   Pill,
   UserCheck,
   ArrowLeftRight,
-  Sparkles,
   Shield,
   Layers,
-  Hospital
+  Hospital,
+  MessageCircle,
+  UserPlus,
+  MessageSquarePlus,
+  Lock,
+  Megaphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatService, CHAT_CHANNELS } from "@/api/chatService";
@@ -89,8 +92,9 @@ function playMessageReceivedSound() {
 
 export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("canais"); // "canais" | "equipe" | "dm"
-  const [selectedChannelId, setSelectedChannelId] = useState("central_satelite"); // Inicia prioritariamente em Satélite ⇄ Central
+  // Inicia prioritariamente em "conversas" (Minhas Conversas Privadas por Login)
+  const [activeTab, setActiveTab] = useState("conversas"); // "conversas" | "equipe" | "dm" | "canais"
+  const [selectedChannelId, setSelectedChannelId] = useState("central_satelite");
   const [activeContact, setActiveContact] = useState(null); // Funcionário selecionado para DM
   
   // Status de presença pessoal do usuário logado
@@ -105,6 +109,10 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     return localStorage.getItem("zorion_chat_selected_module") || null;
   });
 
+  // Lista de conversas ativas do usuário logado
+  const [userConversations, setUserConversations] = useState([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
   // Lista de funcionários e pesquisa
   const [staffList, setStaffList] = useState([]);
   const [searchStaff, setSearchStaff] = useState("");
@@ -117,32 +125,43 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  // Identificação universal do usuário logado
+  // Identificação universal e estrita do usuário logado pelo seu LOGIN e ID
   const currentUser = useMemo(() => {
-    if (propUser && propUser.id) return propUser;
-    try {
-      const stored = 
-        sessionStorage.getItem("axion_active_user") ||
-        localStorage.getItem("pharma_user") ||
-        sessionStorage.getItem("zorion_medico_user") ||
-        sessionStorage.getItem("zorion_recepcao_user");
-      if (stored) {
-        const u = JSON.parse(stored);
-        return {
-          id: u.id || u.username || u.login || "user-temp-id",
-          nome: u.nome || u.username || "Farmacêutico(a)",
-          cargo: u.cargo || u.perfil || "Farmácia Central",
-          crm: u.crm || "",
-          coren: u.coren || "",
-          crf: u.crf || "",
-          login: u.login || u.username || ""
-        };
-      }
-    } catch {}
-    return { id: "user-default", nome: "Farmacêutico(a)", cargo: "Farmácia Central" };
+    let u = propUser;
+    if (!u || (!u.id && !u.login)) {
+      try {
+        const stored = 
+          sessionStorage.getItem("axion_active_user") ||
+          localStorage.getItem("pharma_user") ||
+          sessionStorage.getItem("zorion_medico_user") ||
+          sessionStorage.getItem("zorion_recepcao_user");
+        if (stored) {
+          u = JSON.parse(stored);
+        }
+      } catch {}
+    }
+    if (u) {
+      const login = String(u.login || u.username || "").trim();
+      const id = String(u.id || login || "user-temp-id").trim();
+      return {
+        id,
+        login: login || id,
+        nome: u.nome || u.full_name || u.username || login || "Usuário",
+        cargo: u.cargo || u.perfil || "Colaborador",
+        crm: u.crm || "",
+        coren: u.coren || "",
+        crf: u.crf || "",
+        modulo_ativo: u.modulo_ativo || ""
+      };
+    }
+    return { id: "user-default", login: "default", nome: "Usuário", cargo: "Colaborador" };
   }, [propUser]);
 
-  // Identificação inteligente do módulo atual
+  // Chaves padronizadas do usuário atual
+  const currentUserId = currentUser.id || currentUser.login;
+  const currentUserLogin = currentUser.login || currentUser.id;
+
+  // Identificação do módulo atual
   const currentModulo = useMemo(() => {
     if (manualModule) return manualModule;
     if (activeSection?.id === "satelite") return "Satélite";
@@ -153,15 +172,18 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     return "Central";
   }, [manualModule, activeSection]);
 
-  const currentUserId = currentUser.id || currentUser.login;
-
-  // Canal atual: geral, canal modular ou DM específico
+  // Canal atual: geral, canal modular ou DM específico estritamente privado
   const currentCanal = useMemo(() => {
     if (activeTab === "dm" && activeContact) {
-      return ChatService.getDmChannel(currentUserId, activeContact.id || activeContact.login);
+      const myKey = currentUserId || currentUserLogin;
+      const otherKey = activeContact.id || activeContact.login;
+      return ChatService.getDmChannel(myKey, otherKey);
     }
-    return selectedChannelId || "central_satelite";
-  }, [activeTab, activeContact, currentUserId, selectedChannelId]);
+    if (activeTab === "canais") {
+      return selectedChannelId || "central_satelite";
+    }
+    return null;
+  }, [activeTab, activeContact, currentUserLogin, currentUserId, selectedChannelId]);
 
   const activeChannelMeta = useMemo(() => {
     return CHAT_CHANNELS.find(c => c.id === selectedChannelId) || CHAT_CHANNELS[0];
@@ -182,25 +204,27 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
         setSelectedChannelId(e.detail.canal);
         setActiveTab("canais");
         setActiveContact(null);
+      } else if (e?.detail?.contact) {
+        handleStartDm(e.detail.contact);
       }
     };
     window.addEventListener("open_zorion_chat", handleExternalOpen);
     return () => window.removeEventListener("open_zorion_chat", handleExternalOpen);
   }, []);
 
-  // Heartbeat de Presença (a cada 18 segundos)
+  // Heartbeat de Presença do usuário atual
   useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId && !currentUserLogin) return;
 
     const ping = () => {
-      ChatService.updatePresence(currentUserId, myStatus, currentModulo);
+      ChatService.updatePresence(currentUserLogin || currentUserId, myStatus, currentModulo);
     };
 
     ping();
     const interval = setInterval(ping, 18000);
 
     const handleUnload = () => {
-      ChatService.updatePresence(currentUserId, "offline", currentModulo);
+      ChatService.updatePresence(currentUserLogin || currentUserId, "offline", currentModulo);
     };
     window.addEventListener("beforeunload", handleUnload);
 
@@ -208,14 +232,14 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
       clearInterval(interval);
       window.removeEventListener("beforeunload", handleUnload);
     };
-  }, [currentUserId, myStatus, currentModulo]);
+  }, [currentUserId, currentUserLogin, myStatus, currentModulo]);
 
   // Mudança de status pelo usuário
   const handleStatusChange = (newStatus) => {
     setMyStatus(newStatus);
     localStorage.setItem("zorion_my_status", newStatus);
     setStatusMenuOpen(false);
-    ChatService.updatePresence(currentUserId, newStatus, currentModulo);
+    ChatService.updatePresence(currentUserLogin || currentUserId, newStatus, currentModulo);
   };
 
   // Mudança explícita de módulo pelo usuário
@@ -223,23 +247,23 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     setManualModule(mod);
     localStorage.setItem("zorion_chat_selected_module", mod);
     setModuloMenuOpen(false);
-    ChatService.updatePresence(currentUserId, myStatus, mod);
+    ChatService.updatePresence(currentUserLogin || currentUserId, myStatus, mod);
   };
 
-  // Buscar lista de funcionários e status de DMs
+  // Buscar lista de funcionários e contagem de DMs
   const fetchStaff = async () => {
     try {
       const list = await ChatService.listStaff(currentUserId);
       setStaffList(list);
 
-      const dms = await ChatService.countUnreadDmsBySender(currentUserId);
+      const dms = await ChatService.countUnreadDmsBySender(currentUserId, currentUserLogin);
       setUnreadDms(dms);
     } catch (e) {
       console.warn("Erro ao buscar equipe:", e);
     }
   };
 
-  // Buscar contagem de não lidas por canal
+  // Buscar contagem de não lidas por canal de aviso
   const fetchUnreadChannels = async () => {
     try {
       const res = await ChatService.countUnreadByChannels(currentUserId, currentModulo);
@@ -249,18 +273,36 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     }
   };
 
-  // Buscar mensagens do canal ativo
-  const fetchMessages = async () => {
+  // Buscar conversas ativas privadas exclusivas do usuário logado
+  const fetchUserConversations = async () => {
+    if (!currentUserId && !currentUserLogin) return;
     try {
-      const list = await ChatService.list(currentCanal, 100);
+      setLoadingConversations(true);
+      const list = await ChatService.listUserConversations(currentUserId, currentUserLogin);
+      setUserConversations(list);
+    } catch (e) {
+      console.warn("Erro ao buscar conversas:", e);
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  // Buscar mensagens do canal ativo (apenas do canal atual com verificação de segurança)
+  const fetchMessages = async () => {
+    if (!currentCanal) return;
+    try {
+      const list = await ChatService.list(currentCanal, 100, currentUserId, currentUserLogin);
       setMessages(list);
 
       // Tocar som se mensagem nova não foi enviada por mim
       if (list.length > 0) {
         const last = list[list.length - 1];
         if (last && last.id !== lastMsgIdRef.current) {
-          const isFromMe = last.remetente_id === currentUserId || 
-                           last.remetente_usuario === currentUser.nome;
+          const isFromMe = 
+            String(last.remetente_id || "").toLowerCase() === String(currentUserLogin).toLowerCase() || 
+            String(last.remetente_id || "").toLowerCase() === String(currentUserId).toLowerCase() ||
+            last.remetente_usuario === currentUser.nome;
+
           if (!isFromMe && lastMsgIdRef.current !== null) {
             playMessageReceivedSound();
           }
@@ -269,23 +311,24 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
       }
 
       // Atualizar contadores
-      if (isOpen) {
-        await ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo);
+      if (isOpen && currentCanal) {
+        await ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo, currentUserLogin);
       }
       
       await fetchUnreadChannels();
-      const dms = await ChatService.countUnreadDmsBySender(currentUserId);
+      const dms = await ChatService.countUnreadDmsBySender(currentUserId, currentUserLogin);
       setUnreadDms(dms);
     } catch (e) {
       console.warn("Erro ao carregar mensagens:", e);
     }
   };
 
-  // Listeners em tempo real (Postgres LISTEN / NOTIFY e Polling de contingência)
+  // Listeners em tempo real (Postgres LISTEN / NOTIFY e Polling)
   useEffect(() => {
     fetchMessages();
     fetchStaff();
     fetchUnreadChannels();
+    fetchUserConversations();
 
     let unlistenUpdate;
     let unlistenChange;
@@ -296,11 +339,13 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
           fetchMessages();
           fetchStaff();
           fetchUnreadChannels();
+          fetchUserConversations();
         });
         unlistenChange = await listen("db_change", () => {
           fetchMessages();
           fetchStaff();
           fetchUnreadChannels();
+          fetchUserConversations();
         });
       } catch (e) {
         console.warn("Listeners chat aviso:", e);
@@ -309,8 +354,11 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
 
     setupListeners();
 
-    const msgTimer = setInterval(fetchMessages, isOpen ? 1800 : 4000);
-    const staffTimer = setInterval(fetchStaff, 6000);
+    const msgTimer = setInterval(fetchMessages, isOpen && currentCanal ? 1800 : 4000);
+    const staffTimer = setInterval(() => {
+      fetchStaff();
+      fetchUserConversations();
+    }, 5000);
 
     return () => {
       if (unlistenUpdate) unlistenUpdate();
@@ -318,43 +366,45 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
       clearInterval(msgTimer);
       clearInterval(staffTimer);
     };
-  }, [isOpen, currentCanal, currentUserId]);
+  }, [isOpen, currentCanal, currentUserId, currentUserLogin]);
 
   useEffect(() => {
-    if (isOpen && activeTab !== "equipe") {
+    if (isOpen && (activeTab === "dm" || activeTab === "canais") && currentCanal) {
       scrollToBottom();
-      ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo);
+      ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo, currentUserLogin);
     }
   }, [messages, isOpen, activeTab, currentCanal]);
 
-  // Envio de mensagem
+  // Envio de mensagem estritamente segura
   const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     const texto = inputText.trim();
-    if (!texto || isSending) return;
+    if (!texto || isSending || !currentCanal) return;
 
     setIsSending(true);
     try {
       const cargoStr = currentUser.crf ? `CRF ${currentUser.crf}` : 
+                       currentUser.crm ? `CRM ${currentUser.crm}` :
                        currentUser.cargo || currentModulo;
+
+      const destKey = activeTab === "dm" && activeContact ? (activeContact.id || activeContact.login) : null;
 
       await ChatService.send({
         canal: currentCanal,
         mensagem: texto,
-        remetente_id: currentUserId,
+        remetente_id: currentUserLogin || currentUserId,
         remetente_modulo: currentModulo,
         remetente_usuario: currentUser.nome,
         remetente_cargo: cargoStr,
-        destinatario_id: activeTab === "dm" && activeContact ? (activeContact.id || activeContact.login) : null,
+        destinatario_id: destKey,
         destinatario_nome: activeTab === "dm" && activeContact ? activeContact.nome : null,
         destinatario_modulo: activeTab === "dm" && activeContact ? activeContact.modulo_ativo : null
       });
 
-      // Tocar som de envio ao mandar a mensagem (estilo WhatsApp)
       playMessageSentSound();
-
       setInputText("");
       await fetchMessages();
+      await fetchUserConversations();
       scrollToBottom();
     } catch (e) {
       console.error("Falha ao enviar mensagem:", e);
@@ -378,10 +428,27 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     lastMsgIdRef.current = null;
   };
 
+  // Abrir conversa a partir do item da lista de conversas
+  const handleOpenConversation = (conv) => {
+    const match = staffList.find(s => 
+      String(s.login || "").toLowerCase() === String(conv.partnerId).toLowerCase() ||
+      String(s.id || "").toLowerCase() === String(conv.partnerId).toLowerCase()
+    );
+    const contact = match || {
+      id: conv.partnerId,
+      login: conv.partnerId,
+      nome: conv.partnerNome,
+      modulo_ativo: conv.partnerModulo,
+      cargo: conv.partnerCargo,
+      status_online: "offline"
+    };
+    handleStartDm(contact);
+  };
+
   // Total de não lidas para o badge do botão flutuante
   const totalUnreadBadge = (channelUnread?.total || 0) + (unreadDms?.total || 0);
 
-  // Filtragem da lista de funcionários
+  // Filtragem da lista de funcionários (evita o próprio usuário)
   const filteredStaff = useMemo(() => {
     let list = staffList;
     if (staffModuleFilter !== "todos") {
@@ -394,6 +461,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
       (s.crm || "").toLowerCase().includes(q) ||
       (s.coren || "").toLowerCase().includes(q) ||
       (s.crf || "").toLowerCase().includes(q) ||
+      (s.login || "").toLowerCase().includes(q) ||
       (s.modulo_ativo || "").toLowerCase().includes(q) ||
       (s.perfil || "").toLowerCase().includes(q)
     );
@@ -490,12 +558,15 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
             const nextState = !isOpen;
             setIsOpen(nextState);
             if (nextState) {
-              ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo);
+              if (currentCanal) {
+                ChatService.markAllAsRead(currentCanal, currentUserId, currentModulo, currentUserLogin);
+              }
               fetchStaff();
               fetchUnreadChannels();
+              fetchUserConversations();
             }
           }}
-          title={isOpen ? "Fechar Chat Zorion" : "Zorion Chat Multi-Módulos"}
+          title={isOpen ? "Fechar Chat Zorion" : "Zorion Chat - Conversas Privadas"}
           className={`group relative flex items-center justify-center w-14 h-14 rounded-full shadow-[0_10px_30px_rgba(2,132,199,0.4)] hover:shadow-[0_14px_40px_rgba(2,132,199,0.6)] hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer border-2 border-white/90 dark:border-slate-700 backdrop-blur-md ${
             isOpen
               ? "bg-slate-900 text-white"
@@ -540,11 +611,12 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <button
                   onClick={() => {
-                    setActiveTab("equipe");
+                    setActiveTab("conversas");
                     setActiveContact(null);
+                    fetchUserConversations();
                   }}
                   className="p-1.5 rounded-xl hover:bg-white/20 text-white transition-colors cursor-pointer shrink-0"
-                  title="Voltar para a lista de equipe"
+                  title="Voltar para Minhas Conversas"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
@@ -578,18 +650,21 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                 </div>
               </div>
             ) : (
-              // Topo no Modo Normal
-              <div className="flex items-center gap-2 min-w-0">
+              // Topo no Modo Normal: Exibe identidade clara do usuário logado
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <div className="w-9 h-9 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/20 text-white shadow-xs shrink-0">
                   <MessagesSquare className="w-4 h-4" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="font-black text-sm tracking-tight text-white flex items-center gap-1">
                       Zorion Chat
                     </h3>
-                    <span className="text-[9px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-1.5 py-0.2 rounded-full font-bold">
-                      {onlineCount} online
+                    <span 
+                      title={`Seu login: @${currentUserLogin}`} 
+                      className="text-[10px] bg-sky-400/25 text-sky-100 border border-sky-300/40 px-2 py-0.2 rounded-full font-bold truncate max-w-[150px]"
+                    >
+                      @{currentUserLogin}
                     </span>
                   </div>
 
@@ -598,7 +673,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                     <button
                       onClick={() => setModuloMenuOpen(!moduloMenuOpen)}
                       className="text-[10px] font-bold text-sky-100 hover:text-white flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-lg border border-white/15 transition-all cursor-pointer"
-                      title="Clique para alternar seu módulo atual de envio"
+                      title="Clique para alternar seu módulo atual"
                     >
                       <span>Módulo: <strong>{currentModulo}</strong></span>
                       <ChevronDown className="w-2.5 h-2.5 opacity-80" />
@@ -643,10 +718,8 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
               </div>
             )}
 
-            {/* Ações do Header (Seletor de Meu Status + Fechar) */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              
-              {/* Seletor do Próprio Status */}
+            {/* Ações do Topo Direito (Status do Usuário e Fechar) */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
               <div className="relative">
                 <button
                   onClick={() => setStatusMenuOpen(!statusMenuOpen)}
@@ -708,29 +781,75 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-1.5 rounded-xl hover:bg-white/20 text-white/90 hover:text-white transition-colors cursor-pointer"
-                title="Minimizar"
+                title="Minimizar Chat"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Abas Principais (Canais dos Módulos vs Equipe) */}
+          {/* Abas Principais: Foco em Conversas Privadas por Usuário */}
           <div className="bg-slate-100/90 dark:bg-slate-800/80 px-2 py-1.5 border-b border-slate-200/80 dark:border-slate-700 flex items-center gap-1.5 shrink-0">
+            
+            {/* Aba 1: Minhas Conversas Privadas */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("conversas");
+                setActiveContact(null);
+                fetchUserConversations();
+              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                activeTab === "conversas"
+                  ? "bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200/60"
+              }`}
+              title="Apenas as suas conversas privadas associadas ao seu login"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-sky-600" />
+              <span>Conversas</span>
+              {unreadDms?.total > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
+                  {unreadDms.total}
+                </span>
+              )}
+            </button>
+
+            {/* Aba 2: Nova Conversa / Lista de Equipe */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("equipe");
+                setActiveContact(null);
+                fetchStaff();
+              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                activeTab === "equipe"
+                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200/60"
+              }`}
+              title="Iniciar conversa privada com qualquer colaborador"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Nova / Equipe</span>
+            </button>
+
+            {/* Aba 3: Mural Coletivo de Avisos */}
             <button
               type="button"
               onClick={() => {
                 setActiveTab("canais");
                 setActiveContact(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                 activeTab === "canais"
-                  ? "bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200/60"
+                  ? "bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 shadow-xs"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200/60"
               }`}
+              title="Mural de avisos gerais entre setores"
             >
-              <Layers className="w-3.5 h-3.5 text-sky-600" />
-              <span>Canais & Módulos</span>
+              <Megaphone className="w-3.5 h-3.5 text-amber-500" />
+              <span>Mural</span>
               {channelUnread?.total > 0 && (
                 <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
                   {channelUnread.total}
@@ -738,89 +857,135 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab("equipe")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                activeTab === "equipe"
-                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200/60"
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Equipe & Status</span>
-              {unreadDms?.total > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                  {unreadDms.total}
-                </span>
-              )}
-            </button>
-
+            {/* Indicador no Modo DM */}
             {activeTab === "dm" && activeContact && (
-              <div className="px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold border border-indigo-200/60 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping"></span>
-                <span>1 a 1</span>
+              <div className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold border border-indigo-200/60 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-indigo-500" />
+                <span>Privado</span>
               </div>
             )}
           </div>
 
-          {/* Sub-Header com Seletor dos Módulos / Canais (Quando na aba Canais) */}
-          {activeTab === "canais" && (
-            <div className="bg-white dark:bg-slate-900 px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 shadow-xs">
-              {CHAT_CHANNELS.map((ch) => {
-                const isSelected = selectedChannelId === ch.id;
-                const unread = channelUnread?.byChannel?.[ch.id] || 0;
+          {/* ================================================================= */}
+          {/* CONTEÚDO PRINCIPAL: ABA "CONVERSAS" (INBOX PRIVADO DO USUÁRIO)    */}
+          {/* ================================================================= */}
+          {activeTab === "conversas" && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/40">
+              
+              {/* Banner de Confidencialidade e Login */}
+              <div className="px-3 py-2 bg-sky-50/80 dark:bg-sky-950/30 border-b border-sky-100 dark:border-sky-900/40 flex items-center justify-between text-[11px] text-sky-900 dark:text-sky-300">
+                <div className="flex items-center gap-1.5 font-medium truncate">
+                  <Lock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span className="truncate">
+                    Chat Privado de: <strong>{currentUser.nome}</strong> (@{currentUserLogin})
+                  </span>
+                </div>
+                <button
+                  onClick={() => setActiveTab("equipe")}
+                  className="px-2 py-0.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <MessageSquarePlus className="w-3 h-3" />
+                  <span>Nova</span>
+                </button>
+              </div>
 
-                // Estilos específicos por módulo
-                let iconComponent = <Radio className="w-3.5 h-3.5" />;
-                let activeStyle = "bg-slate-900 text-white";
+              {/* Lista de Conversas Recentes */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {loadingConversations ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                    Carregando suas conversas...
+                  </div>
+                ) : userConversations.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-6 space-y-3">
+                    <div className="w-14 h-14 rounded-3xl bg-sky-50 dark:bg-sky-950/50 border border-sky-100 dark:border-sky-900 flex items-center justify-center text-sky-500">
+                      <Lock className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-slate-700 dark:text-slate-200">
+                        Nenhuma conversa ativa ainda
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-[260px] leading-relaxed">
+                        Suas conversas são 100% privadas para o seu login (@{currentUserLogin}). Ninguém mais tem acesso a elas.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => setActiveTab("equipe")}
+                      size="sm"
+                      className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Iniciar Conversa com um Colega</span>
+                    </Button>
+                  </div>
+                ) : (
+                  userConversations.map((conv) => {
+                    const matchStaff = staffList.find(s => 
+                      String(s.login || "").toLowerCase() === String(conv.partnerId).toLowerCase() ||
+                      String(s.id || "").toLowerCase() === String(conv.partnerId).toLowerCase()
+                    );
+                    const status = matchStaff?.status_online || "offline";
 
-                if (ch.id === "central_satelite") {
-                  iconComponent = <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400" />;
-                  activeStyle = "bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-sky-500/20";
-                } else if (ch.id === "modulo_central") {
-                  iconComponent = <Building2 className="w-3.5 h-3.5 text-blue-400" />;
-                  activeStyle = "bg-blue-600 text-white shadow-blue-500/20";
-                } else if (ch.id === "modulo_satelite") {
-                  iconComponent = <Pill className="w-3.5 h-3.5 text-emerald-400" />;
-                  activeStyle = "bg-emerald-600 text-white shadow-emerald-500/20";
-                } else if (ch.id === "modulo_recepcao") {
-                  iconComponent = <Hospital className="w-3.5 h-3.5 text-purple-400" />;
-                  activeStyle = "bg-purple-600 text-white shadow-purple-500/20";
-                }
+                    return (
+                      <div
+                        key={conv.partnerId}
+                        onClick={() => handleOpenConversation(conv)}
+                        className="group relative p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700 hover:shadow-md cursor-pointer transition-all duration-200 flex items-center justify-between gap-3"
+                      >
+                        {/* Avatar com status */}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="relative shrink-0">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-100 to-indigo-100 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center font-black text-sky-800 dark:text-slate-200 text-sm border border-slate-200 dark:border-slate-700 shadow-xs">
+                              {(conv.partnerNome || "U").charAt(0).toUpperCase()}
+                            </div>
+                            <span 
+                              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                                status === "online" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" :
+                                status === "ausente" ? "bg-amber-500" :
+                                status === "ocupado" ? "bg-rose-500" : "bg-slate-300 dark:bg-slate-600"
+                              }`}
+                              title={status}
+                            />
+                          </div>
 
-                return (
-                  <button
-                    key={ch.id}
-                    onClick={() => {
-                      setSelectedChannelId(ch.id);
-                      setMessages([]);
-                      lastMsgIdRef.current = null;
-                      ChatService.markAllAsRead(ch.id, currentUserId, currentModulo);
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-200 cursor-pointer shadow-xs ${
-                      isSelected
-                        ? `${activeStyle} shadow-md scale-102`
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200/70"
-                    }`}
-                  >
-                    {iconComponent}
-                    <span>{ch.nome}</span>
-                    {unread > 0 && (
-                      <span className="ml-1 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
-                        {unread}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                                {conv.partnerNome}
+                              </h4>
+                              {renderModuloBadge(conv.partnerModulo)}
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 max-w-[210px]">
+                              {conv.lastMessageFromMe && <span className="font-semibold text-sky-600 dark:text-sky-400">Você: </span>}
+                              {conv.lastMessage}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Hora e Badge de Não Lidas */}
+                        <div className="flex flex-col items-end shrink-0 gap-1">
+                          <span className="text-[9px] text-slate-400 font-medium">
+                            {formatHora(conv.lastMessageTime)}
+                          </span>
+
+                          {conv.unreadCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black shadow-xs animate-pulse">
+                              {conv.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
 
           {/* ================================================================= */}
-          {/* CONTEÚDO PRINCIPAL - ABA EQUIPE */}
+          {/* CONTEÚDO PRINCIPAL: ABA "EQUIPE & NOVA CONVERSA"                  */}
           {/* ================================================================= */}
-          {activeTab === "equipe" ? (
+          {activeTab === "equipe" && (
             <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/40">
               
               {/* Filtros de Módulo da Equipe */}
@@ -853,7 +1018,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                     type="text"
                     value={searchStaff}
                     onChange={(e) => setSearchStaff(e.target.value)}
-                    placeholder="Buscar colaborador por nome, CRM, CRF..."
+                    placeholder="Buscar colega por nome, cargo, CRM, CRF..."
                     className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                   {searchStaff && (
@@ -878,8 +1043,11 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                   </div>
                 ) : (
                   filteredStaff.map((person) => {
-                    const isSelf = person.isSelf;
-                    const unreadForPerson = unreadDms?.bySender?.[person.id || person.login] || 0;
+                    const isSelf = 
+                      (person.login && String(person.login).toLowerCase() === String(currentUserLogin).toLowerCase()) ||
+                      (person.id && String(person.id).toLowerCase() === String(currentUserId).toLowerCase());
+
+                    const unreadForPerson = unreadDms?.bySender?.[person.login] || unreadDms?.bySender?.[person.id] || 0;
 
                     return (
                       <div
@@ -913,8 +1081,8 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                                 {person.nome}
                               </h4>
                               {isSelf && (
-                                <span className="bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[9px] font-extrabold px-1 py-0.2 rounded-md">
-                                  Você
+                                <span className="bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md">
+                                  Você (@{currentUserLogin})
                                 </span>
                               )}
                               {renderModuloBadge(person.modulo_ativo)}
@@ -950,86 +1118,169 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                 )}
               </div>
             </div>
-          ) : (
-            // =================================================================
-            // CONTEÚDO PRINCIPAL - ABA CANAIS OU ABA CONVERSA DIRETA (DM)
-            // =================================================================
+          )}
+
+          {/* ================================================================= */}
+          {/* CONTEÚDO PRINCIPAL: MURAL DE AVISOS GERAIS                        */}
+          {/* ================================================================= */}
+          {activeTab === "canais" && (
             <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/60 dark:bg-slate-950/40">
               
-              {/* Banner Informativo do Canal Ativo */}
-              {activeTab === "canais" && (
-                <div className={`px-3 py-1.5 border-b text-[11px] flex items-center justify-between ${
-                  selectedChannelId === "central_satelite" 
-                    ? "bg-sky-50 dark:bg-sky-950/40 border-sky-100 dark:border-sky-900/60 text-sky-800 dark:text-sky-300"
-                    : selectedChannelId === "modulo_central"
-                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-100 dark:border-blue-900/60 text-blue-800 dark:text-blue-300"
-                    : selectedChannelId === "modulo_satelite"
-                    ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/60 text-emerald-800 dark:text-emerald-300"
-                    : selectedChannelId === "modulo_recepcao"
-                    ? "bg-purple-50 dark:bg-purple-950/40 border-purple-100 dark:border-purple-900/60 text-purple-800 dark:text-purple-300"
-                    : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
-                }`}>
-                  <span className="font-semibold truncate">
-                    {activeChannelMeta?.descricao}
-                  </span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-white/70 dark:bg-slate-900/70 shadow-2xs shrink-0">
-                    {activeChannelMeta?.tag}
-                  </span>
-                </div>
-              )}
+              {/* Seletor dos Canais do Mural */}
+              <div className="bg-white dark:bg-slate-900 px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 shadow-xs">
+                {CHAT_CHANNELS.map((ch) => {
+                  const isSelected = selectedChannelId === ch.id;
+                  const unread = channelUnread?.byChannel?.[ch.id] || 0;
 
-              {/* Lista de Mensagens */}
+                  return (
+                    <button
+                      key={ch.id}
+                      onClick={() => {
+                        setSelectedChannelId(ch.id);
+                        setMessages([]);
+                        lastMsgIdRef.current = null;
+                        ChatService.markAllAsRead(ch.id, currentUserId, currentModulo, currentUserLogin);
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-200 cursor-pointer shadow-xs ${
+                        isSelected
+                          ? "bg-slate-900 text-white shadow-md scale-102"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <span>{ch.nome}</span>
+                      {unread > 0 && (
+                        <span className="ml-1 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
+                          {unread}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Banner Informativo do Mural Público */}
+              <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/60 dark:border-amber-900/40 text-[10px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
+                <span>📢 <strong>Mural Público:</strong> Mensagens postadas aqui são visíveis para todos os operadores.</span>
+                <span className="font-bold px-1.5 py-0.2 rounded bg-white/70 dark:bg-slate-900/70 shadow-2xs">
+                  {activeChannelMeta?.tag}
+                </span>
+              </div>
+
+              {/* Lista de Mensagens do Mural */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 text-xs p-6 space-y-2">
-                    {activeTab === "dm" ? (
-                      <>
-                        <UserCheck className="w-10 h-10 text-indigo-400/50 animate-pulse" />
-                        <p className="font-bold text-slate-700 dark:text-slate-200">
-                          Conversa Direta com {activeContact?.nome}
-                        </p>
-                        <p className="text-[11px] max-w-xs leading-relaxed">
-                          Canal 1-a-1 seguro e privado entre você e {activeContact?.nome}.
-                        </p>
-                      </>
-                    ) : selectedChannelId === "central_satelite" ? (
-                      <>
-                        <ArrowLeftRight className="w-10 h-10 text-sky-500/50 animate-pulse" />
-                        <p className="font-bold text-slate-700 dark:text-slate-200">
-                          Linha Direta: Satélite ⇄ Central
-                        </p>
-                        <p className="text-[11px] max-w-xs leading-relaxed">
-                          Comunicação rápida para reposições, pedidos urgentes e dúvidas técnicas entre a Farmácia Satélite e a Central.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <MessagesSquare className="w-10 h-10 text-sky-400/50 animate-bounce" />
-                        <p className="font-bold text-slate-700 dark:text-slate-200">
-                          {activeChannelMeta?.nome}
-                        </p>
-                        <p className="text-[11px] max-w-xs leading-relaxed">
-                          {activeChannelMeta?.descricao}
-                        </p>
-                      </>
-                    )}
+                    <MessagesSquare className="w-10 h-10 text-slate-300 animate-bounce" />
+                    <p className="font-bold text-slate-700 dark:text-slate-200">
+                      {activeChannelMeta?.nome}
+                    </p>
+                    <p className="text-[11px] max-w-xs leading-relaxed">
+                      {activeChannelMeta?.descricao}
+                    </p>
                   </div>
                 ) : (
                   messages.map((m) => {
-                    const isMe = m.remetente_id === currentUserId || 
-                                 m.remetente_usuario === currentUser.nome;
+                    const isMe = 
+                      String(m.remetente_id || "").toLowerCase() === String(currentUserLogin).toLowerCase() ||
+                      String(m.remetente_id || "").toLowerCase() === String(currentUserId).toLowerCase() ||
+                      m.remetente_usuario === currentUser.nome;
+
+                    return (
+                      <div key={m.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                        <div className="flex items-center gap-1.5 mb-1 px-1 text-[10px] text-slate-400 font-semibold">
+                          {renderModuloBadge(m.remetente_modulo)}
+                          <span>•</span>
+                          <span className="text-slate-600 dark:text-slate-300 font-bold">
+                            {m.remetente_usuario}
+                          </span>
+                        </div>
+                        <div
+                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs break-words shadow-2xs ${
+                            isMe
+                              ? "bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-tr-xs"
+                              : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 rounded-tl-xs"
+                          }`}
+                        >
+                          <p className="leading-relaxed whitespace-pre-wrap">{m.mensagem}</p>
+                          <div className={`text-[9px] mt-1 flex items-center justify-end gap-1 ${isMe ? "text-sky-100" : "text-slate-400"}`}>
+                            <span>{formatHora(m.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Campo de Envio no Mural */}
+              <form
+                onSubmit={handleSendMessage}
+                className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800 flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Postar aviso no canal ${activeChannelMeta?.nome}...`}
+                  disabled={isSending}
+                  className="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={!inputText.trim() || isSending}
+                  className="w-10 h-10 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white shrink-0 shadow-md cursor-pointer disabled:opacity-50 transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </form>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* CONTEÚDO PRINCIPAL: CHAT PRIVADO 1-A-1 (DM)                       */}
+          {/* ================================================================= */}
+          {activeTab === "dm" && activeContact && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/60 dark:bg-slate-950/40">
+              
+              {/* Banner de Segurança: Ninguém vê esta conversa */}
+              <div className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/60 text-[10px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>Conversa Privada e Confidencial:</strong> Visível apenas para você (@{currentUserLogin}) e {activeContact.nome}.
+                </span>
+              </div>
+
+              {/* Lista de Mensagens da Conversa Privada */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 text-xs p-6 space-y-2">
+                    <UserCheck className="w-10 h-10 text-sky-500/50 animate-pulse" />
+                    <p className="font-bold text-slate-700 dark:text-slate-200">
+                      Conversa Direta com {activeContact?.nome}
+                    </p>
+                    <p className="text-[11px] max-w-xs leading-relaxed">
+                      Envie uma mensagem abaixo. Este diálogo é estritamente confidencial e ninguém mais no hospital tem acesso.
+                    </p>
+                  </div>
+                ) : (
+                  messages.map((m) => {
+                    const isMe = 
+                      String(m.remetente_id || "").toLowerCase() === String(currentUserLogin).toLowerCase() ||
+                      String(m.remetente_id || "").toLowerCase() === String(currentUserId).toLowerCase() ||
+                      m.remetente_usuario === currentUser.nome;
 
                     return (
                       <div
                         key={m.id}
                         className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                       >
-                        {/* Metadados do Remetente */}
+                        {/* Remetente */}
                         <div className="flex items-center gap-1.5 mb-1 px-1 text-[10px] text-slate-400 font-semibold">
-                          {renderModuloBadge(m.remetente_modulo)}
-                          <span>•</span>
                           <span className="text-slate-600 dark:text-slate-300 font-bold">
-                            {m.remetente_usuario}
+                            {isMe ? "Você" : m.remetente_usuario}
                           </span>
                           {m.remetente_cargo && (
                             <span className="text-[9px] text-slate-400 font-normal">
@@ -1056,11 +1307,11 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                             {isMe && (
                               <div className="flex items-center ml-0.5">
                                 {(m.lida === true || m.lida === 1 || m.lida === "t" || m.lida === "true") ? (
-                                  <span title="Visualizada (2 pontos)" className="flex items-center text-sky-300 drop-shadow-[0_0_2px_rgba(56,189,248,0.8)]">
+                                  <span title="Visualizada" className="flex items-center text-sky-300 drop-shadow-[0_0_2px_rgba(56,189,248,0.8)]">
                                     <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
                                   </span>
                                 ) : (
-                                  <span title="Enviada (1 ponto - aguardando visualização)" className="flex items-center text-white/70">
+                                  <span title="Enviada" className="flex items-center text-white/70">
                                     <Check className="w-3.5 h-3.5 stroke-[2.2]" />
                                   </span>
                                 )}
@@ -1075,7 +1326,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Campo de Envio de Mensagem */}
+              {/* Campo de Envio de Mensagem Privada */}
               <form
                 onSubmit={handleSendMessage}
                 className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800 flex items-center gap-2"
@@ -1085,13 +1336,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={
-                    activeTab === "dm" && activeContact
-                      ? `Mensagem direta para ${activeContact.nome}...`
-                      : selectedChannelId === "central_satelite"
-                      ? "Mensagem para Satélite ⇄ Central..."
-                      : `Mensagem no canal ${activeChannelMeta?.nome}...`
-                  }
+                  placeholder={`Mensagem privada para ${activeContact.nome}...`}
                   disabled={isSending}
                   className="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
@@ -1112,3 +1357,5 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
     </>
   );
 }
+
+export default ZorionChatWidget;

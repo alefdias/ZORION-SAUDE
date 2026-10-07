@@ -190,6 +190,8 @@ export default function Layout({ children, currentPageName }) {
         const u = JSON.parse(stored);
         setUser({
           ...u,
+          id: u.id || u.login || u.username || "admin",
+          login: u.login || u.username || "admin",
           full_name: u.nome || u.username || u.login || "Administrador",
           cargo: u.cargo || u.perfil || "Administrador"
         });
@@ -401,7 +403,7 @@ export default function Layout({ children, currentPageName }) {
       <LiveClock />
 
       {/* Chat Zorion Flutuante no Canto Inferior Direito */}
-      <ZorionChatWidget activeSection={activeSection} />
+      <ZorionChatWidget activeSection={activeSection} currentUser={user} />
     </div>
   );
 }

@@ -85,6 +85,8 @@ export async function ensureChatTable() {
       ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "destinatario_nome" TEXT;
       ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "destinatario_modulo" TEXT;
       CREATE INDEX IF NOT EXISTS "idx_chat_canal_created" ON "ChatMessage" ("canal", "created_at");
+      CREATE INDEX IF NOT EXISTS "idx_chat_remetente" ON "ChatMessage" ("remetente_id");
+      CREATE INDEX IF NOT EXISTS "idx_chat_destinatario" ON "ChatMessage" ("destinatario_id");
 
       ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "status_online" TEXT DEFAULT 'offline';
       ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "ultimo_acesso" TEXT;
@@ -103,10 +105,13 @@ export const ChatService = {
     return CHAT_CHANNELS;
   },
 
-  // Gera o identificador determinístico do canal 1-a-1
+  // Gera o identificador determinístico do canal 1-a-1 estritamente privado
   getDmChannel(idA, idB) {
-    if (!idA || !idB) return "farmacia_recepcao";
-    const sorted = [String(idA).trim(), String(idB).trim()].sort();
+    if (!idA || !idB) return null;
+    const a = String(idA).toLowerCase().trim();
+    const b = String(idB).toLowerCase().trim();
+    if (!a || !b) return null;
+    const sorted = [a, b].sort();
     return `dm_${sorted[0]}_${sorted[1]}`;
   },
 
@@ -208,15 +213,33 @@ export const ChatService = {
     }
   },
 
-  // Busca mensagens de um canal (geral, módulo ou DM)
-  async list(canal = "farmacia_recepcao", limit = 100) {
+  // Busca mensagens de um canal com restrição estrita de privacidade
+  async list(canal = "farmacia_recepcao", limit = 100, currentUserId = null, currentUserLogin = null) {
     try {
       await ensureChatTable();
       const { ip, dbName, password } = getPgConfig();
       const safeCanal = (canal || "farmacia_recepcao").replace(/'/g, "''");
+      
+      let privacyFilter = "";
+      // PRIVACIDADE TOTAL: Em canais diretos (DM), NINGUÉM vê a conversa do outro!
+      if (safeCanal.startsWith("dm_")) {
+        if (!currentUserId && !currentUserLogin) {
+          return []; // Sem autenticação, não expõe nenhuma mensagem privada
+        }
+        const ids = [currentUserId, currentUserLogin]
+          .filter(Boolean)
+          .map(x => `'${String(x).toLowerCase().replace(/'/g, "''")}'`);
+        
+        privacyFilter = ` AND (
+          LOWER(COALESCE("remetente_id", '')) IN (${ids.join(", ")})
+          OR LOWER(COALESCE("destinatario_id", '')) IN (${ids.join(", ")})
+          OR LOWER("canal") LIKE '%${String(currentUserLogin || currentUserId).toLowerCase().replace(/'/g, "''")}%'
+        )`;
+      }
+
       const query = `
         SELECT * FROM "ChatMessage"
-        WHERE "canal" = '${safeCanal}' AND "deleted_at" IS NULL
+        WHERE "canal" = '${safeCanal}' AND "deleted_at" IS NULL ${privacyFilter}
         ORDER BY "created_at" DESC
         LIMIT ${limit};
       `;
@@ -360,18 +383,23 @@ export const ChatService = {
   },
 
   // Contagem de DMs não lidas agrupadas por remetente para a lista de funcionários
-  async countUnreadDmsBySender(currentUserId) {
-    if (!currentUserId) return { total: 0, bySender: {} };
+  async countUnreadDmsBySender(currentUserId, currentUserLogin = null) {
+    if (!currentUserId && !currentUserLogin) return { total: 0, bySender: {} };
     try {
       await ensureChatTable();
       const { ip, dbName, password } = getPgConfig();
-      const safeUid = String(currentUserId).replace(/'/g, "''");
+      const ids = [currentUserId, currentUserLogin]
+        .filter(Boolean)
+        .map(x => `'${String(x).toLowerCase().replace(/'/g, "''")}'`);
 
       const query = `
         SELECT "remetente_id", COUNT(*) as count 
         FROM "ChatMessage"
         WHERE "canal" LIKE 'dm_%'
-          AND ("destinatario_id" = '${safeUid}' OR ("destinatario_id" IS NULL AND "remetente_id" != '${safeUid}'))
+          AND (
+            LOWER(COALESCE("destinatario_id", '')) IN (${ids.join(", ")})
+            OR ("destinatario_id" IS NULL AND LOWER(COALESCE("remetente_id", '')) NOT IN (${ids.join(", ")}))
+          )
           AND "lida" = false
           AND "deleted_at" IS NULL
         GROUP BY "remetente_id";
@@ -383,6 +411,7 @@ export const ChatService = {
         const c = parseInt(r.count, 10) || 0;
         if (r.remetente_id) {
           bySender[r.remetente_id] = c;
+          bySender[String(r.remetente_id).toLowerCase()] = c;
         }
         total += c;
       }
@@ -392,17 +421,81 @@ export const ChatService = {
     }
   },
 
+  // Lista as conversas ativas exclusivas do usuário logado (Inbox / Minhas Conversas)
+  // Garante que ninguém vê a lista de conversas de outro usuário
+  async listUserConversations(currentUserId, currentUserLogin = null) {
+    if (!currentUserId && !currentUserLogin) return [];
+    try {
+      await ensureChatTable();
+      const { ip, dbName, password } = getPgConfig();
+      const myIds = [currentUserId, currentUserLogin]
+        .filter(Boolean)
+        .map(x => String(x).toLowerCase().trim());
+      const idsClause = myIds.map(x => `'${x.replace(/'/g, "''")}'`).join(", ");
+
+      const query = `
+        SELECT * FROM "ChatMessage"
+        WHERE "canal" LIKE 'dm_%'
+          AND "deleted_at" IS NULL
+          AND (
+            LOWER(COALESCE("remetente_id", '')) IN (${idsClause})
+            OR LOWER(COALESCE("destinatario_id", '')) IN (${idsClause})
+          )
+        ORDER BY "created_at" DESC;
+      `;
+      const rows = await invoke("query_postgres", { ip, dbName, password, query });
+      if (!rows || rows.length === 0) return [];
+
+      const conversationsMap = new Map();
+
+      for (const msg of rows) {
+        const remLower = String(msg.remetente_id || "").toLowerCase().trim();
+        const isFromMe = myIds.includes(remLower);
+        const partnerKey = isFromMe 
+          ? String(msg.destinatario_id || "").toLowerCase().trim()
+          : remLower;
+
+        if (!partnerKey) continue;
+
+        if (!conversationsMap.has(partnerKey)) {
+          conversationsMap.set(partnerKey, {
+            partnerId: partnerKey,
+            partnerNome: isFromMe ? (msg.destinatario_nome || "Colaborador") : (msg.remetente_usuario || "Colaborador"),
+            partnerModulo: isFromMe ? (msg.destinatario_modulo || "Geral") : (msg.remetente_modulo || "Geral"),
+            partnerCargo: isFromMe ? "" : (msg.remetente_cargo || ""),
+            lastMessage: msg.mensagem,
+            lastMessageTime: msg.created_at,
+            lastMessageFromMe: isFromMe,
+            unreadCount: (!msg.lida && !isFromMe) ? 1 : 0
+          });
+        } else {
+          const conv = conversationsMap.get(partnerKey);
+          if (!msg.lida && !isFromMe) {
+            conv.unreadCount += 1;
+          }
+        }
+      }
+
+      return Array.from(conversationsMap.values());
+    } catch (e) {
+      console.warn("Erro ao buscar conversas do usuário:", e);
+      return [];
+    }
+  },
+
   // Marca todas como lidas em um canal
-  async markAllAsRead(canal = "farmacia_recepcao", currentUserId = null, currentModule = "Geral") {
+  async markAllAsRead(canal = "farmacia_recepcao", currentUserId = null, currentModule = "Geral", currentUserLogin = null) {
     try {
       await ensureChatTable();
       const { ip, dbName, password } = getPgConfig();
       const safeCanal = (canal || "farmacia_recepcao").replace(/'/g, "''");
       
       let filter = "";
-      if (currentUserId) {
-        const safeUid = String(currentUserId).replace(/'/g, "''");
-        filter = `AND ("remetente_id" IS NULL OR "remetente_id" != '${safeUid}')`;
+      if (currentUserId || currentUserLogin) {
+        const ids = [currentUserId, currentUserLogin]
+          .filter(Boolean)
+          .map(x => `'${String(x).toLowerCase().replace(/'/g, "''")}'`);
+        filter = `AND ("remetente_id" IS NULL OR LOWER(COALESCE("remetente_id", '')) NOT IN (${ids.join(", ")}))`;
       } else {
         const safeMod = (currentModule || "").replace(/'/g, "''");
         filter = `AND "remetente_modulo" != '${safeMod}'`;

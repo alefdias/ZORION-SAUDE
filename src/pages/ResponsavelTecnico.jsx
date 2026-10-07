@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
-import { Users, UserPlus, ShieldCheck, Key, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText, Building2, Pill, Stethoscope, BadgeCheck, Eye, EyeOff, Lock, Sparkles, HeartHandshake, Boxes } from "lucide-react";
+import { Users, UserPlus, ShieldCheck, Key, KeyRound, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText, Building2, Pill, Stethoscope, BadgeCheck, Eye, EyeOff, Lock, Sparkles, HeartHandshake, Boxes } from "lucide-react";
 import { toast } from "sonner";
 import { getLogs } from "../lib/logger";
 import { db } from "@/api/db";
@@ -118,6 +117,10 @@ export default function ResponsavelTecnico() {
   const [enfermagemSearchQuery, setEnfermagemSearchQuery] = useState("");
   const [enfermagemCargoFilter, setEnfermagemCargoFilter] = useState("todos");
   const [previewCarimboMedico, setPreviewCarimboMedico] = useState(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState(null);
+  const [newTempPassword, setNewTempPassword] = useState("");
+  const [showTempPassword, setShowTempPassword] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const ESTADOS_BRASIL = [
     "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
@@ -210,8 +213,8 @@ export default function ResponsavelTecnico() {
         return {
           id: u.id,
           nome: u.nome,
+          login: u.login,
           username: u.login,
-          password: u.senha,
           cargo: u.perfil || u.cargo,
           perfil: u.perfil || u.cargo,
           coren: u.coren,
@@ -220,7 +223,8 @@ export default function ResponsavelTecnico() {
           especialidade: u.especialidade,
           modulos: userModules,
           modules: userModules,
-          first_login: u.primeiro_acesso !== false
+          first_login: u.primeiro_acesso !== false,
+          primeiro_acesso: u.primeiro_acesso
         };
       });
       localStorage.setItem("axion_users", JSON.stringify(localUsers));
@@ -357,8 +361,16 @@ export default function ResponsavelTecnico() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!username || !password || !nome) {
-      toast.error("Preencha todos os campos obrigatórios (Nome, Login e Senha)");
+    if (!username || !nome) {
+      toast.error("Preencha todos os campos obrigatórios (Nome e Login)");
+      return;
+    }
+    if (!editingId && (!password || password.trim().length < 3)) {
+      toast.error("Defina uma senha provisória de pelo menos 3 caracteres para o novo colaborador.");
+      return;
+    }
+    if (editingId && password && password.trim().length < 3) {
+      toast.error("A nova senha provisória deve ter pelo menos 3 caracteres.");
       return;
     }
     if (!cargo) {
@@ -400,20 +412,30 @@ export default function ResponsavelTecnico() {
     try {
       if (editingId) {
         // update
-        await db.entities.Usuario.update(editingId, {
+        const updatePayload = {
            nome,
            login: username,
-           senha: password,
            perfil: cargo,
            cargo: cargo,
            coren: (cargo === 'enfermeiro' || cargo === 'tecnico_enfermagem') ? coren : "",
            crf: (cargo === 'farmaceutico' || cargo === 'administrador') ? crf : "",
            crm: cargo === 'medico' ? crmFinal : "",
            especialidade: cargo === 'medico' ? (especialidade || "Clínica Médica / Geral") : "",
-           modulos: JSON.stringify(finalModules),
-           primeiro_acesso: true
-        });
-        toast.success("Colaborador atualizado com sucesso no banco de dados!");
+           modulos: JSON.stringify(finalModules)
+        };
+
+        // O administrador nunca vê a senha atual. Se digitou uma nova, atualiza e força primeiro_acesso para o usuário criar a sua
+        if (password && password.trim()) {
+          updatePayload.senha = password.trim();
+          updatePayload.primeiro_acesso = true;
+        }
+
+        await db.entities.Usuario.update(editingId, updatePayload);
+        if (password && password.trim()) {
+          toast.success("Colaborador atualizado e nova senha provisória definida com sucesso!");
+        } else {
+          toast.success("Colaborador atualizado com sucesso no banco de dados!");
+        }
       } else {
         // create
         const data = await db.entities.Usuario.list();
@@ -425,7 +447,7 @@ export default function ResponsavelTecnico() {
         await db.entities.Usuario.create({
            nome,
            login: username,
-           senha: password,
+           senha: password.trim(),
            perfil: cargo,
            cargo: cargo,
            coren: (cargo === 'enfermeiro' || cargo === 'tecnico_enfermagem') ? coren : "",
@@ -435,7 +457,7 @@ export default function ResponsavelTecnico() {
            modulos: JSON.stringify(finalModules),
            primeiro_acesso: true
         });
-        toast.success("Colaborador cadastrado no Postgres com sucesso!");
+        toast.success("Colaborador cadastrado! No primeiro login, o sistema exigirá a criação de senha pessoal.");
       }
       
       resetForm();
@@ -477,11 +499,41 @@ export default function ResponsavelTecnico() {
     setShowForm(true);
   };
 
+  const handleOpenResetPasswordModal = (user) => {
+    setResetPasswordUser(user);
+    setNewTempPassword("123456");
+    setShowTempPassword(false);
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (!resetPasswordUser) return;
+    if (!newTempPassword || newTempPassword.trim().length < 3) {
+      toast.error("A senha provisória deve ter pelo menos 3 caracteres.");
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      await db.entities.Usuario.update(resetPasswordUser.id, {
+        senha: newTempPassword.trim(),
+        primeiro_acesso: true
+      });
+      toast.success(`Senha provisória definida para ${resetPasswordUser.nome}! O colaborador deverá criar uma nova senha no próximo acesso.`);
+      setResetPasswordUser(null);
+      setNewTempPassword("");
+      carregarUsuarios();
+    } catch (error) {
+      toast.error("Erro ao redefinir senha no banco: " + error.message);
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const handleEdit = (u) => {
     setEditingId(u.id);
     setNome(u.nome);
     setUsername(u.login || u.username);
-    setPassword(u.senha || u.password);
+    setPassword(""); // NUNCA carrega a senha antiga! Administrador não tem acesso à senha do usuário
     setShowPassword(false);
     setCoren(u.coren || "");
     setCrf(u.crf || "");
@@ -1172,27 +1224,43 @@ export default function ResponsavelTecnico() {
 
                 {/* Senha */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-blue-600" />
-                    Senha *
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-blue-600" />
+                      {editingId ? "Trocar Senha (Opcional)" : "Senha Provisória de Acesso *"}
+                    </span>
+                    {editingId && (
+                      <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" />
+                        Senha atual protegida
+                      </span>
+                    )}
                   </label>
                   <div className="relative">
                     <input
-                      required
+                      required={!editingId}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       type={showPassword ? "text" : "password"}
-                      className="w-full pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-mono font-medium outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all"
-                      placeholder="••••••••"
+                      className="w-full pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-xs sm:text-sm font-mono font-medium outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all placeholder:text-slate-400"
+                      placeholder={editingId ? "Deixe em branco para manter a senha atual..." : "Ex: 123456"}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    {password && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                        title={showPassword ? "Ocultar" : "Mostrar"}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    )}
                   </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                    {editingId 
+                      ? "O administrador não pode visualizar a senha pessoal do usuário. Digite uma nova senha provisória apenas se desejar trocá-la (o usuário criará uma nova senha ao entrar)."
+                      : "Defina uma senha provisória inicial. No 1º acesso, o colaborador deverá cadastrar sua própria senha pessoal."}
+                  </p>
                 </div>
               </div>
 
@@ -1659,6 +1727,13 @@ export default function ResponsavelTecnico() {
 
                         <td className="py-3.5 px-6 text-center space-x-1.5">
                           <button
+                            onClick={() => handleOpenResetPasswordModal(u)}
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors cursor-pointer"
+                            title="Trocar / Resetar Senha (Forçar Nova Senha no Próximo Acesso)"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleEdit(u)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
                             title="Editar Dados / Módulos de Acesso"
@@ -1858,6 +1933,13 @@ export default function ResponsavelTecnico() {
                           title="Visualizar Carimbo Digital"
                         >
                           <BadgeCheck className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenResetPasswordModal(m)}
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Trocar / Resetar Senha (Forçar Nova Senha no Próximo Acesso)"
+                        >
+                          <KeyRound className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleEdit(m)}
@@ -2139,9 +2221,16 @@ export default function ResponsavelTecnico() {
 
                         <td className="py-3.5 px-6 text-center space-x-1.5">
                           <button
+                            onClick={() => handleOpenResetPasswordModal(u)}
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors cursor-pointer"
+                            title="Trocar / Resetar Senha (Forçar Nova Senha no Próximo Acesso)"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleEdit(u)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
-                            title="Editar Dados / Resetar Senha"
+                            title="Editar Dados Cadastrais / Módulos"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
@@ -2225,6 +2314,94 @@ export default function ResponsavelTecnico() {
             >
               Concluir Visualização
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dedicado de Troca/Reset de Senha pelo Administrador */}
+      {resetPasswordUser && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-extrabold text-sm">
+                <KeyRound className="w-5 h-5 text-amber-500" />
+                Trocar Senha de Colaborador
+              </div>
+              <button
+                onClick={() => setResetPasswordUser(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                ✕ Cancelar
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 dark:text-slate-400">Colaborador selecionado:</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                  {resetPasswordUser.nome}
+                </div>
+                <div className="text-xs font-mono text-slate-600 dark:text-slate-300 mt-0.5">
+                  Login: <strong>{resetPasswordUser.login || resetPasswordUser.username}</strong>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong>Privacidade do Usuário:</strong> O administrador não possui acesso visual à senha atual. Ao definir uma nova senha provisória abaixo, o colaborador será <strong>obrigado a cadastrar uma nova senha pessoal</strong> no próximo login.
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Nova Senha Provisória *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNewTempPassword("123456")}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer underline"
+                  >
+                    Usar padrão 123456
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showTempPassword ? "text" : "password"}
+                    value={newTempPassword}
+                    onChange={(e) => setNewTempPassword(e.target.value)}
+                    placeholder="Digite a senha provisória..."
+                    className="w-full pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2.5 text-sm font-mono outline-none focus:border-amber-500 focus:bg-white dark:focus:bg-slate-900 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTempPassword(!showTempPassword)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    {showTempPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setResetPasswordUser(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isResettingPassword || !newTempPassword}
+                onClick={handleConfirmPasswordReset}
+                className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isResettingPassword ? "Salvando..." : "Confirmar e Forçar Troca"}
+              </button>
+            </div>
           </div>
         </div>
       )}

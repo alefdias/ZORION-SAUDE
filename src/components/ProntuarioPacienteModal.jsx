@@ -338,10 +338,13 @@ export function ProntuarioPacienteModal({
         };
       }
     }
-    return { pa: "120/80", fc: "74", temp: "36.5", sat: "98", gli: "92", data: null };
   }, [evolucoes]);
 
-  if (!patient) return null;
+  // Filtragem de Exames (Chamado no nível superior seguindo as regras dos hooks do React)
+  const filteredExames = useMemo(() => {
+    if (exameFiltro === "todos") return exames;
+    return exames.filter(ex => (ex.tipo || "").toLowerCase().includes(exameFiltro.toLowerCase()));
+  }, [exames, exameFiltro]);
 
   // ─── HANDLERS DE AÇÕES ──────────────────────────────────────────────────────
 
@@ -635,11 +638,7 @@ export function ProntuarioPacienteModal({
     }
   };
 
-  // Filtragem de Exames
-  const filteredExames = useMemo(() => {
-    if (exameFiltro === "todos") return exames;
-    return exames.filter(ex => ex.tipo.toLowerCase().includes(exameFiltro.toLowerCase()));
-  }, [exames, exameFiltro]);
+  if (!patient) return null;
 
   return (
     <>
