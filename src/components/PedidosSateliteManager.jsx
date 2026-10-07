@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
+import { isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
 import { 
   ShoppingCart, 
   PackageCheck, 
@@ -62,6 +63,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [printOrderData, setPrintOrderData] = useState(null);
+  const [printDepotView, setPrintDepotView] = useState("todos"); // "todos" | "clinico" | "psicotropico"
   const [printDate, setPrintDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   // Queries
@@ -280,6 +282,13 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
             duracaoDias: duracaoDias,
             unidadeMedida: "FRASCO",
             motivoReposicao: !dataProximo ? "1º Frasco (Início de tratamento)" : "Frasco anterior acabou hoje!",
+            isPsicotropico: Boolean(
+              (med && isPsicotropico(med)) ||
+              isPsicotropico(finalMed) ||
+              isPsicotropico(finalMed.nome || p.medicamentoNome) ||
+              isPsicotropico(finalMed.grupo_terapeutico || p.grupo_terapeutico)
+            ),
+            portariaList: getPortaria344List(med || finalMed || p.medicamentoNome),
             prescricaoIds: []
           };
         }
@@ -325,6 +334,13 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           qtdCalculada: 0,
           totalPacientes: 0,
           isLiquido: false,
+          isPsicotropico: Boolean(
+            (med && isPsicotropico(med)) ||
+            isPsicotropico(finalMed) ||
+            isPsicotropico(finalMed.nome || p.medicamentoNome) ||
+            isPsicotropico(finalMed.grupo_terapeutico || p.grupo_terapeutico)
+          ),
+          portariaList: getPortaria344List(med || finalMed || p.medicamentoNome),
           prescricaoIds: []
         };
       }
@@ -369,6 +385,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     let totalPrescrito = 0;
     let totalMargemExtra = 0;
     let totalSolicitado = 0;
+    let totalClinicos = 0;
+    let totalPsicotropicos = 0;
 
     calculoNecessidade.forEach(item => {
       const finalQtd = customQuantities[item.medicamentoId] !== undefined 
@@ -376,15 +394,22 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         : item.qtdSugerida;
 
       totalPrescrito += item.qtdCalculada;
-      totalMargemExtra += item.qtdMargemExtra;
+      totalMargemExtra += (item.qtdMargemExtra || 0);
       totalSolicitado += finalQtd;
+      if (item.isPsicotropico) {
+        totalPsicotropicos += 1;
+      } else {
+        totalClinicos += 1;
+      }
     });
 
     return {
       totalItens: calculoNecessidade.length,
       totalPrescrito,
       totalMargemExtra,
-      totalSolicitado
+      totalSolicitado,
+      totalClinicos,
+      totalPsicotropicos
     };
   }, [calculoNecessidade, customQuantities]);
 
@@ -421,7 +446,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           qtd_solicitada: finalQtd,
           qtd_atendida: finalQtd, // Central can adjust during separation
           separado: false,
-          conferido: false
+          conferido: false,
+          is_psicotropico: item.isPsicotropico ? 1 : 0,
+          portaria_344: item.portariaList || null
         };
       }).filter(i => i.qtd_solicitada > 0);
 
@@ -534,6 +561,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   };
 
   const handleOpenPrintPreview = (pedidoCustom = null) => {
+    setPrintDepotView("todos");
     if (pedidoCustom) {
       let rawItens = pedidoCustom.itens || pedidoCustom.itens_json || [];
       if (typeof rawItens === "string") {
@@ -550,17 +578,38 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         prioridade: pedidoCustom.prioridade || "Normal",
         status: pedidoCustom.status || "Pendente",
         observacao: pedidoCustom.observacoes || pedidoCustom.observacao || "",
-        itens: itensArr.map(i => ({
-          codigo: i.codigo || "-",
-          nome: i.medicamento_nome || i.medicamentoNome || i.nome || "Medicamento",
-          concentracao: i.concentracao || "",
-          apresentacao: i.apresentacao || "",
-          qtdPrescrita: i.qtd_prescrita ?? i.qtdPrescrita ?? i.qtdCalculada ?? 0,
-          estoqueSatelite: i.estoque_satelite_momento ?? i.estoqueSatelite ?? 0,
-          qtdSolicitada: i.qtd_solicitada !== undefined 
-            ? i.qtd_solicitada 
-            : (i.qtdSolicitada !== undefined ? i.qtdSolicitada : (i.finalQtd ?? 0))
-        }))
+        itens: itensArr.map(i => {
+          const medId = i.medicamento_id || i.medicamentoId || i.id;
+          const medObj = medicamentos.find(m => String(m.id) === String(medId)) ||
+            medicamentos.find(m => m.codigo && i.codigo && m.codigo !== "-" && m.codigo === i.codigo) ||
+            medicamentos.find(m => m.nome && (m.nome === i.medicamento_nome || m.nome === i.nome));
+
+          const isPsico = i.is_psicotropico !== undefined
+            ? Boolean(i.is_psicotropico)
+            : (i.isPsicotropico !== undefined
+                ? Boolean(i.isPsicotropico)
+                : Boolean(
+                    (medObj && isPsicotropico(medObj)) ||
+                    isPsicotropico(i.medicamento_nome || i.nome) ||
+                    isPsicotropico(i.grupo_terapeutico || i.categoria)
+                  ));
+
+          const portariaList = i.portaria_344 || (isPsico ? getPortaria344List(medObj || i.medicamento_nome || i.nome) : null);
+
+          return {
+            codigo: i.codigo || "-",
+            nome: i.medicamento_nome || i.medicamentoNome || i.nome || "Medicamento",
+            concentracao: i.concentracao || "",
+            apresentacao: i.apresentacao || "",
+            qtdPrescrita: i.qtd_prescrita ?? i.qtdPrescrita ?? i.qtdCalculada ?? 0,
+            estoqueSatelite: i.estoque_satelite_momento ?? i.estoqueSatelite ?? 0,
+            qtdSolicitada: i.qtd_solicitada !== undefined 
+              ? i.qtd_solicitada 
+              : (i.qtdSolicitada !== undefined ? i.qtdSolicitada : (i.finalQtd ?? 0)),
+            isPsicotropico: isPsico,
+            portariaList
+          };
+        })
       });
     } else {
       const isAllAlasCalc = selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
@@ -574,6 +623,19 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
           : item.qtdSugerida;
 
+        const medObj = medicamentos.find(m => String(m.id) === String(item.medicamentoId)) ||
+          medicamentos.find(m => m.nome === item.nome);
+
+        const isPsico = item.isPsicotropico !== undefined 
+          ? Boolean(item.isPsicotropico)
+          : Boolean(
+              (medObj && isPsicotropico(medObj)) ||
+              isPsicotropico(item.nome) ||
+              isPsicotropico(item.grupo_terapeutico || item.categoria)
+            );
+
+        const portariaList = item.portariaList || (isPsico ? getPortaria344List(medObj || item.nome) : null);
+
         return {
           codigo: item.codigo || "-",
           nome: item.nome,
@@ -581,7 +643,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           apresentacao: item.apresentacao || "",
           qtdPrescrita: item.qtdCalculada,
           estoqueSatelite: item.estoqueSatelite,
-          qtdSolicitada: finalQtd
+          qtdSolicitada: finalQtd,
+          isPsicotropico: isPsico,
+          portariaList
         };
       });
 
@@ -1271,18 +1335,22 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
           {/* Cards de Resumo do Cálculo */}
           {calculoNecessidade.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
               <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
                 <p className="text-[10px] uppercase font-bold text-slate-500">Medicamentos</p>
                 <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalItens} <span className="text-xs font-normal text-slate-500">itens</span></p>
               </div>
+              <div className="p-2.5 bg-sky-50 dark:bg-sky-950/30 rounded-lg border border-sky-200/70 dark:border-sky-900/40">
+                <p className="text-[10px] uppercase font-bold text-sky-700 dark:text-sky-400">🏥 Depósito Clínico</p>
+                <p className="text-xl font-bold text-sky-700 dark:text-sky-400">{resumoPedido.totalClinicos} <span className="text-xs font-normal text-sky-600">itens</span></p>
+              </div>
+              <div className="p-2.5 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200/70 dark:border-purple-900/40">
+                <p className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-400">🧠 Depósito Psicotrópico</p>
+                <p className="text-xl font-bold text-purple-700 dark:text-purple-400">{resumoPedido.totalPsicotropicos} <span className="text-xs font-normal text-purple-600">itens</span></p>
+              </div>
               <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
                 <p className="text-[10px] uppercase font-bold text-slate-500">Consumo Prescrito ({effectiveDays}D)</p>
                 <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalPrescrito} <span className="text-xs font-normal text-slate-500">un</span></p>
-              </div>
-              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40">
-                <p className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Reserva de Segurança ({effectiveMargem}%)</p>
-                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">+{resumoPedido.totalMargemExtra} <span className="text-xs font-normal text-emerald-600">un</span></p>
               </div>
               <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200/70 dark:border-blue-900/40">
                 <p className="text-[10px] uppercase font-bold text-blue-700 dark:text-blue-400">Total a Solicitar</p>
@@ -1334,6 +1402,15 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                           <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                             <div className="flex items-center flex-wrap gap-1">
                               <span className="font-bold text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.nome}</span>
+                              {item.isPsicotropico ? (
+                                <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-800 border-purple-300 font-bold inline-flex items-center gap-0.5">
+                                  🧠 Depósito Psicotrópico
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-800 border-sky-300 font-medium inline-flex items-center gap-0.5">
+                                  🏥 Depósito Clínico
+                                </Badge>
+                              )}
                               {item.isLiquido && (
                                 <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300 font-bold inline-flex items-center gap-0.5">
                                   <Droplet className="w-2.5 h-2.5" /> Frasco {item.volumeFrascoMl} mL
@@ -1656,28 +1733,78 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
       {/* ─── MODAL DE PREVIEW DA IMPRESSÃO EM TELA ────────────────────── */}
       <Dialog open={Boolean(printOrderData)} onOpenChange={(open) => !open && setPrintOrderData(null)}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-0 border-none bg-slate-100 dark:bg-slate-900 shadow-2xl print:!hidden print:hidden">
-          <DialogHeader className="p-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex flex-row items-center justify-between no-print sticky top-0 z-10">
+        <DialogContent className="max-w-5xl max-h-[94vh] overflow-y-auto p-0 border-none bg-slate-100 dark:bg-slate-900 shadow-2xl print:!hidden print:hidden">
+          <DialogHeader className="p-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-3 no-print sticky top-0 z-20">
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-blue-600" />
-              <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Visualização de Impressão — Requisição à Farmácia Central
-              </DialogTitle>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Visualização de Impressão — Separação por Depósito
+                </DialogTitle>
+                <p className="text-xs text-slate-500">
+                  Folhas independentes para Depósito Clínico e Depósito de Psicotrópicos (Portaria 344/98)
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* SELETOR DE DEPÓSITO */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPrintDepotView("todos")}
+                  className={cn(
+                    "px-2.5 py-1 rounded font-bold transition-all text-xs",
+                    printDepotView === "todos"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                  )}
+                >
+                  📑 Ambos (1 Folha p/ Depósito)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintDepotView("clinico")}
+                  className={cn(
+                    "px-2.5 py-1 rounded font-bold transition-all text-xs flex items-center gap-1",
+                    printDepotView === "clinico"
+                      ? "bg-sky-600 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                  )}
+                >
+                  🏥 Clínicos ({printOrderData?.itens?.filter(i => !i.isPsicotropico).length || 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintDepotView("psicotropico")}
+                  className={cn(
+                    "px-2.5 py-1 rounded font-bold transition-all text-xs flex items-center gap-1",
+                    printDepotView === "psicotropico"
+                      ? "bg-purple-700 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                  )}
+                >
+                  🧠 Psicotrópicos ({printOrderData?.itens?.filter(i => i.isPsicotropico).length || 0})
+                </button>
+              </div>
+
               <Button variant="outline" size="sm" onClick={() => setPrintOrderData(null)}>
                 Fechar
               </Button>
               <Button size="sm" onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-1.5 shadow-sm">
                 <Printer className="w-4 h-4" />
-                Imprimir Agora
+                {printDepotView === "todos" 
+                  ? "Imprimir Ambos (Separar Folhas)" 
+                  : printDepotView === "clinico" 
+                    ? "Imprimir Depósito Clínico" 
+                    : "Imprimir Depósito Psicotrópicos"}
               </Button>
             </div>
           </DialogHeader>
 
           {/* FOLHA FORMAL A4 (PREVIEW EM TELA) */}
-          <div className="p-6 sm:p-10 bg-white text-slate-900 mx-auto w-full shadow-sm">
-            <PrintOrderSheetContent data={printOrderData} />
+          <div className="p-4 sm:p-8 bg-slate-100 dark:bg-slate-900 mx-auto w-full space-y-6">
+            <PrintOrderSheetContent data={printOrderData} selectedDepot={printDepotView} isPrintPortal={false} />
           </div>
         </DialogContent>
       </Dialog>
@@ -1685,7 +1812,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       {/* ─── PORTAL OFICIAL DE IMPRESSÃO (DIRETO NO BODY, FORA DO MODAL E DO ROOT) ─ */}
       {Boolean(printOrderData) && typeof document !== "undefined" && createPortal(
         <div id="print-order-sheet-portal">
-          <PrintOrderSheetContent data={printOrderData} />
+          <PrintOrderSheetContent data={printOrderData} selectedDepot={printDepotView} isPrintPortal={true} />
         </div>,
         document.body
       )}
@@ -1695,7 +1822,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 10mm;
+            margin: 8mm;
           }
           html, body {
             margin: 0 !important;
@@ -1746,6 +1873,21 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
           }
+          #print-order-sheet-portal .sheet-wrapper {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+            margin-bottom: 0 !important;
+          }
+          #print-order-sheet-portal .page-break {
+            page-break-before: always !important;
+            break-before: page !important;
+            clear: both !important;
+            display: block !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+          }
           #print-order-sheet-portal table {
             width: 100% !important;
             border-collapse: collapse !important;
@@ -1785,8 +1927,195 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   );
 }
 
+// ─── SUBCOMPONENTE DE FOLHA A4 INDIVIDUAL POR DEPÓSITO ───────────────────────
+function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
+  const isPsico = tipo === "psicotropico";
+  const totalUnidades = (itens || []).reduce(
+    (acc, item) => acc + (Number(item.qtdSolicitada) || 0),
+    0
+  );
+
+  return (
+    <div className={cn(
+      "order-sheet-container bg-white text-slate-900 w-full p-6 sm:p-8 rounded-lg border",
+      isPsico ? "border-purple-300 shadow-sm" : "border-slate-300 shadow-sm"
+    )}>
+      {/* Faixa Superior Destacando o Depósito */}
+      <div className={cn(
+        "py-2 px-3 rounded-md mb-4 flex items-center justify-between text-xs font-black uppercase tracking-wider",
+        isPsico ? "bg-purple-100 text-purple-900 border border-purple-300" : "bg-sky-100 text-sky-900 border border-sky-300"
+      )}>
+        <div className="flex items-center gap-2">
+          <span className="text-base">{isPsico ? "🧠" : "🏥"}</span>
+          <span>{isPsico ? "DEPÓSITO 2: MEDICAMENTOS PSICOTRÓPICOS & CONTROLADOS (PORTARIA 344/98)" : "DEPÓSITO 1: MEDICAMENTOS CLÍNICOS E GERAIS (ESTOQUE CENTRAL)"}</span>
+        </div>
+        <span className="font-mono text-[11px] bg-white px-2 py-0.5 rounded shadow-xs border">
+          {itens.length} {itens.length === 1 ? "item" : "itens"}
+        </span>
+      </div>
+
+      {isPsico && (
+        <div className="mb-4 p-2 bg-amber-50 border-l-4 border-amber-500 rounded text-[11px] text-amber-950 font-medium">
+          ⚠️ <strong>AVISO LEGAL - PORTARIA SVS/MS 344/98:</strong> Medicamentos sujeitos a controle especial. Separação restrita ao cofre/depósito de controlados. Conferência obrigatória de lote, validade e assinatura com CRF do farmacêutico.
+        </div>
+      )}
+
+      {/* Cabeçalho */}
+      <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start gap-4">
+        <div>
+          <h1 className="text-lg font-black uppercase text-slate-950 tracking-tight leading-tight">
+            ZORION SAÚDE — FARMÁCIA HOSPITALAR
+          </h1>
+          <h2 className={cn(
+            "text-xs font-bold uppercase mt-0.5",
+            isPsico ? "text-purple-800" : "text-blue-800"
+          )}>
+            REQUISIÇÃO DE MEDICAMENTOS • {isPsico ? "SEPARAÇÃO DEPÓSITO PSICOTRÓPICOS" : "SEPARAÇÃO DEPÓSITO CLÍNICO"}
+          </h2>
+          <p className="text-xs text-slate-700 mt-1">
+            Origem: <strong className="text-slate-950">Farmácia Satélite</strong> • Setor/Ala: <strong className="text-slate-950">{data.alaNome}</strong>
+          </p>
+          <p className="text-xs text-slate-600 font-mono mt-0.5">
+            Código: <strong className="text-slate-950">{data.codigo}</strong> • Status: <strong className="text-slate-950">{data.status}</strong>
+          </p>
+        </div>
+        <div className="text-right text-xs text-slate-700 font-mono space-y-0.5 shrink-0">
+          <p>Emissão: <strong className="text-slate-950">{formattedDate}</strong></p>
+          <p>
+            Prioridade:{" "}
+            <span className={`font-black uppercase px-1.5 py-0.5 rounded text-[10px] ${
+              data.prioridade === "Emergência" 
+                ? "bg-red-100 text-red-900 border border-red-300" 
+                : data.prioridade === "Urgente" 
+                  ? "bg-amber-100 text-amber-900 border border-amber-300" 
+                  : "bg-slate-100 text-slate-900 border"
+            }`}>
+              {data.prioridade}
+            </span>
+          </p>
+          <p>Suprimento: <strong className="text-slate-950">{data.dias} dia(s)</strong></p>
+          {data.margem > 0 && (
+            <p>Margem Reserva: <strong className="text-slate-950">+{data.margem}%</strong></p>
+          )}
+          {data.descontarEstoque && (
+            <p>Abatido Est. Satélite: <strong className="text-slate-950">Sim</strong></p>
+          )}
+        </div>
+      </div>
+
+      {data.observacao && (
+        <div className="mb-3 p-2 bg-slate-50 border border-slate-300 rounded text-xs text-slate-800">
+          <strong className="text-slate-950">Observações da Requisição:</strong> {data.observacao}
+        </div>
+      )}
+
+      {/* Tabela de Itens */}
+      <table className="w-full text-xs border-collapse border border-slate-400 mb-4">
+        <thead>
+          <tr className={cn(
+            "text-slate-900 font-bold border-b-2 border-slate-400",
+            isPsico ? "bg-purple-50/80" : "bg-slate-100"
+          )}>
+            <th className="border border-slate-300 p-1.5 text-center w-8">#</th>
+            <th className="border border-slate-300 p-1.5 text-center w-14">Cód.</th>
+            <th className="border border-slate-300 p-1.5 text-left">
+              {isPsico ? "Medicamento Psicotrópico / Controlado" : "Medicamento Clínico / Concentração"}
+            </th>
+            {isPsico && (
+              <th className="border border-slate-300 p-1.5 text-center w-28">Portaria 344</th>
+            )}
+            <th className="border border-slate-300 p-1.5 text-center w-20">Prescr. ({data.dias}D)</th>
+            <th className="border border-slate-300 p-1.5 text-center w-16">Est. Sat.</th>
+            <th className={cn(
+              "border border-slate-300 p-1.5 text-center w-24 font-black text-slate-950",
+              isPsico ? "bg-purple-100/80" : "bg-blue-100/80"
+            )}>
+              Qtd Solicitada
+            </th>
+            <th className="border border-slate-300 p-1.5 text-center w-28">
+              {isPsico ? "Conf. / Lote / Val." : "Conferência"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((item, idx) => (
+            <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
+              <td className="border border-slate-300 p-1 text-center font-mono text-slate-700">{idx + 1}</td>
+              <td className="border border-slate-300 p-1 text-center font-mono text-slate-700">{item.codigo || "-"}</td>
+              <td className="border border-slate-300 p-1 font-medium break-words [overflow-wrap:anywhere]">
+                <span className="font-bold text-slate-950">{item.nome}</span>
+                {item.concentracao && <span className="text-slate-700"> ({item.concentracao})</span>}
+                {item.apresentacao && <span className="text-slate-500 text-[10px] block">[{item.apresentacao}]</span>}
+              </td>
+              {isPsico && (
+                <td className="border border-slate-300 p-1 text-center font-mono text-[10px] text-purple-900 font-bold bg-purple-50/40">
+                  {item.portariaList || "Portaria 344"}
+                </td>
+              )}
+              <td className="border border-slate-300 p-1 text-center font-mono text-slate-800">{item.qtdPrescrita} un</td>
+              <td className="border border-slate-300 p-1 text-center font-mono text-slate-800">{item.estoqueSatelite} un</td>
+              <td className={cn(
+                "border border-slate-300 p-1 text-center font-mono font-black text-sm text-slate-950",
+                isPsico ? "bg-purple-50/50" : "bg-blue-50/50"
+              )}>
+                {item.qtdSolicitada} un
+              </td>
+              <td className="border border-slate-300 p-1 text-center font-mono text-slate-400 text-[10px]">
+                {isPsico ? "[ ] L:___ V:___" : "[     ]"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className={cn(
+            "font-bold border-t-2 border-slate-400 text-slate-950",
+            isPsico ? "bg-purple-50/80" : "bg-slate-100"
+          )}>
+            <td colSpan={isPsico ? 6 : 5} className="border border-slate-300 p-2 text-right uppercase">
+              Total {isPsico ? "Psicotrópicos" : "Clínicos"}: {itens.length} itens • Unidades:
+            </td>
+            <td className={cn(
+              "border border-slate-300 p-2 text-center font-mono text-sm font-black text-slate-950",
+              isPsico ? "bg-purple-200/90" : "bg-blue-200/90"
+            )}>
+              {totalUnidades} un
+            </td>
+            <td className="border border-slate-300 p-2"></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      {/* Assinaturas */}
+      <div className={cn(
+        "signature-area mt-8 pt-4 border-t border-slate-300 grid text-center text-xs",
+        isPsico ? "grid-cols-3 gap-4" : "grid-cols-2 gap-8"
+      )}>
+        <div>
+          <div className="border-b border-slate-400 w-44 sm:w-52 mx-auto mb-1"></div>
+          <p className="font-bold text-slate-900">Solicitante (Satélite)</p>
+          <p className="text-[10px] text-slate-500">Assinatura / Data</p>
+        </div>
+        {isPsico && (
+          <div>
+            <div className="border-b border-slate-400 w-44 sm:w-52 mx-auto mb-1"></div>
+            <p className="font-bold text-purple-950">Farmacêutico(a) Resp.</p>
+            <p className="text-[10px] text-purple-700">Carimbo e CRF</p>
+          </div>
+        )}
+        <div>
+          <div className="border-b border-slate-400 w-44 sm:w-52 mx-auto mb-1"></div>
+          <p className="font-bold text-slate-900">
+            {isPsico ? "Separado por (Dep. Psicotrópicos)" : "Separado por (Dep. Clínico)"}
+          </p>
+          <p className="text-[10px] text-slate-500">Assinatura / Data</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── FOLHA FORMAL A4 DE REQUISIÇÃO (USADA NO PREVIEW E NA IMPRESSÃO) ────────
-function PrintOrderSheetContent({ data }) {
+function PrintOrderSheetContent({ data, selectedDepot = "todos", isPrintPortal = false }) {
   if (!data) return null;
 
   let formattedDate = "--";
@@ -1799,121 +2128,71 @@ function PrintOrderSheetContent({ data }) {
     }
   } catch {}
 
-  const totalUnidades = (data.itens || []).reduce(
-    (acc, item) => acc + (Number(item.qtdSolicitada) || 0),
-    0
-  );
+  const itens = data.itens || [];
+  const clinicos = itens.filter(i => !i.isPsicotropico);
+  const psicotropicos = itens.filter(i => i.isPsicotropico);
+
+  const showClinicos = (selectedDepot === "todos" || selectedDepot === "clinico") && clinicos.length > 0;
+  const showPsicotropicos = (selectedDepot === "todos" || selectedDepot === "psicotropico") && psicotropicos.length > 0;
+
+  // Se o usuário filtrou por um depósito específico que não tem itens no pedido:
+  if (selectedDepot === "clinico" && clinicos.length === 0) {
+    return (
+      <div className="p-8 text-center bg-white rounded-lg border border-slate-200 text-slate-600">
+        <p className="text-base font-bold text-slate-800">Nenhum medicamento clínico neste pedido.</p>
+        <p className="text-xs text-slate-500 mt-1">Este pedido contém exclusivamente medicamentos psicotrópicos / controlados.</p>
+      </div>
+    );
+  }
+
+  if (selectedDepot === "psicotropico" && psicotropicos.length === 0) {
+    return (
+      <div className="p-8 text-center bg-white rounded-lg border border-slate-200 text-slate-600">
+        <p className="text-base font-bold text-slate-800">Nenhum medicamento psicotrópico neste pedido.</p>
+        <p className="text-xs text-slate-500 mt-1">Este pedido contém exclusivamente medicamentos clínicos comuns.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="order-sheet-container bg-white text-slate-900 w-full p-2">
-      {/* Cabeçalho */}
-      <div className="border-b-2 border-slate-900 pb-4 mb-5 flex justify-between items-start gap-4">
-        <div>
-          <h1 className="text-xl font-black uppercase text-slate-950 tracking-tight leading-tight">
-            ZORION SAÚDE — FARMÁCIA HOSPITALAR
-          </h1>
-          <h2 className="text-sm font-bold text-blue-800 uppercase mt-0.5">
-            REQUISIÇÃO DE MEDICAMENTOS • PEDIDO À FARMÁCIA CENTRAL
-          </h2>
-          <p className="text-xs text-slate-700 mt-1.5">
-            Origem: <strong className="text-slate-950">Farmácia Satélite</strong> • Setor/Ala: <strong className="text-slate-950">{data.alaNome}</strong>
-          </p>
-          <p className="text-xs text-slate-600 font-mono mt-0.5">
-            Código: <strong className="text-slate-950">{data.codigo}</strong> • Status: <strong className="text-slate-950">{data.status}</strong>
-          </p>
-        </div>
-        <div className="text-right text-xs text-slate-700 font-mono space-y-1 shrink-0">
-          <p>Emissão: <strong className="text-slate-950">{formattedDate}</strong></p>
-          <p>
-            Prioridade:{" "}
-            <span className={`font-black uppercase px-2 py-0.5 rounded text-[11px] ${
-              data.prioridade === "Emergência" 
-                ? "bg-red-100 text-red-900 border border-red-300" 
-                : data.prioridade === "Urgente" 
-                  ? "bg-amber-100 text-amber-900 border border-amber-300" 
-                  : "bg-slate-100 text-slate-900"
-            }`}>
-              {data.prioridade}
-            </span>
-          </p>
-          <p>Suprimento: <strong className="text-slate-950">{data.dias} dia(s)</strong></p>
-          {data.margem > 0 && (
-            <p>Margem de Segurança: <strong className="text-slate-950">+{data.margem}%</strong></p>
-          )}
-          {data.descontarEstoque && (
-            <p>Abatido Estoque Satélite: <strong className="text-slate-950">Sim</strong></p>
-          )}
-        </div>
-      </div>
-
-      {data.observacao && (
-        <div className="mb-4 p-2.5 bg-slate-50 border border-slate-300 rounded text-xs text-slate-800">
-          <strong className="text-slate-950">Observações da Requisição:</strong> {data.observacao}
+    <div className="w-full">
+      {/* Folha 1: Depósito Clínico */}
+      {showClinicos && (
+        <div className="sheet-wrapper mb-6">
+          <SingleDepotSheet 
+            data={data}
+            tipo="clinico"
+            itens={clinicos}
+            formattedDate={formattedDate}
+          />
         </div>
       )}
 
-      {/* Tabela de Itens */}
-      <table className="w-full text-xs border-collapse border border-slate-400 mb-6">
-        <thead>
-          <tr className="bg-slate-100 text-slate-900 font-bold border-b-2 border-slate-400">
-            <th className="border border-slate-300 p-2 text-center w-10">Item</th>
-            <th className="border border-slate-300 p-2 text-center w-16">Cód.</th>
-            <th className="border border-slate-300 p-2 text-left">Medicamento / Concentração</th>
-            <th className="border border-slate-300 p-2 text-center w-24">Prescr. ({data.dias}D)</th>
-            <th className="border border-slate-300 p-2 text-center w-16">Est. Sat.</th>
-            <th className="border border-slate-300 p-2 text-center w-28 bg-blue-50/80 font-black text-slate-950">
-              Qtd Solicitada
-            </th>
-            <th className="border border-slate-300 p-2 text-center w-24">Conferência</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(data.itens || []).map((item, idx) => (
-            <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
-              <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-700">{idx + 1}</td>
-              <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-700">{item.codigo || "-"}</td>
-              <td className="border border-slate-300 p-1.5 font-medium break-words [overflow-wrap:anywhere]">
-                <span className="font-bold text-slate-950">{item.nome}</span>
-                {item.concentracao && <span className="text-slate-700"> ({item.concentracao})</span>}
-                {item.apresentacao && <span className="text-slate-500 text-[10px] block">[{item.apresentacao}]</span>}
-              </td>
-              <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-800">{item.qtdPrescrita} un</td>
-              <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-800">{item.estoqueSatelite} un</td>
-              <td className="border border-slate-300 p-1.5 text-center font-mono font-black text-sm bg-blue-50/50 text-slate-950">
-                {item.qtdSolicitada} un
-              </td>
-              <td className="border border-slate-300 p-1.5 text-center font-mono text-slate-400">
-                [&nbsp;&nbsp;&nbsp;&nbsp;]
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="bg-slate-100 font-bold border-t-2 border-slate-400 text-slate-950">
-            <td colSpan={5} className="border border-slate-300 p-2 text-right uppercase">
-              Total de Itens: {data.itens?.length || 0} • Total de Unidades Solicitadas:
-            </td>
-            <td className="border border-slate-300 p-2 text-center font-mono text-sm font-black bg-blue-100/90 text-slate-950">
-              {totalUnidades} un
-            </td>
-            <td className="border border-slate-300 p-2"></td>
-          </tr>
-        </tfoot>
-      </table>
+      {/* Quebra de Página se ambos estiverem visíveis */}
+      {showClinicos && showPsicotropicos && (
+        <>
+          {/* Quebra física de página para a impressora */}
+          <div className="page-break" style={{ pageBreakBefore: "always", breakBefore: "page" }} />
+          {/* Divisor visual na tela (somente preview) */}
+          {!isPrintPortal && (
+            <div className="py-4 my-6 flex items-center justify-center gap-3 text-xs font-bold text-purple-700 uppercase tracking-widest border-y-2 border-dashed border-purple-300 bg-purple-50/60 rounded-lg">
+              <span>✂️ QUEBRA DE PÁGINA (FOLHA 2 — SEPARAÇÃO NO DEPÓSITO DE PSICOTRÓPICOS)</span>
+            </div>
+          )}
+        </>
+      )}
 
-      {/* Campos de Assinatura */}
-      <div className="signature-area mt-12 pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 text-center text-xs">
-        <div>
-          <div className="border-b border-slate-400 w-56 mx-auto mb-1.5"></div>
-          <p className="font-bold text-slate-900">Solicitante (Farmácia Satélite)</p>
-          <p className="text-[10px] text-slate-500">Assinatura / Carimbo / Data</p>
+      {/* Folha 2: Depósito Psicotrópicos */}
+      {showPsicotropicos && (
+        <div className="sheet-wrapper mb-6">
+          <SingleDepotSheet 
+            data={data}
+            tipo="psicotropico"
+            itens={psicotropicos}
+            formattedDate={formattedDate}
+          />
         </div>
-        <div>
-          <div className="border-b border-slate-400 w-56 mx-auto mb-1.5"></div>
-          <p className="font-bold text-slate-900">Atendido / Separado por (Farmácia Central)</p>
-          <p className="text-[10px] text-slate-500">Assinatura / Carimbo / Data</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1931,6 +2210,34 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
       qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida
     }));
   });
+
+  const [filterDepot, setFilterDepot] = useState("todos"); // "todos" | "clinico" | "psicotropico"
+
+  const itensWithDepot = useMemo(() => {
+    return itensState.map((item, originalIndex) => {
+      const isPsico = item.is_psicotropico !== undefined
+        ? Boolean(item.is_psicotropico)
+        : (item.isPsicotropico !== undefined
+            ? Boolean(item.isPsicotropico)
+            : isPsicotropico(item.medicamento_nome || item.nome || item));
+
+      return {
+        ...item,
+        originalIndex,
+        isPsicotropico: isPsico,
+        portariaList: item.portaria_344 || (isPsico ? getPortaria344List(item.medicamento_nome || item.nome || item) : null)
+      };
+    });
+  }, [itensState]);
+
+  const countClinicos = useMemo(() => itensWithDepot.filter(i => !i.isPsicotropico).length, [itensWithDepot]);
+  const countPsicotropicos = useMemo(() => itensWithDepot.filter(i => i.isPsicotropico).length, [itensWithDepot]);
+
+  const displayedItens = useMemo(() => {
+    if (filterDepot === "clinico") return itensWithDepot.filter(i => !i.isPsicotropico);
+    if (filterDepot === "psicotropico") return itensWithDepot.filter(i => i.isPsicotropico);
+    return itensWithDepot;
+  }, [itensWithDepot, filterDepot]);
 
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [motivoPreset, setMotivoPreset] = useState("Medicamento em falta / Desabastecimento na Central");
@@ -1961,13 +2268,19 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
   };
 
   const handleToggleAll = (field) => {
-    const allChecked = itensState.every(i => i[field]);
-    const next = itensState.map(i => ({ ...i, [field]: !allChecked }));
+    const targetIndices = new Set(displayedItens.map(i => i.originalIndex));
+    const allChecked = displayedItens.every(i => i[field]);
+    const next = itensState.map((i, idx) => {
+      if (targetIndices.has(idx)) {
+        return { ...i, [field]: !allChecked };
+      }
+      return i;
+    });
     setItensState(next);
   };
 
-  const allSeparated = itensState.every(i => i.separado);
-  const allConferido = itensState.every(i => i.conferido);
+  const allSeparated = displayedItens.every(i => i.separado);
+  const allConferido = displayedItens.every(i => i.conferido);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2020,6 +2333,47 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
               </div>
             </div>
           )}
+
+          {/* Seletor de Depósito para Separação */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Depósito para Separação:</span>
+              <button
+                type="button"
+                onClick={() => setFilterDepot("todos")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-bold transition-all",
+                  filterDepot === "todos" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs" : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border hover:bg-slate-100"
+                )}
+              >
+                Todos ({itensState.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterDepot("clinico")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1",
+                  filterDepot === "clinico" ? "bg-sky-600 text-white shadow-xs" : "bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 border border-sky-200 hover:bg-sky-50"
+                )}
+              >
+                🏥 Clínico ({countClinicos})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterDepot("psicotropico")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1",
+                  filterDepot === "psicotropico" ? "bg-purple-700 text-white shadow-xs" : "bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 border border-purple-200 hover:bg-purple-50"
+                )}
+              >
+                🧠 Psicotrópicos ({countPsicotropicos})
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Exibindo <strong>{displayedItens.length}</strong> de {itensState.length} itens
+            </span>
+          </div>
+
           {/* Central Workflow Instructions */}
           {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") && (
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex justify-between items-center text-xs text-blue-900">
@@ -2058,53 +2412,66 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
               </TableRow>
             </TableHeader>
             <TableBody>
-              {itensState.map((item, idx) => (
-                <TableRow key={idx} className={cn(
-                  item.separado && mode === "central" && "bg-blue-50/40",
-                  item.conferido && mode === "satelite" && "bg-emerald-50/40"
-                )}>
-                  {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") && (
-                    <TableCell className="text-center">
-                      <input
-                        type="checkbox"
-                        checked={!!item.separado}
-                        onChange={() => handleToggleCheck(idx, "separado")}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
-                      />
-                    </TableCell>
-                  )}
-
-                  {(pedido.status === "Separado" || pedido.status === "Entregue" || pedido.status === "Concluido") && (
-                    <TableCell className="text-center">
-                      <input
-                        type="checkbox"
-                        checked={!!item.conferido}
-                        onChange={() => handleToggleCheck(idx, "conferido")}
-                        disabled={pedido.status === "Concluido"}
-                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 cursor-pointer"
-                      />
-                    </TableCell>
-                  )}
-
-                  <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                    <p className="font-bold text-slate-900 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.medicamento_nome}</p>
-                    <p className="text-xs text-slate-500 break-words whitespace-normal">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
-                    {item.qtd_prescrita !== undefined && (
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Prescrição: <span className="font-semibold">{item.qtd_prescrita} un</span>
-                        {item.margem_percentual > 0 && (
-                          <span className="text-emerald-600 font-bold ml-1">
-                            (+{item.margem_percentual}% margem: +{item.qtd_margem_extra || Math.ceil(item.qtd_prescrita * (item.margem_percentual / 100))} un)
-                          </span>
-                        )}
-                        {item.descontou_estoque === 1 && (
-                          <span className="text-blue-600 font-medium ml-1">
-                            (-{item.estoque_satelite_momento || 0} em estoque)
-                          </span>
-                        )}
-                      </p>
+              {displayedItens.map((item) => {
+                const idx = item.originalIndex;
+                return (
+                  <TableRow key={idx} className={cn(
+                    item.separado && mode === "central" && "bg-blue-50/40",
+                    item.conferido && mode === "satelite" && "bg-emerald-50/40"
+                  )}>
+                    {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") && (
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!item.separado}
+                          onChange={() => handleToggleCheck(idx, "separado")}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
+                        />
+                      </TableCell>
                     )}
-                  </TableCell>
+
+                    {(pedido.status === "Separado" || pedido.status === "Entregue" || pedido.status === "Concluido") && (
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!item.conferido}
+                          onChange={() => handleToggleCheck(idx, "conferido")}
+                          disabled={pedido.status === "Concluido"}
+                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 cursor-pointer"
+                        />
+                      </TableCell>
+                    )}
+
+                    <TableCell className="max-w-[280px] min-w-[170px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="font-bold text-slate-900 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">{item.medicamento_nome}</span>
+                        {item.isPsicotropico ? (
+                          <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-800 border-purple-300 font-bold inline-flex items-center gap-0.5">
+                            🧠 Depósito Psicotrópico
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-800 border-sky-300 font-medium inline-flex items-center gap-0.5">
+                            🏥 Depósito Clínico
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 break-words whitespace-normal">{item.concentracao} {item.apresentacao ? `(${item.apresentacao})` : ""}</p>
+                      {item.qtd_prescrita !== undefined && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Prescrição: <span className="font-semibold">{item.qtd_prescrita} un</span>
+                          {item.margem_percentual > 0 && (
+                            <span className="text-emerald-600 font-bold ml-1">
+                              (+{item.margem_percentual}% margem: +{item.qtd_margem_extra || Math.ceil(item.qtd_prescrita * (item.margem_percentual / 100))} un)
+                            </span>
+                          )}
+                          {item.descontou_estoque === 1 && (
+                            <span className="text-blue-600 font-medium ml-1">
+                              (-{item.estoque_satelite_momento || 0} em estoque)
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </TableCell>
 
                   <TableCell className="text-center font-mono font-bold text-slate-700">
                     {item.qtd_solicitada} un
@@ -2163,7 +2530,8 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                     </TableCell>
                   )}
                 </TableRow>
-              ))}
+              );
+            })}
             </TableBody>
           </Table>
         </div>
