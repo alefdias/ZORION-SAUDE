@@ -56,6 +56,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [customQuantities, setCustomQuantities] = useState({}); // medId -> custom quantity
   const [observacaoPedido, setObservacaoPedido] = useState("");
   const [prioridadePedido, setPrioridadePedido] = useState("Normal"); // "Normal" | "Urgente" | "Emergência"
+  const [depositoFiltro, setDepositoFiltro] = useState("todos"); // "todos" | "clinico" | "psicotropico"
 
   // State for order view modal
   const [selectedPedido, setSelectedPedido] = useState(null);
@@ -380,6 +381,25 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     };
   }, [prescricoes, pacientes, medicamentos, selectedAlaIds, isAllAlas, alas, effectiveDays, effectiveMargem, descontarEstoque]);
 
+  // Filtro de necessidade por depósito selecionado (Todos / Clínico / Psicotrópico)
+  const calculoNecessidadeFiltrado = useMemo(() => {
+    if (depositoFiltro === "clinico") {
+      return calculoNecessidade.filter(i => !i.isPsicotropico);
+    }
+    if (depositoFiltro === "psicotropico") {
+      return calculoNecessidade.filter(i => i.isPsicotropico);
+    }
+    return calculoNecessidade;
+  }, [calculoNecessidade, depositoFiltro]);
+
+  const totalClinicosDisponiveis = useMemo(() => {
+    return calculoNecessidade.filter(i => !i.isPsicotropico).length;
+  }, [calculoNecessidade]);
+
+  const totalPsicotropicosDisponiveis = useMemo(() => {
+    return calculoNecessidade.filter(i => i.isPsicotropico).length;
+  }, [calculoNecessidade]);
+
   // Resumo macro do pedido calculado
   const resumoPedido = useMemo(() => {
     let totalPrescrito = 0;
@@ -389,13 +409,6 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     let totalPsicotropicos = 0;
 
     calculoNecessidade.forEach(item => {
-      const finalQtd = customQuantities[item.medicamentoId] !== undefined 
-        ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
-        : item.qtdSugerida;
-
-      totalPrescrito += item.qtdCalculada;
-      totalMargemExtra += (item.qtdMargemExtra || 0);
-      totalSolicitado += finalQtd;
       if (item.isPsicotropico) {
         totalPsicotropicos += 1;
       } else {
@@ -403,21 +416,37 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       }
     });
 
+    calculoNecessidadeFiltrado.forEach(item => {
+      const finalQtd = customQuantities[item.medicamentoId] !== undefined 
+        ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
+        : item.qtdSugerida;
+
+      totalPrescrito += item.qtdCalculada;
+      totalMargemExtra += (item.qtdMargemExtra || 0);
+      totalSolicitado += finalQtd;
+    });
+
     return {
-      totalItens: calculoNecessidade.length,
+      totalItens: calculoNecessidadeFiltrado.length,
       totalPrescrito,
       totalMargemExtra,
       totalSolicitado,
       totalClinicos,
       totalPsicotropicos
     };
-  }, [calculoNecessidade, customQuantities]);
+  }, [calculoNecessidade, calculoNecessidadeFiltrado, customQuantities]);
 
   // Create Order Mutation
   const criarPedidoMutation = useMutation({
     mutationFn: async () => {
-      if (calculoNecessidade.length === 0) {
-        throw new Error("Nenhuma medicação necessária encontrada para os filtros selecionados.");
+      if (calculoNecessidadeFiltrado.length === 0) {
+        throw new Error(
+          depositoFiltro === "clinico"
+            ? "Nenhum medicamento do Depósito Clínico foi encontrado para os filtros selecionados."
+            : depositoFiltro === "psicotropico"
+              ? "Nenhum medicamento do Depósito Psicotrópico (Portaria 344) foi encontrado para os filtros selecionados."
+              : "Nenhuma medicação necessária encontrada para os filtros selecionados."
+        );
       }
 
       const isAllAlasCalc = selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
@@ -427,7 +456,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         : (alasEncontradas.length > 0 ? alasEncontradas.map(a => a.nome).join(" + ") : "Alas Selecionadas");
       const alaIdStr = isAllAlasCalc ? "all" : selectedAlaIds.join(",");
 
-      const itens = calculoNecessidade.map(item => {
+      const itens = calculoNecessidadeFiltrado.map(item => {
         const finalQtd = customQuantities[item.medicamentoId] !== undefined 
           ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
           : item.qtdSugerida;
@@ -459,17 +488,29 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const pedidoId = crypto.randomUUID();
       const timestampCode = Date.now().toString().slice(-6);
 
+      const tagDeposito = depositoFiltro === "clinico"
+        ? "DEPÓSITO CLÍNICO"
+        : depositoFiltro === "psicotropico"
+          ? "DEPÓSITO PSICOTRÓPICO"
+          : "TODOS OS DEPÓSITOS";
+
+      const prefixCodigo = depositoFiltro === "clinico"
+        ? "PED-CLI"
+        : depositoFiltro === "psicotropico"
+          ? "PED-PSI"
+          : "PED";
+
       let obsFinal = observacaoPedido || "";
-      if (effectiveMargem > 0 || descontarEstoque) {
-        const tagMargem = effectiveMargem > 0 ? `Margem: +${effectiveMargem}%` : '';
-        const tagEstoque = descontarEstoque ? 'Estoque Satélite Abatido' : '';
-        const tags = [tagMargem, tagEstoque].filter(Boolean).join(' | ');
-        obsFinal = obsFinal ? `[${tags}] ${obsFinal}` : `[${tags}]`;
-      }
+      const extraTags = [];
+      extraTags.push(tagDeposito);
+      if (effectiveMargem > 0) extraTags.push(`Margem: +${effectiveMargem}%`);
+      if (descontarEstoque) extraTags.push('Estoque Satélite Abatido');
+      const tagStr = extraTags.map(t => `[${t}]`).join(" ");
+      obsFinal = obsFinal ? `${tagStr} ${obsFinal}` : tagStr;
 
       const novoPedido = {
         id: pedidoId,
-        codigo: `PED-${timestampCode}`,
+        codigo: `${prefixCodigo}-${timestampCode}`,
         ala_id: alaIdStr,
         ala_nome: alaNomeStr,
         dias_calculados: effectiveDays,
@@ -489,13 +530,14 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         codigo: novoPedido.codigo,
         ala: novoPedido.ala_nome,
         prioridade: novoPedido.prioridade,
+        deposito: tagDeposito,
         margem: effectiveMargem,
         itens: itens.length
       });
 
       // Atualiza automaticamente as prescrições de frascos líquidos que foram repostos neste pedido
       const hoje = format(new Date(), "yyyy-MM-dd");
-      for (const item of calculoNecessidade) {
+      for (const item of calculoNecessidadeFiltrado) {
         if (item.isLiquido && Array.isArray(item.prescricaoIds) && item.prescricaoIds.length > 0) {
           for (const prId of item.prescricaoIds) {
             const pr = prescricoes.find(p => p.id === prId);
@@ -561,8 +603,11 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   };
 
   const handleOpenPrintPreview = (pedidoCustom = null) => {
-    setPrintDepotView("todos");
     if (pedidoCustom) {
+      const isCli = pedidoCustom.codigo?.startsWith("PED-CLI") || pedidoCustom.observacao?.includes("DEPÓSITO CLÍNICO");
+      const isPsi = pedidoCustom.codigo?.startsWith("PED-PSI") || pedidoCustom.observacao?.includes("DEPÓSITO PSICOTRÓPICO");
+      setPrintDepotView(isCli ? "clinico" : isPsi ? "psicotropico" : "todos");
+
       let rawItens = pedidoCustom.itens || pedidoCustom.itens_json || [];
       if (typeof rawItens === "string") {
         try { rawItens = JSON.parse(rawItens); } catch {}
@@ -612,13 +657,15 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         })
       });
     } else {
+      setPrintDepotView(depositoFiltro || "todos");
+
       const isAllAlasCalc = selectedAlaIds.includes("all") || selectedAlaIds.length === 0;
       const alasEncontradas = alas.filter(a => selectedAlaIds.includes(String(a.id)));
       const alaNomeStr = isAllAlasCalc 
         ? "Todas as Alas" 
         : (alasEncontradas.length > 0 ? alasEncontradas.map(a => a.nome).join(" + ") : "Alas Selecionadas");
 
-      const itens = calculoNecessidade.map(item => {
+      const itens = calculoNecessidadeFiltrado.map(item => {
         const finalQtd = customQuantities[item.medicamentoId] !== undefined 
           ? parseInt(customQuantities[item.medicamentoId], 10) || 0 
           : item.qtdSugerida;
@@ -649,8 +696,10 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         };
       });
 
+      const prefixCodigo = depositoFiltro === "clinico" ? "PREVIA-CLI" : depositoFiltro === "psicotropico" ? "PREVIA-PSI" : "PREVIA";
+
       setPrintOrderData({
-        codigo: `PREVIA-${Date.now().toString().slice(-4)}`,
+        codigo: `${prefixCodigo}-${Date.now().toString().slice(-4)}`,
         alaNome: alaNomeStr,
         dataSolicitacao: new Date(printDate + "T12:00:00").toISOString(),
         dias: effectiveDays,
@@ -1022,14 +1071,96 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
                 <Button
                   onClick={() => criarPedidoMutation.mutate()}
-                  disabled={criarPedidoMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-md h-9"
+                  disabled={criarPedidoMutation.isPending || calculoNecessidadeFiltrado.length === 0}
+                  className={cn(
+                    "text-white font-bold gap-2 shadow-md h-9 transition-all",
+                    depositoFiltro === "clinico" && "bg-sky-600 hover:bg-sky-700",
+                    depositoFiltro === "psicotropico" && "bg-purple-600 hover:bg-purple-700",
+                    depositoFiltro === "todos" && "bg-blue-600 hover:bg-blue-700"
+                  )}
                 >
                   <Send className="w-4 h-4" />
-                  {criarPedidoMutation.isPending ? "Enviando..." : "Fazer Pedido à Central"}
+                  {criarPedidoMutation.isPending 
+                    ? "Enviando..." 
+                    : depositoFiltro === "clinico"
+                      ? "Fazer Pedido (Só Clínicos)"
+                      : depositoFiltro === "psicotropico"
+                        ? "Fazer Pedido (Só Psicotrópicos)"
+                        : "Fazer Pedido à Central"}
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Seletor de Tipo de Depósito do Pedido (Clínico / Psicotrópico / Ambos) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 bg-gradient-to-r from-slate-50 via-sky-50/20 to-purple-50/20 dark:from-slate-800/80 dark:via-slate-800/60 dark:to-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 mb-4 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-base shrink-0">
+                📦
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  Destino do Pedido por Depósito
+                  {depositoFiltro === "clinico" && (
+                    <Badge variant="outline" className="text-[10px] bg-sky-100 text-sky-800 border-sky-300 font-bold">
+                      🏥 Filtro Ativo: Apenas Medicamentos Clínicos
+                    </Badge>
+                  )}
+                  {depositoFiltro === "psicotropico" && (
+                    <Badge variant="outline" className="text-[10px] bg-purple-100 text-purple-800 border-purple-300 font-bold">
+                      🧠 Filtro Ativo: Apenas Psicotrópicos (Portaria 344)
+                    </Badge>
+                  )}
+                  {depositoFiltro === "todos" && (
+                    <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-700 border-slate-300 font-medium">
+                      📑 Ambos os Depósitos
+                    </Badge>
+                  )}
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Deseja enviar a solicitação separadamente para o <strong>Depósito Clínico</strong>, para o <strong>Depósito Psicotrópico</strong> ou <strong>Ambos</strong> juntos?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant={depositoFiltro === "todos" ? "default" : "ghost"}
+                onClick={() => setDepositoFiltro("todos")}
+                className={cn(
+                  "h-8 text-xs font-bold px-3 gap-1.5 transition-all",
+                  depositoFiltro === "todos" ? "bg-slate-800 hover:bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                📑 Ambos ({calculoNecessidade.length})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={depositoFiltro === "clinico" ? "default" : "ghost"}
+                onClick={() => setDepositoFiltro("clinico")}
+                className={cn(
+                  "h-8 text-xs font-bold px-3 gap-1.5 transition-all",
+                  depositoFiltro === "clinico" ? "bg-sky-600 hover:bg-sky-700 text-white shadow-xs" : "text-sky-700 hover:bg-sky-50"
+                )}
+              >
+                🏥 Só Clínicos ({totalClinicosDisponiveis})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={depositoFiltro === "psicotropico" ? "default" : "ghost"}
+                onClick={() => setDepositoFiltro("psicotropico")}
+                className={cn(
+                  "h-8 text-xs font-bold px-3 gap-1.5 transition-all",
+                  depositoFiltro === "psicotropico" ? "bg-purple-600 hover:bg-purple-700 text-white shadow-xs" : "text-purple-700 hover:bg-purple-50"
+                )}
+              >
+                🧠 Só Psicotrópicos ({totalPsicotropicosDisponiveis})
+              </Button>
+            </div>
           </div>
 
           {/* Painel de Controles e Parâmetros */}
@@ -1336,22 +1467,70 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           {/* Cards de Resumo do Cálculo */}
           {calculoNecessidade.length > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-              <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Medicamentos</p>
+              <div 
+                onClick={() => setDepositoFiltro("todos")}
+                className={cn(
+                  "p-2.5 rounded-lg border cursor-pointer transition-all hover:scale-[1.01]",
+                  depositoFiltro === "todos"
+                    ? "bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-500 ring-2 ring-slate-400/40"
+                    : "bg-slate-50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800"
+                )}
+                title="Clique para ver todos os medicamentos juntos"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] uppercase font-bold text-slate-500">
+                    {depositoFiltro === "todos" ? "Total do Pedido" : "Itens Filtrados"}
+                  </p>
+                  {depositoFiltro === "todos" && (
+                    <span className="text-[9px] bg-slate-700 text-white px-1.5 py-0.2 rounded font-bold">Ambos</span>
+                  )}
+                </div>
                 <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalItens} <span className="text-xs font-normal text-slate-500">itens</span></p>
               </div>
-              <div className="p-2.5 bg-sky-50 dark:bg-sky-950/30 rounded-lg border border-sky-200/70 dark:border-sky-900/40">
-                <p className="text-[10px] uppercase font-bold text-sky-700 dark:text-sky-400">🏥 Depósito Clínico</p>
+
+              <div 
+                onClick={() => setDepositoFiltro("clinico")}
+                className={cn(
+                  "p-2.5 rounded-lg border cursor-pointer transition-all hover:scale-[1.01]",
+                  depositoFiltro === "clinico"
+                    ? "bg-sky-100 dark:bg-sky-950/60 border-sky-400 dark:border-sky-600 ring-2 ring-sky-400/40 shadow-xs"
+                    : "bg-sky-50 dark:bg-sky-950/30 border-sky-200/70 dark:border-sky-900/40"
+                )}
+                title="Clique para filtrar apenas o Depósito Clínico"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] uppercase font-bold text-sky-700 dark:text-sky-400">🏥 Depósito Clínico</p>
+                  {depositoFiltro === "clinico" && (
+                    <span className="text-[9px] bg-sky-600 text-white px-1.5 py-0.2 rounded font-bold">Ativo</span>
+                  )}
+                </div>
                 <p className="text-xl font-bold text-sky-700 dark:text-sky-400">{resumoPedido.totalClinicos} <span className="text-xs font-normal text-sky-600">itens</span></p>
               </div>
-              <div className="p-2.5 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200/70 dark:border-purple-900/40">
-                <p className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-400">🧠 Depósito Psicotrópico</p>
+
+              <div 
+                onClick={() => setDepositoFiltro("psicotropico")}
+                className={cn(
+                  "p-2.5 rounded-lg border cursor-pointer transition-all hover:scale-[1.01]",
+                  depositoFiltro === "psicotropico"
+                    ? "bg-purple-100 dark:bg-purple-950/60 border-purple-400 dark:border-purple-600 ring-2 ring-purple-400/40 shadow-xs"
+                    : "bg-purple-50 dark:bg-purple-950/30 border-purple-200/70 dark:border-purple-900/40"
+                )}
+                title="Clique para filtrar apenas o Depósito Psicotrópico (Portaria 344)"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-400">🧠 Depósito Psicotrópico</p>
+                  {depositoFiltro === "psicotropico" && (
+                    <span className="text-[9px] bg-purple-600 text-white px-1.5 py-0.2 rounded font-bold">Ativo</span>
+                  )}
+                </div>
                 <p className="text-xl font-bold text-purple-700 dark:text-purple-400">{resumoPedido.totalPsicotropicos} <span className="text-xs font-normal text-purple-600">itens</span></p>
               </div>
+
               <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/60 dark:border-slate-800">
                 <p className="text-[10px] uppercase font-bold text-slate-500">Consumo Prescrito ({effectiveDays}D)</p>
                 <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{resumoPedido.totalPrescrito} <span className="text-xs font-normal text-slate-500">un</span></p>
               </div>
+
               <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200/70 dark:border-blue-900/40">
                 <p className="text-[10px] uppercase font-bold text-blue-700 dark:text-blue-400">Total a Solicitar</p>
                 <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{resumoPedido.totalSolicitado} <span className="text-xs font-normal text-blue-600">un</span></p>
@@ -1383,14 +1562,18 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {calculoNecessidade.length === 0 ? (
+                  {calculoNecessidadeFiltrado.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={effectiveMargem > 0 ? 7 : 6} className="text-center py-10 text-slate-500">
-                        Nenhuma necessidade calculada para esta Ala e Período.
+                        {depositoFiltro === "clinico"
+                          ? "Nenhum medicamento do Depósito Clínico necessário para esta Ala e Período."
+                          : depositoFiltro === "psicotropico"
+                            ? "Nenhum medicamento do Depósito Psicotrópico (Portaria 344) necessário para esta Ala e Período."
+                            : "Nenhuma necessidade calculada para esta Ala e Período."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    calculoNecessidade.map(item => {
+                    calculoNecessidadeFiltrado.map(item => {
                       const isCustom = customQuantities[item.medicamentoId] !== undefined;
                       const currentVal = isCustom 
                         ? customQuantities[item.medicamentoId] 
@@ -1645,17 +1828,37 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                     else itensArr = JSON.parse(p.itens_json || "[]");
                   } catch {}
 
+                  const isCliOnly = p.codigo?.startsWith("PED-CLI") || p.observacao?.includes("DEPÓSITO CLÍNICO");
+                  const isPsiOnly = p.codigo?.startsWith("PED-PSI") || p.observacao?.includes("DEPÓSITO PSICOTRÓPICO");
+
                   return (
                     <TableRow key={p.id} className="hover:bg-slate-50">
                       <TableCell className="font-mono font-bold text-xs text-indigo-600">
-                        {p.codigo}
-                        {p.prioridade && p.prioridade !== "Normal" && (
-                          <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
-                            p.prioridade === "Emergência" ? "bg-red-600 text-white animate-pulse" : "bg-amber-500 text-white"
-                          }`}>
-                            {p.prioridade}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{p.codigo}</span>
+                          {p.prioridade && p.prioridade !== "Normal" && (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                              p.prioridade === "Emergência" ? "bg-red-600 text-white animate-pulse" : "bg-amber-500 text-white"
+                            }`}>
+                              {p.prioridade}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5">
+                          {isCliOnly ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] bg-sky-50 text-sky-700 font-bold border border-sky-200">
+                              🏥 Depósito Clínico
+                            </span>
+                          ) : isPsiOnly ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                              🧠 Depósito Psicotrópico
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-medium border border-slate-200">
+                              📑 Clínicos + Psico
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="font-semibold text-slate-800">{p.ala_nome}</TableCell>
                       <TableCell className="text-xs text-slate-600">
