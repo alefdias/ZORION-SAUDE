@@ -133,15 +133,21 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
   // Calculation of medication needs per selected Ala(s), Days, Safety Margin, and Stock Discount
   const { calculoNecessidade, frascosAtivosNasAlas } = useMemo(() => {
+    const hojeStr = format(new Date(), "yyyy-MM-dd");
+
     const ativas = prescricoes.filter(p => {
       // 1. Status check: aceita Ativa, Ativo (case-insensitive) ou sem status definido
       const statusStr = String(p.status || "Ativa").trim().toLowerCase();
       if (statusStr !== "ativa" && statusStr !== "ativo") return false;
 
+      // 1.1 Não incluir prescrições com período finalizado
+      if (p.dataFim && p.dataFim < hojeStr) return false;
+
       // 2. Paciente check
-      const pacId = p.pacienteId || p.paciente_id;
+      const pacId = p.pacienteId || p.paciente_id || p.pacienteid;
       const pac = pacientes.find(patient => 
-        (pacId && String(patient.id) === String(pacId)) ||
+        (pacId && pacId !== "[object Object]" && String(patient.id) === String(pacId)) ||
+        (p.prontuario && patient.prontuario && String(patient.prontuario).trim() === String(p.prontuario).trim()) ||
         (p.pacienteNome && patient.nome && patient.nome.trim().toLowerCase() === p.pacienteNome.trim().toLowerCase())
       );
       if (pac && (pac.status === "Alta" || pac.status === "alta" || pac.ativo === false)) return false;
@@ -168,10 +174,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
     const medMap = {};
     const frascosAtivosNasAlas = [];
-    const hojeStr = format(new Date(), "yyyy-MM-dd");
 
     ativas.forEach(p => {
-      const medId = p.medicamentoId || p.medicamento_id;
+      const medId = p.medicamentoId || p.medicamento_id || p.medicamentoid;
       const targetConc = (p.concentracao || "").replace(/\s+/g, "").toLowerCase();
 
       // 1. Prioridade: ID exato
@@ -213,7 +218,20 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
       let dailyDose = Number(p.totalDiario ?? p.total_diario ?? 0);
       if (!dailyDose || dailyDose <= 0) {
-        dailyDose = sumDoses > 0 ? sumDoses : (Number(p.dose) || 1);
+        dailyDose = sumDoses > 0 ? sumDoses : (Number(p.dose) || 0);
+      }
+      if (!dailyDose || dailyDose <= 0) {
+        if (p.horarios) {
+          try {
+            const parsedH = typeof p.horarios === "string" ? JSON.parse(p.horarios) : p.horarios;
+            if (Array.isArray(parsedH)) {
+              dailyDose = parsedH.reduce((acc, h) => acc + (Number(h.dose) || 0), 0);
+            }
+          } catch (e) {}
+        }
+      }
+      if (!dailyDose || dailyDose <= 0) {
+        dailyDose = 1;
       }
 
       // TRATAMENTO INTELIGENTE PARA MEDICAMENTOS LÍQUIDOS MULTIDOSE
