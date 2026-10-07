@@ -6,13 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -22,8 +15,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { 
-  AlertTriangle, 
-  Flame, 
+  PackagePlus, 
   Plus, 
   Trash2, 
   Send, 
@@ -34,40 +26,37 @@ import {
   CheckCircle2, 
   Eye, 
   Search,
-  ShieldAlert,
-  ArrowRight
+  RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
+import { isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
 import { OrderDetailsModal } from "./PedidosSateliteManager";
-
-const MOTIVOS_URGENCIA = [
-  "Agitação Psicomotora Grave / Risco Iminente de Auto ou Heteroagressão",
-  "Contenção Farmacológica de Urgência / Surto Psicótico Agudo",
-  "Admissão Emergencial Psiquiátrica (Prescrição em Aberto no Posto)",
-  "Sintomas Extrapiramidais Graves / Distonia Aguda / Impregnação",
-  "Intercorrência Clínica Aguda / Parada Cardiorrespiratória",
-  "Reposição Crítica Imediata por Falta Súbita no Posto",
-  "Outra Justificativa de Urgência Psiquiátrica / Clínica"
-];
 
 export default function PedidosSateliteUrgencia() {
   const queryClient = useQueryClient();
 
   // Current logged user
-  const storedUser = JSON.parse(localStorage.getItem("pharma_user") || "null");
-  const currentUser = storedUser || { full_name: "Farmacêutico Satélite", crf: "CRF-SP 45.291" };
+  let currentUser = { full_name: "Farmacêutico Satélite", crf: "CRF-SP 45.291" };
+  try {
+    const rawUser = localStorage.getItem("pharma_user");
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed) {
+        currentUser = {
+          full_name: parsed.full_name || parsed.nome || "Farmacêutico Satélite",
+          crf: parsed.crf || "CRF-SP 45.291"
+        };
+      }
+    }
+  } catch (e) {}
 
   // Queries
-  const { data: medicamentos = [], isLoading: isLoadingMeds } = useQuery({
+  const { data: medicamentos = [] } = useQuery({
     queryKey: ['medicamentos'],
     queryFn: () => db.entities.Medicamento.list(),
-  });
-
-  const { data: alas = [] } = useQuery({
-    queryKey: ['alas'],
-    queryFn: () => db.entities.Ala.list(),
   });
 
   const { data: pedidos = [], isLoading: isLoadingPedidos } = useQuery({
@@ -79,15 +68,10 @@ export default function PedidosSateliteUrgencia() {
     refetchInterval: 2000 // Real-time sync every 2s
   });
 
-  // Form State
-  const [selectedAlaId, setSelectedAlaId] = useState("URGENCIA");
-  const [motivoSelecionado, setMotivoSelecionado] = useState(MOTIVOS_URGENCIA[0]);
-  const [detalheMotivo, setDetalheMotivo] = useState("");
-
-  // Item Selector State
+  // State: Adicionar Medicamento
   const [selectedMedId, setSelectedMedId] = useState("");
   const [qtdItem, setQtdItem] = useState(1);
-  const [buscaMed, setBuscaMed] = useState("");
+  const [observacaoPedido, setObservacaoPedido] = useState("");
 
   // Order Items List
   const [itensPedido, setItensPedido] = useState([]);
@@ -95,25 +79,17 @@ export default function PedidosSateliteUrgencia() {
   // Modal State for viewing/receiving orders
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [filtroHistoricoUrgencia, setFiltroHistoricoUrgencia] = useState("urgentes"); // 'urgentes' | 'todos'
-
-  // Filtered meds for selector
-  const filteredMeds = useMemo(() => {
-    if (!buscaMed.trim()) return medicamentos;
-    const term = buscaMed.toLowerCase();
-    return medicamentos.filter(m => 
-      m.nome?.toLowerCase().includes(term) ||
-      m.principio_ativo?.toLowerCase().includes(term) ||
-      m.codigo?.toLowerCase().includes(term)
-    );
-  }, [medicamentos, buscaMed]);
+  const [filtroHistorico, setFiltroHistorico] = useState("avulsos"); // 'avulsos' | 'todos'
 
   const selectedMedObj = useMemo(() => {
-    return medicamentos.find(m => m.id === selectedMedId);
+    if (!selectedMedId) return null;
+    return medicamentos.find(m => String(m.id) === String(selectedMedId));
   }, [medicamentos, selectedMedId]);
 
   // Add Item to List
-  const handleAddItem = () => {
+  const handleAddItem = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+
     if (!selectedMedObj) {
       toast.error("Selecione um medicamento para adicionar.");
       return;
@@ -125,8 +101,16 @@ export default function PedidosSateliteUrgencia() {
       return;
     }
 
+    const isPsico = Boolean(
+      selectedMedObj.portaria_344 ||
+      isPsicotropico(selectedMedObj) ||
+      isPsicotropico(selectedMedObj.nome) ||
+      isPsicotropico(selectedMedObj.grupo_terapeutico)
+    );
+    const portariaList = isPsico ? getPortaria344List(selectedMedObj) : null;
+
     // Check if item already in list
-    const existingIndex = itensPedido.findIndex(i => i.medicamento_id === selectedMedObj.id);
+    const existingIndex = itensPedido.findIndex(i => String(i.medicamento_id) === String(selectedMedObj.id));
     if (existingIndex >= 0) {
       const next = [...itensPedido];
       next[existingIndex].qtd_solicitada += qtd;
@@ -149,16 +133,17 @@ export default function PedidosSateliteUrgencia() {
         qtd_solicitada: qtd,
         qtd_atendida: qtd,
         separado: false,
-        conferido: false
+        conferido: false,
+        is_psicotropico: isPsico ? 1 : 0,
+        portaria_344: portariaList
       };
       setItensPedido([...itensPedido, newItem]);
-      toast.success(`${selectedMedObj.nome} adicionado ao pedido de urgência.`);
+      toast.success(`${selectedMedObj.nome} adicionado.`);
     }
 
     // Reset selector
     setSelectedMedId("");
     setQtdItem(1);
-    setBuscaMed("");
   };
 
   const handleRemoveItem = (index) => {
@@ -175,68 +160,59 @@ export default function PedidosSateliteUrgencia() {
     setItensPedido(next);
   };
 
-  // Mutation to Create Urgent Order
-  const createPedidoUrgenciaMutation = useMutation({
+  // Mutation to Create Avulso Order
+  const createPedidoAvulsoMutation = useMutation({
     mutationFn: async () => {
       const validItens = itensPedido.filter(i => i.qtd_solicitada > 0);
       if (validItens.length === 0) {
         throw new Error("Adicione ao menos um medicamento com quantidade maior que zero.");
       }
 
-      let alaNomeStr = "Urgência / Emergência Geral Satélite";
-      if (selectedAlaId !== "URGENCIA") {
-        const foundAla = alas.find(a => a.id === selectedAlaId);
-        if (foundAla) alaNomeStr = foundAla.nome;
-      }
-
-      const motivoFinal = detalheMotivo.trim() 
-        ? `${motivoSelecionado} (${detalheMotivo.trim()})`
-        : motivoSelecionado;
-
       const timestampCode = Date.now().toString().slice(-6);
       const pedidoId = crypto.randomUUID();
 
+      let obsFinal = observacaoPedido.trim();
+      obsFinal = obsFinal ? `[PEDIDO AVULSO] ${obsFinal}` : "[PEDIDO AVULSO]";
+
       const novoPedido = {
         id: pedidoId,
-        codigo: `PED-URG-${timestampCode}`,
-        ala_id: selectedAlaId,
-        ala_nome: alaNomeStr,
+        codigo: `PED-${timestampCode}`,
+        ala_id: "AVULSO",
+        ala_nome: "Farmácia Satélite (Avulso)",
         dias_calculados: 0,
         margem_seguranca: 0,
         descontar_estoque: 0,
         solicitante: `Farmácia Satélite (${currentUser.full_name})`,
         data_solicitacao: new Date().toISOString(),
         status: "Pendente",
-        prioridade: "Emergência",
+        prioridade: "Normal",
         itens_json: JSON.stringify(validItens),
-        observacao: `[PEDIDO MANUAL DE URGÊNCIA - SEM PRESCRIÇÃO] Motivo: ${motivoFinal}`,
+        observacao: obsFinal,
         created_at: new Date().toISOString()
       };
 
       await db.entities.PedidoSatelite.create(novoPedido);
-      await db.logAction("Pedido Urgente Satélite", "PedidoSatelite", novoPedido.id, {
+      await db.logAction("Pedido Avulso Satélite", "PedidoSatelite", novoPedido.id, {
         codigo: novoPedido.codigo,
         ala: novoPedido.ala_nome,
-        motivo: motivoFinal,
-        prioridade: "Emergência",
+        prioridade: novoPedido.prioridade,
         itens: validItens.length
       });
 
       return novoPedido;
     },
     onSuccess: (data) => {
-      toast.success(`🚨 Pedido de Urgência ${data.codigo} transmitido para a Central com sucesso!`);
+      toast.success(`Pedido ${data.codigo} enviado para a Farmácia Central com sucesso!`);
       setItensPedido([]);
-      setDetalheMotivo("");
+      setObservacaoPedido("");
       queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
     },
     onError: (err) => {
-      const msg = typeof err === "string" ? err : (err?.message || JSON.stringify(err));
-      toast.error(`Erro ao criar pedido de urgência: ${msg}`);
+      toast.error("Erro ao criar pedido avulso: " + (err.message || err));
     }
   });
 
-  // Mutation to receive/complete order
+  // Modal Action Mutation (Conferir e Receber Pedido)
   const updatePedidoMutation = useMutation({
     mutationFn: async ({ pedido, newStatus, updatedItens, motivoCancelamento }) => {
       const payload = {
@@ -253,10 +229,10 @@ export default function PedidosSateliteUrgencia() {
         
         try {
           await db.logAction(
-            "Cancelamento Pedido Urgência",
+            "Cancelamento Pedido Avulso",
             "PedidoSatelite",
             pedido.id,
-            `Pedido ${pedido.codigo} (${pedido.ala_nome}) cancelado. Motivo: ${motivoCancelamento || "Sem motivo informado"}`
+            `Pedido ${pedido.codigo} cancelado. Motivo: ${motivoCancelamento || "Sem motivo informado"}`
           );
         } catch (e) {}
       } else if (newStatus === "Concluido") {
@@ -270,7 +246,7 @@ export default function PedidosSateliteUrgencia() {
           const qtdEnviada = Number(item.qtd_atendida) || 0;
 
           if (qtdRealRecebida > 0) {
-            const med = freshMeds.find(m => m.id === item.medicamento_id);
+            const med = freshMeds.find(m => String(m.id) === String(item.medicamento_id));
             if (med) {
               const currentSat = Number(med.estoque_satelite || 0);
               await db.entities.Medicamento.update(med.id, {
@@ -282,7 +258,7 @@ export default function PedidosSateliteUrgencia() {
           // Se houve divergência, estorna sobra para o estoque central
           if (qtdRealRecebida < qtdEnviada) {
             const dif = qtdEnviada - qtdRealRecebida;
-            const med = freshMeds.find(m => m.id === item.medicamento_id);
+            const med = freshMeds.find(m => String(m.id) === String(item.medicamento_id));
             if (med) {
               await db.entities.Medicamento.update(med.id, {
                 estoque_atual: (Number(med.estoque_atual) || 0) + dif
@@ -328,15 +304,15 @@ export default function PedidosSateliteUrgencia() {
     }
   });
 
-  // Filter urgent orders for the history table
+  // Filter orders for the history table
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter(p => {
-      if (filtroHistoricoUrgencia === "urgentes") {
-        return p.prioridade === "Emergência" || p.prioridade === "Urgente" || p.codigo?.includes("URG");
+      if (filtroHistorico === "avulsos") {
+        return p.ala_id === "AVULSO" || p.observacao?.includes("[PEDIDO AVULSO]") || p.codigo?.includes("URG");
       }
       return true;
     });
-  }, [pedidos, filtroHistoricoUrgencia]);
+  }, [pedidos, filtroHistorico]);
 
   const totalUnidades = useMemo(() => {
     return itensPedido.reduce((acc, item) => acc + (Number(item.qtd_solicitada) || 0), 0);
@@ -361,152 +337,45 @@ export default function PedidosSateliteUrgencia() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* ─── BANNER DE ADVERTÊNCIA OBRIGATÓRIO (USO EXCLUSIVO URGÊNCIA) ───────── */}
-      <div className="bg-rose-50/80 border-2 border-rose-400 dark:bg-rose-950/20 dark:border-rose-800 rounded-2xl p-5 shadow-sm">
-        <div className="flex items-start gap-3.5">
-          <div className="p-2.5 rounded-xl bg-rose-600 text-white shrink-0 mt-0.5 shadow-sm">
-            <Flame className="w-6 h-6 animate-pulse" />
-          </div>
-          <div className="space-y-2 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-black uppercase tracking-wide text-rose-950 dark:text-rose-200 flex items-center gap-2">
-                Atenção: Uso Restrito a Situações de Emergência e Urgência
-              </h2>
-              <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] uppercase tracking-wider">
-                Fluxo de Exceção Manual
-              </Badge>
-            </div>
-            
-            <div className="text-xs text-rose-900 dark:text-rose-300 space-y-1 leading-relaxed">
-              <p className="font-bold">
-                ⚠️ O fluxo padrão, seguro e obrigatório da Farmácia Satélite é utilizar a aba <span className="underline font-black">"Pedidos à Central"</span>, que apura as quantidades necessárias com base nas prescrições médicas ativas dos pacientes.
-              </p>
-              <p>
-                Esta aba manual destina-se <strong>estritamente a situações emergenciais e imprevistas</strong> (ex.: agitação psicomotora grave, surto psicótico com risco de auto ou heteroagressão, contenção farmacológica imediata, distonia aguda / impregnação neuroléptica, intercorrência clínica aguda ou admissão psiquiátrica de emergência cujo paciente ainda não teve a prescrição lançada no sistema).
-              </p>
-              <p className="text-[11px] text-rose-800 dark:text-rose-400 italic">
-                Todos os pedidos emitidos nesta aba são transmitidos com <strong>PRIORIDADE MÁXIMA (EMERGÊNCIA)</strong> para a Farmácia Central e ficam auditados no histórico do sistema.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── FORMULÁRIO DE PEDIDO MANUAL DE URGÊNCIA ───────────────────────── */}
+      {/* ─── FORMULÁRIO DE PEDIDOS AVULSOS ───────────────────────── */}
       <Card className="p-6 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900 space-y-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
-            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-rose-600" />
-              Emitir Pedido Manual de Urgência à Central
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <PackagePlus className="w-5 h-5 text-blue-600" />
+              Fazer Pedido Avulso à Farmácia Central
             </h3>
             <p className="text-xs text-slate-500">
-              Monte a lista de medicamentos necessários para o atendimento de urgência sem vínculo de prescrição.
+              Solicite medicamentos pontuais para a Farmácia Satélite sem necessidade de cálculo de prescrições. Basta digitar o nome do medicamento e a quantidade desejada.
             </p>
           </div>
-          <Badge className="bg-rose-100 text-rose-800 border-rose-300 font-bold px-3 py-1 flex items-center gap-1.5">
-            <Flame className="w-3.5 h-3.5 text-rose-600" />
-            Prioridade: Urgente / Emergência
+          <Badge className="bg-blue-50 text-blue-700 border-blue-200 font-semibold px-2.5 py-1">
+            Transferência Central ➔ Satélite
           </Badge>
         </div>
 
-        {/* Setor e Motivo da Urgência */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div>
-            <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 block">
-              Ala / Setor de Destino da Urgência:
-            </Label>
-            <Select value={selectedAlaId} onValueChange={setSelectedAlaId}>
-              <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-300 font-semibold text-xs h-9">
-                <SelectValue placeholder="Selecione a ala de destino..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="URGENCIA" className="font-bold text-rose-700">
-                  🚨 Pronto Atendimento / Urgência Geral Satélite
-                </SelectItem>
-                {alas.map(ala => (
-                  <SelectItem key={ala.id} value={ala.id}>
-                    {ala.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 block">
-              Justificativa / Motivo da Urgência (Obrigatório):
-            </Label>
-            <Select value={motivoSelecionado} onValueChange={setMotivoSelecionado}>
-              <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-300 font-semibold text-xs h-9">
-                <SelectValue placeholder="Selecione o motivo..." />
-              </SelectTrigger>
-              <SelectContent>
-                {MOTIVOS_URGENCIA.map((mot, idx) => (
-                  <SelectItem key={idx} value={mot}>
-                    {mot}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="md:col-span-2">
-            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5 block">
-              Detalhamento / Observação Adicional da Urgência (Opcional):
-            </Label>
-            <Input
-              placeholder="Ex: Paciente no Leito 08 em agitação psicomotora grave e risco de autoagressão, medicação para contenção imediata."
-              value={detalheMotivo}
-              onChange={(e) => setDetalheMotivo(e.target.value)}
-              className="bg-white dark:bg-slate-800 text-xs h-9"
-            />
-          </div>
-        </div>
-
-        {/* Adicionar Medicamento à Lista */}
-        <div className="bg-indigo-50/40 dark:bg-indigo-950/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/30 space-y-3">
-          <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Plus className="w-4 h-4 text-indigo-600" />
-            Adicionar Medicamento ao Pedido de Urgência:
+        {/* Adicionar Medicamento à Lista (Combobox idêntico às outras janelas) */}
+        <div className="bg-slate-50/80 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <Plus className="w-4 h-4 text-blue-600" />
+            Adicionar Medicamento:
           </span>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-            <div className="md:col-span-4">
-              <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">
-                Filtrar Medicamento por Nome ou Princípio Ativo:
+          <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="md:col-span-8 space-y-1">
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Medicamento:
               </Label>
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Input
-                  placeholder="Digite para buscar..."
-                  value={buscaMed}
-                  onChange={(e) => setBuscaMed(e.target.value)}
-                  className="pl-8 bg-white h-9 text-xs"
-                />
-              </div>
+              <ComboboxMedicamento
+                medicamentos={medicamentos}
+                value={selectedMedId}
+                onChange={setSelectedMedId}
+                placeholder="Digite o nome do medicamento (ex: Dipirona, Domperidona...)"
+              />
             </div>
 
-            <div className="md:col-span-5">
-              <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">
-                Selecione o Medicamento ({filteredMeds.length} disponíveis):
-              </Label>
-              <Select value={selectedMedId} onValueChange={setSelectedMedId}>
-                <SelectTrigger className="bg-white border-slate-300 text-xs h-9 font-medium">
-                  <SelectValue placeholder="Escolha o medicamento..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredMeds.map(med => (
-                    <SelectItem key={med.id} value={med.id}>
-                      {med.nome} {med.concentracao ? `- ${med.concentracao}` : ""} {med.apresentacao ? `(${med.apresentacao})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="md:col-span-1">
-              <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">
+            <div className="md:col-span-2 space-y-1">
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Quantidade:
               </Label>
               <Input
@@ -514,44 +383,53 @@ export default function PedidosSateliteUrgencia() {
                 min="1"
                 value={qtdItem}
                 onChange={(e) => setQtdItem(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="bg-white text-center font-bold h-9 text-xs"
+                className="bg-white dark:bg-slate-800 text-center font-bold h-9 text-xs"
               />
             </div>
 
             <div className="md:col-span-2">
               <Button
-                type="button"
-                onClick={handleAddItem}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 text-xs gap-1.5"
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 text-xs gap-1.5 shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Adicionar Item
+                Adicionar
               </Button>
             </div>
-          </div>
+          </form>
 
           {/* Dica de Estoque do Medicamento Selecionado */}
           {selectedMedObj && (
-            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold bg-white p-2.5 rounded-lg border border-slate-200">
-              <span className="text-slate-600">
-                Item Selecionado: <strong className="text-slate-900">{selectedMedObj.nome} {selectedMedObj.concentracao}</strong>
+            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <span className="text-slate-700 dark:text-slate-300">
+                Selecionado: <strong className="text-slate-900 dark:text-white">{selectedMedObj.nome} {selectedMedObj.concentracao}</strong>
               </span>
-              <span className="text-indigo-700">
-                Estoque Satélite: <strong>{selectedMedObj.estoque_satelite || 0} {selectedMedObj.unidade_medida || "UN"}</strong>
+              <span className="text-slate-300">|</span>
+              <span className="text-indigo-700 dark:text-indigo-400">
+                Estoque Satélite: <strong>{selectedMedObj.estoque_satelite || 0} un</strong>
               </span>
-              <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700" : "text-red-600 font-bold"}>
-                Estoque Central: <strong>{selectedMedObj.estoque_atual || 0} {selectedMedObj.unidade_medida || "UN"}</strong>
-                {Number(selectedMedObj.estoque_atual || 0) <= 0 && " (Atenção: Zerado na Central!)"}
+              <span className="text-slate-300">|</span>
+              <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-amber-600 font-bold"}>
+                Estoque Central: <strong>{selectedMedObj.estoque_atual || 0} un</strong>
               </span>
+              {selectedMedObj.portaria_344 || isPsicotropico(selectedMedObj) ? (
+                <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 font-bold ml-auto">
+                  🧠 Portaria 344
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300 font-semibold ml-auto">
+                  🏥 Clínico
+                </Badge>
+              )}
             </div>
           )}
         </div>
 
-        {/* Grade de Itens Adicionados ao Pedido */}
+        {/* Tabela de Itens Adicionados ao Pedido */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Itens a Solicitar no Pedido de Urgência ({itensPedido.length} itens, {totalUnidades} unidades):
+              Medicamentos no Pedido ({itensPedido.length} itens, {totalUnidades} un):
             </h4>
             {itensPedido.length > 0 && (
               <Button
@@ -559,9 +437,10 @@ export default function PedidosSateliteUrgencia() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setItensPedido([])}
-                className="text-xs text-red-600 hover:bg-red-50 h-7"
+                className="text-xs text-red-600 hover:bg-red-50 h-7 gap-1"
               >
-                Limpar Todos os Itens
+                <RotateCcw className="w-3 h-3" />
+                Limpar Lista
               </Button>
             )}
           </div>
@@ -572,17 +451,18 @@ export default function PedidosSateliteUrgencia() {
                 <TableRow className="bg-slate-50 dark:bg-slate-800 text-slate-700">
                   <TableHead className="text-xs font-bold w-16">Cód</TableHead>
                   <TableHead className="text-xs font-bold">Medicamento / Apresentação</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-28">Tipo</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Central</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Satélite</TableHead>
-                  <TableHead className="text-xs font-bold text-center w-36">Qtd. Solicitada (Urgente)</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-36">Quantidade a Pedir</TableHead>
                   <TableHead className="text-xs font-bold text-right w-16">Ação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itensPedido.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-slate-400 italic text-xs">
-                      Nenhum medicamento adicionado ao pedido de urgência ainda. Utilize o seletor acima para adicionar itens.
+                    <TableCell colSpan={7} className="text-center py-8 text-slate-400 italic text-xs">
+                      Nenhum medicamento adicionado ainda. Digite o nome do medicamento acima e clique em "Adicionar".
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -593,8 +473,19 @@ export default function PedidosSateliteUrgencia() {
                         <div className="font-bold text-slate-900 text-xs">{item.medicamento_nome}</div>
                         <div className="text-[11px] text-slate-500">{item.concentracao} {item.apresentacao}</div>
                       </TableCell>
+                      <TableCell className="text-center">
+                        {item.is_psicotropico ? (
+                          <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-bold">
+                            🧠 Psicotrópico
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200 font-semibold">
+                            🏥 Clínico
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-center font-mono text-xs font-semibold">
-                        <span className={item.estoque_central_momento > 0 ? "text-slate-700" : "text-red-600 font-bold"}>
+                        <span className={item.estoque_central_momento > 0 ? "text-slate-700" : "text-amber-600 font-bold"}>
                           {item.estoque_central_momento} un
                         </span>
                       </TableCell>
@@ -607,7 +498,7 @@ export default function PedidosSateliteUrgencia() {
                           min="1"
                           value={item.qtd_solicitada}
                           onChange={(e) => handleUpdateItemQtd(idx, e.target.value)}
-                          className="w-20 text-center font-black font-mono mx-auto h-8 text-xs border-rose-300 focus:ring-rose-500 text-rose-900 bg-rose-50/30"
+                          className="w-20 text-center font-bold font-mono mx-auto h-8 text-xs border-blue-300 focus:ring-blue-500 text-blue-900 bg-blue-50/30"
                         />
                       </TableCell>
                       <TableCell className="text-right">
@@ -617,6 +508,7 @@ export default function PedidosSateliteUrgencia() {
                           size="sm"
                           onClick={() => handleRemoveItem(idx)}
                           className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          title="Remover este item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
@@ -629,31 +521,45 @@ export default function PedidosSateliteUrgencia() {
           </div>
         </div>
 
-        {/* Rodapé de Ação / Transmissão */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <div className="text-xs text-slate-500">
-            Responsável pela Solicitação: <strong className="text-slate-800">{currentUser.full_name}</strong> ({currentUser.crf || "Farmácia Satélite"})
+        {/* Observações e Botão de Envio */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-4">
+          <div>
+            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 block">
+              Observação do Pedido (Opcional):
+            </Label>
+            <Input
+              placeholder="Ex: Reposição pontual para estoque satélite / consumo extra no plantão..."
+              value={observacaoPedido}
+              onChange={(e) => setObservacaoPedido(e.target.value)}
+              className="bg-white dark:bg-slate-800 text-xs h-9"
+            />
           </div>
 
-          <Button
-            type="button"
-            disabled={itensPedido.length === 0 || createPedidoUrgenciaMutation.isPending}
-            onClick={() => createPedidoUrgenciaMutation.mutate()}
-            className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-black px-6 py-2.5 text-xs shadow-md gap-2"
-          >
-            <Flame className="w-4 h-4" />
-            {createPedidoUrgenciaMutation.isPending ? "Transmitindo Pedido..." : "🚨 Transmitir Pedido de Urgência à Central"}
-          </Button>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div className="text-xs text-slate-500">
+              Solicitante: <strong className="text-slate-800 dark:text-slate-200">{currentUser.full_name}</strong> ({currentUser.crf || "Farmácia Satélite"})
+            </div>
+
+            <Button
+              type="button"
+              disabled={itensPedido.length === 0 || createPedidoAvulsoMutation.isPending}
+              onClick={() => createPedidoAvulsoMutation.mutate()}
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 text-xs shadow-md gap-2"
+            >
+              <Send className="w-4 h-4" />
+              {createPedidoAvulsoMutation.isPending ? "Enviando Pedido..." : "Enviar Pedido Avulso à Farmácia Central"}
+            </Button>
+          </div>
         </div>
       </Card>
 
-      {/* ─── HISTÓRICO E STATUS DOS PEDIDOS DE URGÊNCIA ───────────────────── */}
+      {/* ─── HISTÓRICO E STATUS DOS PEDIDOS ───────────────────── */}
       <Card className="p-6 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900 space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-3 border-b border-slate-100">
           <div>
             <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <PackageCheck className="w-5 h-5 text-indigo-600" />
-              Acompanhamento & Recebimento de Pedidos de Urgência
+              Acompanhamento & Recebimento de Pedidos
             </h3>
             <p className="text-xs text-slate-500">
               Acompanhe a separação na Farmácia Central e confirme o recebimento para creditar o estoque da satélite.
@@ -663,20 +569,20 @@ export default function PedidosSateliteUrgencia() {
           <div className="flex items-center gap-2">
             <Button
               type="button"
-              variant={filtroHistoricoUrgencia === "urgentes" ? "default" : "outline"}
+              variant={filtroHistorico === "avulsos" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFiltroHistoricoUrgencia("urgentes")}
+              onClick={() => setFiltroHistorico("avulsos")}
               className={`h-7 text-xs font-bold ${
-                filtroHistoricoUrgencia === "urgentes" ? "bg-rose-600 text-white" : ""
+                filtroHistorico === "avulsos" ? "bg-blue-600 text-white" : ""
               }`}
             >
-              🚨 Apenas Urgência
+              📦 Apenas Avulsos
             </Button>
             <Button
               type="button"
-              variant={filtroHistoricoUrgencia === "todos" ? "default" : "outline"}
+              variant={filtroHistorico === "todos" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFiltroHistoricoUrgencia("todos")}
+              onClick={() => setFiltroHistorico("todos")}
               className="h-7 text-xs font-medium"
             >
               Todos os Pedidos
@@ -689,7 +595,7 @@ export default function PedidosSateliteUrgencia() {
             <TableHeader>
               <TableRow className="bg-slate-50 dark:bg-slate-800 text-slate-700">
                 <TableHead className="text-xs font-bold">Código</TableHead>
-                <TableHead className="text-xs font-bold">Ala / Setor</TableHead>
+                <TableHead className="text-xs font-bold">Origem / Destino</TableHead>
                 <TableHead className="text-xs font-bold">Data Solicitação</TableHead>
                 <TableHead className="text-xs font-bold text-center">Itens</TableHead>
                 <TableHead className="text-xs font-bold text-center">Status</TableHead>
@@ -706,24 +612,18 @@ export default function PedidosSateliteUrgencia() {
               ) : pedidosFiltrados.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs italic">
-                    Nenhum pedido de urgência registrado no histórico.
+                    Nenhum pedido avulso registrado ainda.
                   </TableCell>
                 </TableRow>
               ) : (
                 pedidosFiltrados.map(p => {
                   let itensArr = [];
                   try { itensArr = JSON.parse(p.itens_json || "[]"); } catch {}
-                  const isUrgente = p.prioridade === "Emergência" || p.prioridade === "Urgente" || p.codigo?.includes("URG");
 
                   return (
                     <TableRow key={p.id} className="hover:bg-slate-50">
-                      <TableCell className="font-mono font-bold text-xs">
-                        <span className={isUrgente ? "text-rose-700" : "text-indigo-600"}>{p.codigo}</span>
-                        {isUrgente && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-red-600 text-white animate-pulse">
-                            URGÊNCIA
-                          </span>
-                        )}
+                      <TableCell className="font-mono font-bold text-xs text-indigo-600">
+                        {p.codigo}
                       </TableCell>
                       <TableCell className="font-semibold text-xs text-slate-800">{p.ala_nome}</TableCell>
                       <TableCell className="text-xs text-slate-600 font-mono">

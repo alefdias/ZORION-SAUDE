@@ -494,11 +494,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           ? "DEPÓSITO PSICOTRÓPICO"
           : "TODOS OS DEPÓSITOS";
 
-      const prefixCodigo = depositoFiltro === "clinico"
-        ? "PED-CLI"
-        : depositoFiltro === "psicotropico"
-          ? "PED-PSI"
-          : "PED";
+      const prefixCodigo = "PED";
 
       let obsFinal = observacaoPedido || "";
       const extraTags = [];
@@ -696,7 +692,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         };
       });
 
-      const prefixCodigo = depositoFiltro === "clinico" ? "PREVIA-CLI" : depositoFiltro === "psicotropico" ? "PREVIA-PSI" : "PREVIA";
+      const prefixCodigo = "PREVIA";
 
       setPrintOrderData({
         codigo: `${prefixCodigo}-${Date.now().toString().slice(-4)}`,

@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import Saidas from "./Saidas";
 import Devolucoes from "./Devolucoes";
 import PassagemPlantao from "./PassagemPlantao";
-import { ShoppingCart, AlertTriangle, RotateCcw, PackageMinus, ClipboardList } from "lucide-react";
+import { ShoppingCart, PackagePlus, RotateCcw, PackageMinus, ClipboardList } from "lucide-react";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import PedidosSateliteUrgencia from "@/components/PedidosSateliteUrgencia";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ export default function SateliteMovimentacoes() {
           )}
         >
           <ShoppingCart className="w-4 h-4 text-indigo-600" />
-          Pedidos à Central
+          Pedidos à Central (Cálculo)
         </button>
 
         <button
@@ -45,13 +45,13 @@ export default function SateliteMovimentacoes() {
           className={cn(
             "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
             activeTab === "pedidos_urgencia"
-              ? "border-rose-600 text-rose-700 font-bold bg-rose-50/50"
-              : "border-transparent text-rose-600 hover:text-rose-700 hover:bg-rose-50/30"
+              ? "border-blue-600 text-blue-700 font-bold bg-blue-50/50"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:bg-slate-50/50"
           )}
         >
-          <AlertTriangle className="w-4 h-4 text-rose-600" />
-          Pedidos à Central (Urgência)
-          <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800 font-black border border-rose-300">
+          <PackagePlus className="w-4 h-4 text-blue-600" />
+          Pedidos Avulsos
+          <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-bold border border-blue-200">
             Manual
           </span>
         </button>
