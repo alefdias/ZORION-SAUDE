@@ -39,7 +39,8 @@ import {
   ChevronDown,
   Check,
   X,
-  Droplet
+  Droplet,
+  MessagesSquare
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -1023,6 +1024,19 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               </p>
             </div>
 
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => window.dispatchEvent(new CustomEvent("open_zorion_chat", { detail: { canal: "central_satelite" } }))}
+                className="border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold gap-1.5 shadow-xs text-xs h-9 cursor-pointer"
+                title="Abrir linha direta do Zorion Chat com a Farmácia Central"
+              >
+                <MessagesSquare className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Chat com a Central
+              </Button>
+            </div>
+
             {calculoNecessidade.length > 0 && (
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
@@ -1764,6 +1778,17 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => window.dispatchEvent(new CustomEvent("open_zorion_chat", { detail: { canal: "central_satelite" } }))}
+              className="border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold gap-1.5 shadow-xs text-xs h-8 cursor-pointer"
+              title={mode === "central" ? "Abrir linha direta do Zorion Chat com a Farmácia Satélite" : "Abrir linha direta do Zorion Chat com a Farmácia Central"}
+            >
+              <MessagesSquare className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+              {mode === "central" ? "Chat com Satélite" : "Chat com Central"}
+            </Button>
+
             <div className="relative flex-1 sm:w-48">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <Input

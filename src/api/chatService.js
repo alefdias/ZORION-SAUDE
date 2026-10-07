@@ -12,6 +12,54 @@ function getPgConfig() {
 
 let tableEnsured = false;
 
+export const CHAT_CHANNELS = [
+  {
+    id: "central_satelite",
+    nome: "Satélite ⇄ Central",
+    descricao: "Linha direta de atendimento e urgências entre Satélite e Central",
+    categoria: "direto",
+    cor: "sky",
+    modulos: ["Central", "Satélite"],
+    tag: "Linha Direta"
+  },
+  {
+    id: "modulo_central",
+    nome: "Módulo Central",
+    descricao: "Comunicação e avisos da Farmácia Central",
+    categoria: "modulo",
+    cor: "blue",
+    modulos: ["Central"],
+    tag: "Central"
+  },
+  {
+    id: "modulo_satelite",
+    nome: "Módulo Satélite",
+    descricao: "Comunicação da Farmácia Satélite",
+    categoria: "modulo",
+    cor: "emerald",
+    modulos: ["Satélite"],
+    tag: "Satélite"
+  },
+  {
+    id: "modulo_recepcao",
+    nome: "Módulo Recepção",
+    descricao: "Comunicação com Recepção, internações e triagem",
+    categoria: "modulo",
+    cor: "purple",
+    modulos: ["Recepção"],
+    tag: "Recepção"
+  },
+  {
+    id: "farmacia_recepcao",
+    nome: "Geral (Todos)",
+    descricao: "Canal aberto e integrado entre todos os módulos",
+    categoria: "geral",
+    cor: "indigo",
+    modulos: ["Central", "Satélite", "Recepção"],
+    tag: "Geral"
+  }
+];
+
 export async function ensureChatTable() {
   if (tableEnsured) return;
   try {
@@ -26,6 +74,7 @@ export async function ensureChatTable() {
           "remetente_cargo" TEXT,
           "destinatario_id" TEXT,
           "destinatario_nome" TEXT,
+          "destinatario_modulo" TEXT,
           "mensagem" TEXT NOT NULL,
           "lida" BOOLEAN DEFAULT false,
           "created_at" TEXT NOT NULL,
@@ -34,6 +83,7 @@ export async function ensureChatTable() {
       ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "remetente_id" TEXT;
       ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "destinatario_id" TEXT;
       ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "destinatario_nome" TEXT;
+      ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "destinatario_modulo" TEXT;
       CREATE INDEX IF NOT EXISTS "idx_chat_canal_created" ON "ChatMessage" ("canal", "created_at");
 
       ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "status_online" TEXT DEFAULT 'offline';
@@ -48,6 +98,11 @@ export async function ensureChatTable() {
 }
 
 export const ChatService = {
+  // Lista dos canais padrão por módulo
+  getChannels() {
+    return CHAT_CHANNELS;
+  },
+
   // Gera o identificador determinístico do canal 1-a-1
   getDmChannel(idA, idB) {
     if (!idA || !idB) return "farmacia_recepcao";
@@ -120,8 +175,19 @@ export const ChatService = {
           }
         }
 
+        // Mapear módulo legível
+        let moduloLimpo = u.modulo_ativo || "Geral";
+        if (moduloLimpo.toLowerCase().includes("satelite") || moduloLimpo.toLowerCase().includes("satélite")) {
+          moduloLimpo = "Satélite";
+        } else if (moduloLimpo.toLowerCase().includes("central") || moduloLimpo.toLowerCase().includes("estoque")) {
+          moduloLimpo = "Central";
+        } else if (moduloLimpo.toLowerCase().includes("recep") || moduloLimpo.toLowerCase().includes("recepção")) {
+          moduloLimpo = "Recepção";
+        }
+
         return {
           ...u,
+          modulo_ativo: moduloLimpo,
           status_online: effectiveStatus,
           vistoTexto,
           isSelf: currentUserId && (u.id === currentUserId || u.login === currentUserId)
@@ -142,7 +208,7 @@ export const ChatService = {
     }
   },
 
-  // Busca mensagens de um canal (geral ou DM)
+  // Busca mensagens de um canal (geral, módulo ou DM)
   async list(canal = "farmacia_recepcao", limit = 100) {
     try {
       await ensureChatTable();
@@ -162,16 +228,17 @@ export const ChatService = {
     }
   },
 
-  // Envia mensagem em canal geral ou DM
+  // Envia mensagem em canal de módulo ou DM
   async send({ 
     canal = "farmacia_recepcao", 
     mensagem, 
     remetente_id = null,
-    remetente_modulo = "Farmácia Satélite", 
+    remetente_modulo = "Central", 
     remetente_usuario = "Usuário", 
     remetente_cargo = "",
     destinatario_id = null,
-    destinatario_nome = null
+    destinatario_nome = null,
+    destinatario_modulo = null
   }) {
     if (!mensagem || !mensagem.trim()) return null;
     await ensureChatTable();
@@ -182,19 +249,20 @@ export const ChatService = {
     const safeCanal = (canal || "farmacia_recepcao").replace(/'/g, "''");
     const safeMsg = mensagem.trim().replace(/'/g, "''");
     const safeRemId = remetente_id ? `'${String(remetente_id).replace(/'/g, "''")}'` : "NULL";
-    const safeMod = (remetente_modulo || "Geral").replace(/'/g, "''");
+    const safeMod = (remetente_modulo || "Central").replace(/'/g, "''");
     const safeUser = (remetente_usuario || "Usuário").replace(/'/g, "''");
     const safeCargo = (remetente_cargo || "").replace(/'/g, "''");
     const safeDestId = destinatario_id ? `'${String(destinatario_id).replace(/'/g, "''")}'` : "NULL";
     const safeDestNome = destinatario_nome ? `'${String(destinatario_nome).replace(/'/g, "''")}'` : "NULL";
+    const safeDestMod = destinatario_modulo ? `'${String(destinatario_modulo).replace(/'/g, "''")}'` : "NULL";
 
     const query = `
       INSERT INTO "ChatMessage" (
         "id", "canal", "remetente_id", "remetente_modulo", "remetente_usuario", "remetente_cargo", 
-        "destinatario_id", "destinatario_nome", "mensagem", "lida", "created_at"
+        "destinatario_id", "destinatario_nome", "destinatario_modulo", "mensagem", "lida", "created_at"
       ) VALUES (
         '${id}', '${safeCanal}', ${safeRemId}, '${safeMod}', '${safeUser}', '${safeCargo}',
-        ${safeDestId}, ${safeDestNome}, '${safeMsg}', false, '${now}'
+        ${safeDestId}, ${safeDestNome}, ${safeDestMod}, '${safeMsg}', false, '${now}'
       );
       NOTIFY app_update;
       NOTIFY table_change;
@@ -210,13 +278,55 @@ export const ChatService = {
       remetente_cargo: safeCargo,
       destinatario_id,
       destinatario_nome,
+      destinatario_modulo: destinatario_modulo,
       mensagem: safeMsg,
       lida: false,
       created_at: now
     };
   },
 
-  // Conta mensagens não lidas no canal
+  // Conta mensagens não lidas em canais públicos/modulares
+  async countUnreadByChannels(currentUserId = null, currentModule = "Geral") {
+    try {
+      await ensureChatTable();
+      const { ip, dbName, password } = getPgConfig();
+      
+      let filter = "";
+      if (currentUserId) {
+        const safeUid = String(currentUserId).replace(/'/g, "''");
+        filter = `AND ("remetente_id" IS NULL OR "remetente_id" != '${safeUid}')`;
+      } else {
+        const safeMod = (currentModule || "").replace(/'/g, "''");
+        filter = `AND "remetente_modulo" != '${safeMod}'`;
+      }
+
+      const query = `
+        SELECT "canal", COUNT(*) as count 
+        FROM "ChatMessage"
+        WHERE "canal" NOT LIKE 'dm_%'
+          ${filter}
+          AND "lida" = false
+          AND "deleted_at" IS NULL
+        GROUP BY "canal";
+      `;
+      const rows = await invoke("query_postgres", { ip, dbName, password, query });
+      const byChannel = {};
+      let total = 0;
+      for (const r of rows || []) {
+        const c = parseInt(r.count, 10) || 0;
+        if (r.canal) {
+          byChannel[r.canal] = c;
+          total += c;
+        }
+      }
+      return { total, byChannel };
+    } catch (e) {
+      console.warn("Erro ao contar mensagens por canal:", e);
+      return { total: 0, byChannel: {} };
+    }
+  },
+
+  // Conta mensagens não lidas no canal único
   async countUnread(canal = "farmacia_recepcao", currentUserId = null, currentModule = "Geral") {
     try {
       await ensureChatTable();
@@ -305,6 +415,8 @@ export const ChatService = {
           ${filter}
           AND "lida" = false
           AND "deleted_at" IS NULL;
+        NOTIFY app_update;
+        NOTIFY table_change;
       `;
       await invoke("execute_postgres", { ip, dbName, password, query });
     } catch (e) {

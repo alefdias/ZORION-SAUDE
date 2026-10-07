@@ -6,7 +6,27 @@ on:
       - main
     tags:
       - 'v*'
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publicar / Atualizar Release no GitHub?'
+        required: true
+        type: boolean
+        default: true
+      is_draft:
+        description: 'Criar como Release de Rascunho (Draft)?'
+        required: false
+        type: boolean
+        default: false
+      custom_tag:
+        description: 'Tag customizada (deixe vazio para usar a versao do package.json)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -41,65 +61,144 @@ jobs:
       - name: Instalar Dependências do Frontend
         run: npm install
 
-      - name: Identificar Versão do Aplicativo
+      - name: Identificar e Sincronizar Versões
         id: app_info
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          
+          # Define a tag (customizada se fornecida via dispatch, senão v{VERSION})
+          if [ -n "${{ github.event.inputs.custom_tag }}" ]; then
+            TAG_NAME="${{ github.event.inputs.custom_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME="v$VERSION"
+          fi
+          
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Compilando versao: $VERSION"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Compilando versao: $VERSION (Tag: $TAG_NAME)"
+
+          # Garante que tauri.conf.json e Cargo.toml fiquem na mesma versão antes do build
+          node -e "
+            const fs = require('fs');
+            try {
+              const tauriConfPath = 'src-tauri/tauri.conf.json';
+              const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
+              tauriConf.version = '$VERSION';
+              fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
+            } catch (e) { console.warn('Aviso tauri.conf:', e.message); }
+            
+            try {
+              const cargoPath = 'src-tauri/Cargo.toml';
+              let cargo = fs.readFileSync(cargoPath, 'utf8');
+              cargo = cargo.replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"$VERSION\"');
+              fs.writeFileSync(cargoPath, cargo);
+            } catch (e) { console.warn('Aviso Cargo.toml:', e.message); }
+          "
 
       - name: Compilar App Tauri (.exe e Instalador)
         run: npm run tauri build
 
-      - name: Organizar Arquivos Executáveis (.exe)
+      - name: Organizar e Validar Arquivos Gerados
         shell: bash
         run: |
           mkdir -p release-artifacts
-          
-          # Copia o executável portátil (standalone) se gerado
-          if [ -f "src-tauri/target/release/zorion-saude.exe" ]; then
-            cp "src-tauri/target/release/zorion-saude.exe" "release-artifacts/Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Portatil.exe"
-          fi
-          
-          # Copia o instalador NSIS (.exe)
+          VERSION="${{ steps.app_info.outputs.VERSION }}"
+
+          echo "=== 1. Buscando Instalador NSIS ==="
           if [ -d "src-tauri/target/release/bundle/nsis" ]; then
-            cp src-tauri/target/release/bundle/nsis/*.exe release-artifacts/ 2>/dev/null || true
+            for f in src-tauri/target/release/bundle/nsis/*.exe; do
+              if [ -f "$f" ]; then
+                echo "Encontrado NSIS: $f"
+                cp "$f" release-artifacts/
+              fi
+            done
           fi
-          
-          # Copia instalador MSI se gerado
+
+          echo "=== 2. Buscando Instalador MSI ==="
           if [ -d "src-tauri/target/release/bundle/msi" ]; then
-            cp src-tauri/target/release/bundle/msi/*.msi release-artifacts/ 2>/dev/null || true
+            for f in src-tauri/target/release/bundle/msi/*.msi; do
+              if [ -f "$f" ]; then
+                echo "Encontrado MSI: $f"
+                cp "$f" release-artifacts/
+              fi
+            done
           fi
 
-          echo "=== ARQUIVOS GERADOS PRONTOS PARA DOWNLOAD ==="
-          ls -la release-artifacts/
+          echo "=== 3. Buscando Executável Standalone Portátil ==="
+          if [ -f "src-tauri/target/release/zorion-saude.exe" ]; then
+            cp "src-tauri/target/release/zorion-saude.exe" "release-artifacts/Zorion-Saude-v${VERSION}-Portatil.exe"
+          elif [ -f "src-tauri/target/release/Zorion Saude.exe" ]; then
+            cp "src-tauri/target/release/Zorion Saude.exe" "release-artifacts/Zorion-Saude-v${VERSION}-Portatil.exe"
+          else
+            for exe in src-tauri/target/release/*.exe; do
+              if [ -f "$exe" ]; then
+                bname=$(basename "$exe")
+                if [[ "$bname" != build_script_* ]] && [[ "$bname" != *.d ]]; then
+                  echo "Copiando executável standalone: $exe"
+                  cp "$exe" "release-artifacts/Zorion-Saude-v${VERSION}-Portatil.exe"
+                  break
+                fi
+              fi
+            done
+          fi
 
-      - name: Salvar Artefato (.exe) no GitHub Actions
+          echo "=== 4. Gerando Checksums SHA256 ==="
+          cd release-artifacts
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum *.* > SHA256SUMS.txt || true
+          fi
+          cd ..
+
+          echo "=== Arquivos prontos em release-artifacts/ ==="
+          ls -lh release-artifacts/
+
+          # Geração do resumo visual do GitHub Actions
+          echo "### 📦 Arquivos Gerados (v$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "| Arquivo | Tamanho |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          for item in release-artifacts/*; do
+            if [ -f "$item" ]; then
+              fsize=$(ls -lh "$item" | awk '{print $5}')
+              echo "| \`$(basename "$item")\` | $fsize |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Salvar Artefatos no GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Windows-EXE
+          name: Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Windows
           path: release-artifacts/*
-          if-no-files-found: warn
+          if-no-files-found: error
+          overwrite: true
           retention-days: 30
 
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'false') ||
+          startsWith(github.ref, 'refs/tags/') ||
+          github.ref == 'refs/heads/main'
         with:
-          tag_name: v${{ steps.app_info.outputs.VERSION }}
-          name: 'Zorion Saúde v${{ steps.app_info.outputs.VERSION }}'
+          tag_name: ${{ steps.app_info.outputs.TAG_NAME }}
+          name: 'Zorion Saúde ${{ steps.app_info.outputs.TAG_NAME }}'
           body: |
-            ## 🚀 Zorion Saúde v${{ steps.app_info.outputs.VERSION }} - Executáveis Windows
+            ## 🚀 Zorion Saúde ${{ steps.app_info.outputs.TAG_NAME }} - Windows
             
-            Build compilado automaticamente pelo **GitHub Actions**.
-            
-            ### 📦 Arquivos incluídos:
-            - **Instalador com assistente (Setup .exe)**
-            - **Versão portátil (Portátil .exe)**
+            Compilação gerada automaticamente pelo **GitHub Actions**.
+
+            ### 📦 Arquivos disponíveis para download:
+            - **Instalador NSIS (.exe)**: Assistente completo de instalação com atalho no desktop e menu iniciar.
+            - **Versão Portátil (.exe)**: Executável independente (standalone) pronto para rodar sem instalação prévia.
+            - **Pacote MSI (.msi)**: Instalador corporativo Microsoft Installer (se aplicável).
+            - **SHA256SUMS.txt**: Hashes criptográficos de integridade dos arquivos.
           files: release-artifacts/*
-          draft: false
+          draft: ${{ github.event.inputs.is_draft == 'true' }}
           prerelease: false
+          make_latest: true
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
