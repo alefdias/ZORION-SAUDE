@@ -48,6 +48,8 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { PrescricaoService, VisitaService, PacienteService, AlaService } from "../api/db";
+import { ProntuarioService } from "../api/prontuarioService";
 const DIAS_SEMANA_MAP = [
   { id: 1, label: "Seg" },
   { id: 2, label: "Ter" },
@@ -124,9 +126,6 @@ export function calcularDiasEntre(inicioStr, fimStr) {
   if (diffDays <= 0) return 1;
   return diffDays;
 }
-
-import { PrescricaoService, VisitaService, PacienteService, AlaService } from "../api/db";
-import { ProntuarioService } from "../api/prontuarioService";
 
 export function ProntuarioPacienteModal({
   open,
@@ -303,14 +302,25 @@ export function ProntuarioPacienteModal({
   // Prescrições filtradas para este paciente
   const patientPrescricoes = useMemo(() => {
     if (!patient?.id) return [];
-    return prescricoes.filter(pr => pr.pacienteId === patient.id || pr.paciente_id === patient.id);
+    const patId = String(patient.id);
+    const patPront = String(patient.prontuario || "").trim();
+    const patNome = String(patient.nome || "").trim().toLowerCase();
+
+    return (prescricoes || []).filter(pr => {
+      const pId = String(pr.pacienteId || pr.paciente_id || pr.pacienteid || "");
+      if (pId && pId !== "[object Object]" && pId === patId) return true;
+      if (patPront && pr.prontuario && String(pr.prontuario).trim() === patPront) return true;
+      if (patNome && pr.pacienteNome && String(pr.pacienteNome).trim().toLowerCase() === patNome) return true;
+      return false;
+    });
   }, [prescricoes, patient]);
 
   const hojeStr = format(new Date(), "yyyy-MM-dd");
 
   const prescricoesAtivas = useMemo(() => {
     return patientPrescricoes.filter(pr => {
-      if (pr.status !== "Ativa") return false;
+      const status = (pr.status || "Ativa").trim().toLowerCase();
+      if (status !== "ativa") return false;
       if (pr.dataFim && pr.dataFim < hojeStr) return false;
       return true;
     });
@@ -318,7 +328,8 @@ export function ProntuarioPacienteModal({
 
   const prescricoesHistorico = useMemo(() => {
     return patientPrescricoes.filter(pr => {
-      if (pr.status === "Suspensa" || pr.status === "Devolvida") return true;
+      const status = (pr.status || "Ativa").trim().toLowerCase();
+      if (status === "suspensa" || status === "devolvida" || status === "inativa") return true;
       if (pr.dataFim && pr.dataFim < hojeStr) return true;
       return false;
     });
@@ -1139,7 +1150,7 @@ export function ProntuarioPacienteModal({
                     
                     <Button 
                       className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 gap-2 font-semibold shadow-sm cursor-pointer" 
-                      onClick={() => onOpenNewPrescricao(patient)}
+                      onClick={() => onOpenNewPrescricao(patient?.id || patient)}
                     >
                       <Plus className="w-4 h-4" />
                       Adicionar Medicação

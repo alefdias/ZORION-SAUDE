@@ -503,6 +503,38 @@ async function sanitizeMedicamentosDb(ip, dbName, password) {
   }
 }
 
+let hasSanitizedPrescricoes = false;
+async function sanitizePrescricoesDb(ip, dbName, password) {
+  if (hasSanitizedPrescricoes) return;
+  hasSanitizedPrescricoes = true;
+  try {
+    const stmts = [
+      // 1. Vincula prescrições com pacienteId corrompido '[object Object]' ou vazio pelo prontuário do paciente se existir
+      `UPDATE "PrescricaoPaciente" SET "pacienteId" = p."id", "pacienteNome" = p."nome"
+       FROM "Paciente" p
+       WHERE ("PrescricaoPaciente"."pacienteId" = '[object Object]' OR "PrescricaoPaciente"."pacienteId" IS NULL OR "PrescricaoPaciente"."pacienteId" = '')
+         AND "PrescricaoPaciente"."prontuario" IS NOT NULL AND "PrescricaoPaciente"."prontuario" != ''
+         AND "PrescricaoPaciente"."prontuario" = p."prontuario"`,
+      // 2. Vincula prescrições com pacienteId corrompido pelo nome do paciente se existir
+      `UPDATE "PrescricaoPaciente" SET "pacienteId" = p."id", "prontuario" = p."prontuario"
+       FROM "Paciente" p
+       WHERE ("PrescricaoPaciente"."pacienteId" = '[object Object]' OR "PrescricaoPaciente"."pacienteId" IS NULL OR "PrescricaoPaciente"."pacienteId" = '')
+         AND "PrescricaoPaciente"."pacienteNome" IS NOT NULL AND "PrescricaoPaciente"."pacienteNome" != '' AND "PrescricaoPaciente"."pacienteNome" != 'Paciente não informado'
+         AND LOWER(TRIM("PrescricaoPaciente"."pacienteNome")) = LOWER(TRIM(p."nome"))`,
+      // 3. Remove prescrições fantasmas inválidas e órfãs que não puderam ser associadas
+      `DELETE FROM "PrescricaoPaciente" 
+       WHERE "pacienteId" = '[object Object]' 
+         AND ("pacienteNome" = 'Paciente não informado' OR "pacienteNome" IS NULL OR "pacienteNome" = '')
+         AND ("prontuario" IS NULL OR "prontuario" = '')`
+    ];
+    for (const q of stmts) {
+      await invoke("execute_postgres", { ip, dbName, password, query: q }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Erro ao higienizar prescrições no Postgres:", err);
+  }
+}
+
 // ─── Proxy de entidade - 100% Postgres ───────────────────────────────────
 
 const createEntityProxy = (entityName) => ({
@@ -510,6 +542,9 @@ const createEntityProxy = (entityName) => ({
     const { ip, dbName, password } = getPgConfig();
     if (entityName === "Medicamento" && !hasSanitizedMedicamentos) {
       await sanitizeMedicamentosDb(ip, dbName, password);
+    }
+    if (entityName === "PrescricaoPaciente" && !hasSanitizedPrescricoes) {
+      await sanitizePrescricoesDb(ip, dbName, password);
     }
     let query = `SELECT * FROM "${entityName}"`;
     
@@ -537,6 +572,14 @@ const createEntityProxy = (entityName) => ({
           apresentacao: (m.apresentacao && m.apresentacao.trim()) ? m.apresentacao.trim() : "COMPRIMIDO"
         }));
       }
+      if (entityName === "PrescricaoPaciente" && Array.isArray(data)) {
+        return data.map(pr => ({
+          ...pr,
+          pacienteId: pr.pacienteId || pr.paciente_id || pr.pacienteid || "",
+          medicamentoId: pr.medicamentoId || pr.medicamento_id || pr.medicamentoid || "",
+          status: pr.status || "Ativa"
+        }));
+      }
       return data;
     } catch (e) {
       await autoEnsureTable(entityName);
@@ -546,6 +589,14 @@ const createEntityProxy = (entityName) => ({
           return retryData.map(m => ({
             ...m,
             apresentacao: (m.apresentacao && m.apresentacao.trim()) ? m.apresentacao.trim() : "COMPRIMIDO"
+          }));
+        }
+        if (entityName === "PrescricaoPaciente" && Array.isArray(retryData)) {
+          return retryData.map(pr => ({
+            ...pr,
+            pacienteId: pr.pacienteId || pr.paciente_id || pr.pacienteid || "",
+            medicamentoId: pr.medicamentoId || pr.medicamento_id || pr.medicamentoid || "",
+            status: pr.status || "Ativa"
           }));
         }
         return retryData;
@@ -569,6 +620,14 @@ const createEntityProxy = (entityName) => ({
           apresentacao: (item.apresentacao && item.apresentacao.trim()) ? item.apresentacao.trim() : "COMPRIMIDO"
         };
       }
+      if (entityName === "PrescricaoPaciente" && item) {
+        return {
+          ...item,
+          pacienteId: item.pacienteId || item.paciente_id || item.pacienteid || "",
+          medicamentoId: item.medicamentoId || item.medicamento_id || item.medicamentoid || "",
+          status: item.status || "Ativa"
+        };
+      }
       return item;
     } catch (e) {
       await autoEnsureTable(entityName);
@@ -579,6 +638,14 @@ const createEntityProxy = (entityName) => ({
         return {
           ...item,
           apresentacao: (item.apresentacao && item.apresentacao.trim()) ? item.apresentacao.trim() : "COMPRIMIDO"
+        };
+      }
+      if (entityName === "PrescricaoPaciente" && item) {
+        return {
+          ...item,
+          pacienteId: item.pacienteId || item.paciente_id || item.pacienteid || "",
+          medicamentoId: item.medicamentoId || item.medicamento_id || item.medicamentoid || "",
+          status: item.status || "Ativa"
         };
       }
       return item;

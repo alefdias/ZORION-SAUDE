@@ -187,10 +187,23 @@ export function calcularDiasEntre(inicioStr, fimStr, horarioInicio = "08:00") {
   return diffDays;
 }
 
+export function isPrescricaoDoPaciente(pr, pacienteIdOrObj) {
+  if (!pr || !pacienteIdOrObj) return false;
+  const targetId = typeof pacienteIdOrObj === "object" ? String(pacienteIdOrObj.id || "") : String(pacienteIdOrObj);
+  const targetProntuario = typeof pacienteIdOrObj === "object" ? (pacienteIdOrObj.prontuario || "") : "";
+  const targetNome = typeof pacienteIdOrObj === "object" ? (pacienteIdOrObj.nome || "") : "";
+
+  const pId = String(pr.pacienteId || pr.paciente_id || pr.pacienteid || "");
+  if (targetId && pId && pId !== "[object Object]" && pId === targetId) return true;
+  if (targetProntuario && pr.prontuario && String(pr.prontuario).trim() === String(targetProntuario).trim()) return true;
+  if (targetNome && pr.pacienteNome && String(pr.pacienteNome).trim().toLowerCase() === targetNome.trim().toLowerCase()) return true;
+  return false;
+}
+
 export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")) {
   if (!pr) return false;
-  const status = pr.status || "Ativa";
-  if (status !== "Ativa") return false;
+  const status = (pr.status || "Ativa").trim().toLowerCase();
+  if (status !== "ativa") return false;
   if (pr.dataFim && pr.dataFim < hojeStr) return false;
   return true;
 }
@@ -562,9 +575,14 @@ export default function PacientesMedicao() {
   // Prescription Mutations
   const savePrescMutation = useMutation({
     mutationFn: async (data) => {
-      const pacienteId = data.pacienteId || (editingPresc ? (editingPresc.pacienteId || editingPresc.paciente_id) : "");
-      const patient = pacientes.find(p => p.id === pacienteId);
-      const med = medicamentos.find(m => m.id === data.medicamentoId);
+      const rawTarget = data.pacienteId || (editingPresc ? (editingPresc.pacienteId || editingPresc.paciente_id || editingPresc.pacienteid) : "") || (viewPatientDetails ? viewPatientDetails.id : "");
+      const pacienteId = (typeof rawTarget === "object" && rawTarget !== null)
+        ? String(rawTarget.id || "")
+        : String(rawTarget || "");
+
+      const patient = pacientes.find(p => String(p.id) === String(pacienteId)) || 
+                      (viewPatientDetails && String(viewPatientDetails.id) === String(pacienteId) ? viewPatientDetails : null);
+      const med = medicamentos.find(m => String(m.id) === String(data.medicamentoId));
 
       if (!med) {
         throw new Error("Apenas medicamentos já cadastrados no sistema podem ser selecionados para a prescrição.");
@@ -586,10 +604,12 @@ export default function PacientesMedicao() {
       }
       const duracaoDias = isLiq ? (calcularDuracaoFrascoDias(volMl, consumoDiarioMl) || 10) : null;
 
+      const resolvedPacienteId = pacienteId || (patient ? String(patient.id) : "");
+
       const payload = {
-        pacienteId: pacienteId,
+        pacienteId: resolvedPacienteId,
         pacienteNome: patient ? patient.nome : (data.pacienteNome || "Paciente não informado"),
-        prontuario: patient ? patient.prontuario : (data.prontuario || ""),
+        prontuario: patient ? (patient.prontuario || "") : (data.prontuario || ""),
         alaNome: patient ? (patient.alaNome || "") : (data.alaNome || ""),
         leito: patient ? (patient.leito || "") : (data.leito || ""),
         medicamentoId: data.medicamentoId,
@@ -1368,7 +1388,11 @@ export default function PacientesMedicao() {
 
   // Handlers Modal Prescrição
   const handleOpenNewPresc = (pacienteIdTarget = "") => {
-    const targetId = pacienteIdTarget || (viewPatientDetails ? viewPatientDetails.id : "");
+    const rawTarget = pacienteIdTarget || (viewPatientDetails ? viewPatientDetails.id : "");
+    const targetId = (typeof rawTarget === "object" && rawTarget !== null)
+      ? String(rawTarget.id || "")
+      : String(rawTarget || "");
+
     setEditingPresc(null);
     setPrescFormData({
       pacienteId: targetId,
@@ -1413,10 +1437,13 @@ export default function PacientesMedicao() {
     const horaIni = p.horarioInicio || "08:00";
     const dias = (inicio && fim) ? calcularDiasEntre(inicio, fim, horaIni) : "";
 
+    const rawPid = p.pacienteId || p.paciente_id || p.pacienteid || (viewPatientDetails ? viewPatientDetails.id : "");
+    const targetId = (typeof rawPid === "object" && rawPid !== null) ? String(rawPid.id || "") : String(rawPid || "");
+
     setPrescFormData({
-      pacienteId: p.pacienteId || (viewPatientDetails ? viewPatientDetails.id : ""),
+      pacienteId: targetId,
       isPatientLocked: true,
-      medicamentoId: p.medicamentoId || "",
+      medicamentoId: p.medicamentoId || p.medicamento_id || "",
       isLiquido: Boolean(p.is_liquido),
       unidadeDose: p.unidade_dose || (p.is_liquido ? "ml" : "comp"),
       volumeFrascoMl: p.volume_frasco_ml || "",
@@ -1737,13 +1764,9 @@ export default function PacientesMedicao() {
     const altas = (pacientes || []).filter(p => p.status === "Alta");
     const hojeStr = format(new Date(), "yyyy-MM-dd");
 
-    const patientIdsWithActivePresc = new Set(
-      (prescricoes || [])
-        .filter(pr => isPrescricaoAtiva(pr, hojeStr))
-        .map(pr => pr.pacienteId || pr.paciente_id)
-    );
-
-    const comPrescricao = ativos.filter(p => patientIdsWithActivePresc.has(p.id)).length;
+    const comPrescricao = ativos.filter(p => 
+      (prescricoes || []).some(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr, hojeStr))
+    ).length;
     const semPrescricao = ativos.length - comPrescricao;
 
     const activePrescList = (prescricoes || []).filter(pr => isPrescricaoAtiva(pr, hojeStr));
@@ -1780,12 +1803,6 @@ export default function PacientesMedicao() {
       });
     }
 
-    const patientIdsWithActivePresc = new Set(
-      (prescricoes || [])
-        .filter(pr => isPrescricaoAtiva(pr, hojeStr))
-        .map(pr => pr.pacienteId || pr.paciente_id)
-    );
-
     return (pacientes || []).filter(p => {
       if (p.status === "Alta") return false;
 
@@ -1798,11 +1815,13 @@ export default function PacientesMedicao() {
       const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
       if (!matchSearch || !matchAla) return false;
 
+      const hasActive = (prescricoes || []).some(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr, hojeStr));
+
       if (activeCategory === "com_prescricao") {
-        return patientIdsWithActivePresc.has(p.id);
+        return hasActive;
       }
       if (activeCategory === "sem_prescricao") {
-        return !patientIdsWithActivePresc.has(p.id);
+        return !hasActive;
       }
       return true; // "todos"
     });
@@ -1838,8 +1857,9 @@ export default function PacientesMedicao() {
   }, [pacientes, viewPatientDetails]);
 
   const selectedPrescPatient = useMemo(() => {
-    const pId = prescFormData.pacienteId || currentViewPatient?.id || editingPresc?.pacienteId;
-    return pacientes.find(p => p.id === pId) || currentViewPatient || null;
+    const rawPid = prescFormData.pacienteId || currentViewPatient?.id || editingPresc?.pacienteId || editingPresc?.paciente_id;
+    const pId = (typeof rawPid === "object" && rawPid !== null) ? String(rawPid.id || "") : String(rawPid || "");
+    return pacientes.find(p => String(p.id) === pId) || currentViewPatient || null;
   }, [pacientes, prescFormData.pacienteId, currentViewPatient, editingPresc]);
 
   const patientVisitas = useMemo(() => {
@@ -2275,7 +2295,7 @@ export default function PacientesMedicao() {
                 </TableRow>
               ) : activeCategory !== "altas" ? (
                 displayedPatients.map((p) => {
-                  const activePrescsCount = prescricoes.filter(pr => (pr.pacienteId === p.id || pr.paciente_id === p.id) && pr.status === "Ativa").length;
+                  const activePrescsCount = prescricoes.filter(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr)).length;
                   const isSelected = selectedPatientIds.includes(p.id);
 
                   return (
@@ -2755,11 +2775,12 @@ export default function PacientesMedicao() {
         patient={currentViewPatient || viewPatientDetails}
         prescricoes={prescricoes}
         medicamentos={medicamentos}
-        onOpenNewPrescricao={(pacienteId) => handleOpenNewPresc(pacienteId)}
+        onOpenNewPrescricao={(target) => handleOpenNewPresc(target)}
         onEditPrescricao={(pr) => handleOpenEditPresc(pr)}
-        onOpenPrintReceita={(pat) => handleOpenPrintPrescModal([pat.id])}
+        onOpenPrintReceita={(pat) => handleOpenPrintPrescModal([pat?.id || pat])}
         onRefresh={() => {
           queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes"] });
           queryClient.invalidateQueries({ queryKey: ["pacientes_medicao"] });
         }}
       />
@@ -3726,7 +3747,7 @@ export default function PacientesMedicao() {
                       setPrintSelectedAlas(["all"]);
                       const hojeStr = format(new Date(), "yyyy-MM-dd");
                       const allWithMed = activePatients
-                        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+                        .filter(p => prescricoes.some(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr, hojeStr)))
                         .map(p => p.id);
                       setPrintSelectedPatientIds(allWithMed);
                     }}
@@ -3759,7 +3780,7 @@ export default function PacientesMedicao() {
                     } else {
                       setPrintSelectedAlas(["all"]);
                       const allWithMed = activePatients
-                        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+                        .filter(p => prescricoes.some(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr, hojeStr)))
                         .map(p => p.id);
                       setPrintSelectedPatientIds(allWithMed);
                     }
@@ -3868,7 +3889,7 @@ export default function PacientesMedicao() {
                   displayedPrintCandidates.map(pac => {
                     const isChecked = printSelectedPatientIds.includes(pac.id);
                     const hojeStr = format(new Date(), "yyyy-MM-dd");
-                    const pacPrescsCount = prescricoes.filter(pr => pr.pacienteId === pac.id && isPrescricaoAtiva(pr, hojeStr)).length;
+                    const pacPrescsCount = prescricoes.filter(pr => isPrescricaoDoPaciente(pr, pac) && isPrescricaoAtiva(pr, hojeStr)).length;
 
                     return (
                       <label
