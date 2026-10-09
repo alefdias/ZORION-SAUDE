@@ -97,54 +97,173 @@ const IconUsers = ({ color }) => (
   </svg>
 );
 
-// ─── Módulos (Ordem Alfabética: Carrinho, Estoque, Farmácia Satélite, Responsável Técnico) ───
+// ─── Paletas Completas de Temas Visuais ────────────────────────────────────────
+
+const THEME_PALETTES = {
+  "theme-ocean": {
+    name: "Oceano",
+    screenGradient: "linear-gradient(145deg, #06152d 0%, #0a2544 38%, #0f355c 70%, #06152d 100%)",
+    spotlight: "rgba(14, 165, 233, 0.18)",
+    areaBg: "linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(30, 58, 138, 0.22) 100%)",
+    areaBorder: "rgba(56, 189, 248, 0.38)",
+    areaShadow: "0 20px 60px -15px rgba(2, 132, 199, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
+    badgeBg: "rgba(14, 165, 233, 0.16)",
+    badgeBorder: "rgba(56, 189, 248, 0.4)",
+    badgeText: "#38bdf8",
+    brandColor: "#38bdf8",
+    modalBg: "linear-gradient(145deg, #091c35 0%, #0e2a4d 100%)",
+    modalBorder: "rgba(56, 189, 248, 0.45)",
+    modalGlow: "rgba(14, 165, 233, 0.35)",
+    accentText: "#7dd3fc",
+    cardBg: "rgba(14, 165, 233, 0.08)",
+    cardBorder: "rgba(56, 189, 248, 0.3)",
+    cardHoverBg: "rgba(14, 165, 233, 0.18)",
+  },
+  "theme-emerald": {
+    name: "Esmeralda",
+    screenGradient: "linear-gradient(145deg, #022018 0%, #04382b 38%, #064e3b 70%, #021a14 100%)",
+    spotlight: "rgba(16, 185, 129, 0.2)",
+    areaBg: "linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.28) 100%)",
+    areaBorder: "rgba(52, 211, 153, 0.42)",
+    areaShadow: "0 20px 60px -15px rgba(5, 150, 105, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
+    badgeBg: "rgba(16, 185, 129, 0.18)",
+    badgeBorder: "rgba(52, 211, 153, 0.45)",
+    badgeText: "#34d399",
+    brandColor: "#10b981",
+    modalBg: "linear-gradient(145deg, #03281f 0%, #053b2e 100%)",
+    modalBorder: "rgba(52, 211, 153, 0.45)",
+    modalGlow: "rgba(16, 185, 129, 0.4)",
+    accentText: "#6ee7b7",
+    cardBg: "rgba(16, 185, 129, 0.08)",
+    cardBorder: "rgba(52, 211, 153, 0.3)",
+    cardHoverBg: "rgba(16, 185, 129, 0.18)",
+  },
+  "theme-sunset": {
+    name: "Pôr do Sol",
+    screenGradient: "linear-gradient(145deg, #240c04 0%, #431707 38%, #5c2009 70%, #1e0902 100%)",
+    spotlight: "rgba(249, 115, 22, 0.2)",
+    areaBg: "linear-gradient(135deg, rgba(249, 115, 22, 0.12) 0%, rgba(124, 45, 18, 0.28) 100%)",
+    areaBorder: "rgba(251, 146, 60, 0.42)",
+    areaShadow: "0 20px 60px -15px rgba(234, 88, 12, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
+    badgeBg: "rgba(249, 115, 22, 0.18)",
+    badgeBorder: "rgba(251, 146, 60, 0.45)",
+    badgeText: "#fb923c",
+    brandColor: "#f97316",
+    modalBg: "linear-gradient(145deg, #2e0f05 0%, #4a1908 100%)",
+    modalBorder: "rgba(251, 146, 60, 0.45)",
+    modalGlow: "rgba(249, 115, 22, 0.4)",
+    accentText: "#fdba74",
+    cardBg: "rgba(249, 115, 22, 0.08)",
+    cardBorder: "rgba(251, 146, 60, 0.3)",
+    cardHoverBg: "rgba(249, 115, 22, 0.18)",
+  },
+  "theme-amethyst": {
+    name: "Ametista",
+    screenGradient: "linear-gradient(145deg, #180527 0%, #2e0b4a 38%, #440e6e 70%, #130320 100%)",
+    spotlight: "rgba(168, 85, 247, 0.2)",
+    areaBg: "linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(88, 28, 135, 0.28) 100%)",
+    areaBorder: "rgba(192, 132, 252, 0.42)",
+    areaShadow: "0 20px 60px -15px rgba(147, 51, 234, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
+    badgeBg: "rgba(168, 85, 247, 0.18)",
+    badgeBorder: "rgba(192, 132, 252, 0.45)",
+    badgeText: "#c084fc",
+    brandColor: "#a855f7",
+    modalBg: "linear-gradient(145deg, #220738 0%, #380d59 100%)",
+    modalBorder: "rgba(192, 132, 252, 0.45)",
+    modalGlow: "rgba(168, 85, 247, 0.4)",
+    accentText: "#d8b4fe",
+    cardBg: "rgba(168, 85, 247, 0.08)",
+    cardBorder: "rgba(192, 132, 252, 0.3)",
+    cardHoverBg: "rgba(168, 85, 247, 0.18)",
+  },
+  "theme-rose": {
+    name: "Rosa Elegance",
+    screenGradient: "linear-gradient(145deg, #22030e 0%, #41081c 38%, #5e0d29 70%, #1b020a 100%)",
+    spotlight: "rgba(244, 63, 94, 0.2)",
+    areaBg: "linear-gradient(135deg, rgba(244, 63, 94, 0.12) 0%, rgba(136, 19, 55, 0.28) 100%)",
+    areaBorder: "rgba(251, 113, 133, 0.42)",
+    areaShadow: "0 20px 60px -15px rgba(225, 29, 72, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
+    badgeBg: "rgba(244, 63, 94, 0.18)",
+    badgeBorder: "rgba(251, 113, 133, 0.45)",
+    badgeText: "#fb7185",
+    brandColor: "#f43f5e",
+    modalBg: "linear-gradient(145deg, #2e0413 0%, #4a0921 100%)",
+    modalBorder: "rgba(251, 113, 133, 0.45)",
+    modalGlow: "rgba(244, 63, 94, 0.4)",
+    accentText: "#fda4af",
+    cardBg: "rgba(244, 63, 94, 0.08)",
+    cardBorder: "rgba(251, 113, 133, 0.3)",
+    cardHoverBg: "rgba(244, 63, 94, 0.18)",
+  },
+  "theme-midnight": {
+    name: "Meia-noite",
+    screenGradient: "linear-gradient(145deg, #020617 0%, #0b1329 40%, #020617 100%)",
+    spotlight: "rgba(148, 163, 184, 0.15)",
+    areaBg: "linear-gradient(135deg, rgba(148, 163, 184, 0.08) 0%, rgba(30, 41, 59, 0.35) 100%)",
+    areaBorder: "rgba(148, 163, 184, 0.32)",
+    areaShadow: "0 20px 60px -15px rgba(15, 23, 42, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.12)",
+    badgeBg: "rgba(148, 163, 184, 0.15)",
+    badgeBorder: "rgba(148, 163, 184, 0.32)",
+    badgeText: "#94a3b8",
+    brandColor: "#94a3b8",
+    modalBg: "linear-gradient(145deg, #0b1120 0%, #151e33 100%)",
+    modalBorder: "rgba(148, 163, 184, 0.35)",
+    modalGlow: "rgba(148, 163, 184, 0.3)",
+    accentText: "#cbd5e1",
+    cardBg: "rgba(148, 163, 184, 0.06)",
+    cardBorder: "rgba(148, 163, 184, 0.25)",
+    cardHoverBg: "rgba(148, 163, 184, 0.15)",
+  }
+};
+
+// ─── Módulos Principais com Identificação de Farmácia Central & Satélite ──────
 
 const MODULES = [
   {
-    key: "carrinho_parada",
-    label: "Carrinho de Parada",
-    sub: "Checagem e Controle",
-    color: "#f43f5e",
-    glow: "rgba(244,63,94,0.3)",
-    border: "rgba(244,63,94,0.4)",
-    bg: "rgba(244,63,94,0.08)",
-    Icon: IconCarrinhoParada,
-  },
-  {
     key: "estoque_farmacia",
-    label: "Estoque",
-    sub: "Gestão e Envio",
-    color: "#a78bfa",
-    glow: "rgba(167,139,250,0.3)",
-    border: "rgba(167,139,250,0.4)",
-    bg: "rgba(167,139,250,0.08)",
+    label: "Farmácia Central",
+    sub: "Dashboard & Estoque",
+    color: "#60a5fa",
+    glow: "rgba(96,165,250,0.35)",
+    border: "rgba(96,165,250,0.45)",
+    bg: "rgba(96,165,250,0.1)",
     Icon: IconEstoqueFarmacia,
   },
   {
     key: "farmacia_satelite",
     label: "Farmácia Satélite",
-    sub: "Dispensação",
-    color: "#fb923c",
-    glow: "rgba(251,146,60,0.3)",
-    border: "rgba(251,146,60,0.4)",
-    bg: "rgba(251,146,60,0.08)",
+    sub: "Dispensação & Pacientes",
+    color: "#34d399",
+    glow: "rgba(52,211,153,0.35)",
+    border: "rgba(52,211,153,0.45)",
+    bg: "rgba(52,211,153,0.1)",
     Icon: IconFarmaciaSatelite,
+  },
+  {
+    key: "carrinho_parada",
+    label: "Carrinho de Parada",
+    sub: "Checagem & Controle",
+    color: "#f43f5e",
+    glow: "rgba(244,63,94,0.35)",
+    border: "rgba(244,63,94,0.45)",
+    bg: "rgba(244,63,94,0.1)",
+    Icon: IconCarrinhoParada,
   },
   {
     key: "responsavel_tecnico",
     label: "Responsável Técnico",
-    sub: "Gestão de Usuários",
-    color: "#34d399",
-    glow: "rgba(52,211,153,0.3)",
-    border: "rgba(52,211,153,0.4)",
-    bg: "rgba(52,211,153,0.08)",
+    sub: "Gestão & Cadastros",
+    color: "#c084fc",
+    glow: "rgba(192,132,252,0.35)",
+    border: "rgba(192,132,252,0.45)",
+    bg: "rgba(192,132,252,0.1)",
     Icon: IconAdministrador,
   }
 ];
 
-// ─── Card de módulo ───────────────────────────────────────────────────────────
+// ─── Card de módulo adaptável ao Tema ──────────────────────────────────────────
 
-function ModuleCard({ mod, delay, visible, onClick }) {
+function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -153,43 +272,44 @@ function ModuleCard({ mod, delay, visible, onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background: hovered ? mod.bg.replace("0.08", "0.16") : mod.bg,
-        border: `1.5px solid ${hovered ? mod.border.replace("0.4", "0.8") : mod.border}`,
-        borderRadius: 20,
-        padding: "28px 20px 22px",
+        background: hovered ? (currentTheme?.cardHoverBg || "rgba(255,255,255,0.16)") : (currentTheme?.cardBg || "rgba(255,255,255,0.06)"),
+        border: `1.5px solid ${hovered ? mod.color : (currentTheme?.cardBorder || mod.border)}`,
+        borderRadius: 22,
+        padding: "26px 18px 20px",
         cursor: "pointer",
         outline: "none",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 14,
-        width: 160,
+        gap: 13,
+        width: 168,
         position: "relative",
         overflow: "hidden",
-        transition: "all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         transform: visible
           ? hovered ? "translateY(-8px) scale(1.04)" : "translateY(0) scale(1)"
           : "translateY(30px) scale(0.9)",
         opacity: visible ? 1 : 0,
         transitionDelay: visible ? `${delay}ms` : "0ms",
         boxShadow: hovered
-          ? `0 8px 40px ${mod.glow}, 0 0 0 1px ${mod.border.replace("0.4", "0.2")}`
-          : "0 2px 12px rgba(0,0,0,0.3)",
-        backdropFilter: "blur(8px)",
+          ? `0 12px 35px ${mod.glow}, 0 0 0 1px ${mod.color}44`
+          : "0 4px 16px rgba(0,0,0,0.25)",
+        backdropFilter: "blur(12px)",
       }}
     >
       <div style={{
-        width: 76,
-        height: 76,
+        width: 74,
+        height: 74,
         borderRadius: "50%",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         background: hovered
           ? `radial-gradient(circle, ${mod.glow} 0%, transparent 70%)`
-          : "transparent",
-        transition: "background 0.3s ease",
-        filter: hovered ? `drop-shadow(0 0 10px ${mod.color})` : "none",
+          : "rgba(255, 255, 255, 0.05)",
+        border: `1px solid ${hovered ? mod.color + "77" : "rgba(255, 255, 255, 0.1)"}`,
+        transition: "all 0.3s ease",
+        filter: hovered ? `drop-shadow(0 0 12px ${mod.color})` : "none",
       }}>
         <mod.Icon color={mod.color} />
       </div>
@@ -197,19 +317,20 @@ function ModuleCard({ mod, delay, visible, onClick }) {
         <div style={{
           fontSize: 13,
           fontWeight: 700,
-          color: hovered ? mod.color : "#cbd5e1",
-          letterSpacing: 0.4,
+          color: hovered ? "#ffffff" : "#f1f5f9",
+          letterSpacing: 0.3,
           transition: "color 0.25s ease",
           lineHeight: 1.3,
         }}>
           {mod.label}
         </div>
         <div style={{
-          fontSize: 10,
-          color: hovered ? mod.color + "aa" : "#475569",
+          fontSize: 11,
+          fontWeight: 500,
+          color: hovered ? mod.color : "#94a3b8",
           marginTop: 4,
           transition: "color 0.25s ease",
-          lineHeight: 1.4,
+          lineHeight: 1.3,
         }}>
           {mod.sub}
         </div>
@@ -242,6 +363,8 @@ export function WelcomeScreen({ onEnter }) {
   const [themeColor, setThemeColorState] = useState(() => {
     return localStorage.getItem("zorion_theme") || "theme-ocean";
   });
+
+  const currentTheme = THEME_PALETTES[themeColor] || THEME_PALETTES["theme-ocean"];
 
   const setThemeColor = (newTheme) => {
     document.documentElement.classList.remove(themeColor);
@@ -518,7 +641,7 @@ export function WelcomeScreen({ onEnter }) {
         position: "fixed",
         inset: 0,
         zIndex: 9998,
-        background: "linear-gradient(145deg, #07111f 0%, #0b1a2e 40%, #060e1c 100%)",
+        background: currentTheme.screenGradient,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -526,7 +649,7 @@ export function WelcomeScreen({ onEnter }) {
         fontFamily: "'Inter', 'Segoe UI', sans-serif",
         overflow: "hidden",
         opacity: exiting ? 0 : visible ? 1 : 0,
-        transition: "opacity 0.55s ease",
+        transition: "background 0.5s ease, opacity 0.55s ease",
       }}
     >
       {/* Spotlight Effect */}
@@ -538,9 +661,9 @@ export function WelcomeScreen({ onEnter }) {
           right: 0,
           bottom: 0,
           pointerEvents: "none",
-          background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, rgba(59, 130, 246, 0.07), transparent 40%)`,
+          background: `radial-gradient(650px circle at ${mousePos.x}px ${mousePos.y}px, ${currentTheme.spotlight}, transparent 45%)`,
           zIndex: 0,
-          transition: "background 0.15s ease-out"
+          transition: "background 0.3s ease-out"
         }}
       />
 
@@ -553,10 +676,11 @@ export function WelcomeScreen({ onEnter }) {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          marginBottom: 44,
+          marginBottom: 32,
           transform: visible ? "translateY(0)" : "translateY(-20px)",
           opacity: visible ? 1 : 0,
           transition: "all 0.5s ease",
+          zIndex: 1,
         }}
       >
         <div
@@ -578,17 +702,18 @@ export function WelcomeScreen({ onEnter }) {
             alignItems: "center",
             justifyContent: "center"
           }}>
-            <span style={{ color: "#3b82f6" }}>ZOR</span>
+            <span style={{ color: currentTheme.brandColor, transition: "color 0.4s ease" }}>ZOR</span>
             <span style={{ color: "#ffffff" }}>ION</span>
           </h1>
         </div>
         <span
           style={{
             fontSize: 11,
-            fontWeight: 600,
-            color: "#475569",
+            fontWeight: 700,
+            color: currentTheme.accentText || "#94a3b8",
             letterSpacing: 2.5,
             textTransform: "uppercase",
+            transition: "color 0.4s ease"
           }}
         >
           Sistema de Gestão Hospitalar
@@ -599,41 +724,87 @@ export function WelcomeScreen({ onEnter }) {
       <p
         style={{
           fontSize: 14,
-          color: "#64748b",
-          marginBottom: 36,
+          color: "#cbd5e1",
+          marginBottom: 24,
           fontWeight: 500,
           letterSpacing: 0.2,
           transform: visible ? "translateY(0)" : "translateY(10px)",
           opacity: visible ? 1 : 0,
           transition: "all 0.5s ease 0.1s",
+          zIndex: 1,
         }}
       >
-        Selecione o módulo para acessar
+        Selecione a unidade para acessar
       </p>
 
-      {/* Grid de módulos (4 módulos) */}
+      {/* Área Themed de Seleção entre Farmácia Central, Satélite e Demais Módulos */}
       <div
         style={{
+          background: currentTheme.areaBg,
+          border: `1.5px solid ${currentTheme.areaBorder}`,
+          boxShadow: currentTheme.areaShadow,
+          borderRadius: 28,
+          padding: "24px 30px 28px",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
           display: "flex",
-          gap: 20,
-          flexWrap: "wrap",
-          justifyContent: "center",
-          maxWidth: 800,
-          padding: "0 20px",
+          flexDirection: "column",
+          alignItems: "center",
+          maxWidth: 830,
+          width: "92%",
+          position: "relative",
+          zIndex: 1,
+          transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       >
-        {MODULES.map((mod, index) => (
-          <ModuleCard
-            key={mod.key}
-            mod={mod}
-            delay={120 + index * 60}
-            visible={visible}
-            onClick={() => handleModuleClick(mod)}
-          />
-        ))}
+        {/* Badge identificador do tema na área de seleção */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "5px 16px",
+            borderRadius: 999,
+            background: currentTheme.badgeBg,
+            border: `1px solid ${currentTheme.badgeBorder}`,
+            color: currentTheme.badgeText,
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 1.2,
+            textTransform: "uppercase",
+            marginBottom: 20,
+            boxShadow: `0 2px 12px ${currentTheme.spotlight}`,
+            transition: "all 0.4s ease",
+          }}
+        >
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: currentTheme.badgeText }} />
+          Módulos Hospitalares • Tema {currentTheme.name}
+        </div>
+
+        {/* Grid de módulos (4 módulos) */}
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            justifyContent: "center",
+            width: "100%",
+          }}
+        >
+          {MODULES.map((mod, index) => (
+            <ModuleCard
+              key={mod.key}
+              mod={mod}
+              currentTheme={currentTheme}
+              delay={120 + index * 60}
+              visible={visible}
+              onClick={() => handleModuleClick(mod)}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Footer minimalista */}
+      {/* Footer minimalista com Seletor de Temas */}
       <div
         style={{
           position: "absolute",
@@ -643,15 +814,30 @@ export function WelcomeScreen({ onEnter }) {
           alignItems: "center",
           width: "100%",
           padding: "0 32px",
+          zIndex: 10,
         }}
       >
         <div style={{ pointerEvents: "auto", display: "flex", gap: "8px" }} className="group relative">
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/40 border border-slate-700/50 hover:bg-slate-700/50 transition-colors text-slate-300">
+          <button
+            style={{
+              background: currentTheme.badgeBg,
+              borderColor: currentTheme.badgeBorder,
+              color: currentTheme.badgeText,
+            }}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border hover:brightness-125 transition-all text-xs font-bold shadow-xs cursor-pointer"
+          >
             <Palette className="w-4 h-4" />
-            <span className="text-xs font-medium">Tema: {themeColor.replace("theme-", "").replace("padrao", "oceano").toUpperCase()}</span>
+            <span>Tema: {currentTheme.name.toUpperCase()}</span>
           </button>
           
-          <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#0f172a] border border-slate-700 rounded-xl p-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-2xl">
+          <div
+            style={{
+              background: currentTheme.modalBg,
+              borderColor: currentTheme.modalBorder,
+              boxShadow: `0 15px 40px ${currentTheme.modalGlow}`,
+            }}
+            className="absolute bottom-full left-0 mb-2 w-52 border rounded-2xl p-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-2xl backdrop-blur-xl"
+          >
             <div className="grid grid-cols-1 gap-1.5">
               {[
                 { id: "theme-ocean", name: "Oceano", colors: ["bg-blue-600", "bg-blue-900", "bg-slate-100", "bg-white"] },
@@ -665,21 +851,21 @@ export function WelcomeScreen({ onEnter }) {
                   key={t.id}
                   onClick={() => setThemeColor(t.id)}
                   className={cn(
-                    "flex items-center gap-3 p-2 rounded-lg transition-colors border text-left",
-                    themeColor === t.id ? "bg-slate-800 border-slate-600" : "hover:bg-slate-800/60 border-transparent"
+                    "flex items-center gap-3 p-2 rounded-xl transition-all border text-left cursor-pointer",
+                    themeColor === t.id ? "bg-white/15 border-white/30 text-white font-bold" : "hover:bg-white/10 border-transparent text-slate-300"
                   )}
                 >
                   <div className="flex -space-x-1 shrink-0">
-                    {t.colors.map((c, i) => <div key={i} className={cn("w-3.5 h-3.5 rounded-full ring-2 ring-[#0f172a]", c)} />)}
+                    {t.colors.map((c, i) => <div key={i} className={cn("w-3.5 h-3.5 rounded-full ring-2 ring-slate-900", c)} />)}
                   </div>
-                  <span className={cn("text-[11px] font-medium transition-colors", themeColor === t.id ? "text-white" : "text-slate-400")}>{t.name}</span>
+                  <span className="text-[11px] font-medium transition-colors">{t.name}</span>
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] text-slate-500 font-medium tracking-[0.2em]">
+        <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] text-slate-400 font-medium tracking-[0.2em]">
           ZORION SAÚDE © 2026 — V1.0
         </div>
         
@@ -695,8 +881,8 @@ export function WelcomeScreen({ onEnter }) {
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "rgba(3, 7, 18, 0.75)",
-            backdropFilter: "blur(12px)",
+            background: "rgba(3, 7, 18, 0.78)",
+            backdropFilter: "blur(14px)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -705,13 +891,13 @@ export function WelcomeScreen({ onEnter }) {
         >
           <div
             style={{
-              background: "#0f172a",
-              border: `1.5px solid ${selectedModule.border}`,
+              background: currentTheme.modalBg,
+              border: `1.5px solid ${selectedModule.border || currentTheme.modalBorder}`,
               borderRadius: 24,
               padding: 32,
               width: "100%",
               maxWidth: selectedModule.key === "carrinho_parada" && !carrinhoSubMode ? 460 : 400,
-              boxShadow: `0 20px 50px ${selectedModule.glow}`,
+              boxShadow: `0 20px 50px ${selectedModule.glow || currentTheme.modalGlow}`,
               position: "relative",
               transition: "all 0.3s ease",
             }}

@@ -45,10 +45,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Toaster } from "sonner";
 
+const THEMES_LIST = [
+  { id: "theme-ocean", name: "Oceano", color: "#0284c7" },
+  { id: "theme-emerald", name: "Esmeralda", color: "#059669" },
+  { id: "theme-sunset", name: "Pôr do Sol", color: "#ea580c" },
+  { id: "theme-amethyst", name: "Ametista", color: "#9333ea" },
+  { id: "theme-rose", name: "Rosa Elegance", color: "#e11d48" },
+  { id: "theme-midnight", name: "Meia-noite", color: "#475569" },
+];
+
 const moduleSections = [
   {
     id: "estoque",
-    name: "Estoque Central",
+    name: "Farmácia Central",
     icon: Boxes,
     mainPage: "Dashboard",
     menu: [
@@ -264,9 +273,23 @@ export default function Layout({ children, currentPageName }) {
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] leading-none text-slate-400 font-semibold">Hospitalar</span>
                 <span className="w-1 h-1 rounded-full bg-sky-500"></span>
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-sky-600 leading-none">
-                  {activeSection.name}
-                </span>
+                <button
+                  type="button"
+                  title="Clique para alternar entre Farmácia Central e Satélite"
+                  onClick={() => {
+                    if (isAuxiliar) return;
+                    const nextTarget = activeSection.id === "satelite" ? "/Dashboard" : "/Satelite";
+                    const nextSecId = activeSection.id === "satelite" ? "estoque" : "satelite";
+                    try { sessionStorage.setItem("zorion_active_section", nextSecId); } catch (e) {}
+                    navigate(nextTarget);
+                  }}
+                  className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 hover:text-sky-700 hover:underline leading-none cursor-pointer group"
+                >
+                  <span>{activeSection.name}</span>
+                  {!isAuxiliar && (
+                    <ArrowLeftRight className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -303,6 +326,41 @@ export default function Layout({ children, currentPageName }) {
 
           {/* RIGHT: Actions */}
           <div className="flex items-center gap-2.5 shrink-0 pl-2">
+            {/* Theme Selector Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-8 h-8 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-colors text-slate-600 hover:text-slate-900 cursor-pointer"
+                  title="Alterar Tema Visual"
+                >
+                  <Palette className="w-4 h-4 text-sky-600" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44 bg-white border-slate-200 text-slate-800 shadow-xl rounded-2xl p-1.5 z-50">
+                <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                  Temas do Sistema
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-slate-100" />
+                {THEMES_LIST.map((t) => (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onClick={() => setThemeColor(t.id)}
+                    className={cn(
+                      "flex items-center justify-between text-xs font-medium rounded-xl px-2.5 py-1.5 cursor-pointer transition-colors",
+                      themeColor === t.id ? "bg-slate-100 font-bold text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: t.color }} />
+                      <span>{t.name}</span>
+                    </div>
+                    {themeColor === t.id && <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <NotificationBell activeSection={activeSection} />
             <ServerConnectionBadge />
 
