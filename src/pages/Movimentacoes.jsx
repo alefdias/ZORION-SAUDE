@@ -4,19 +4,22 @@ import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { PackagePlus, PackageMinus, ShoppingCart, ArrowLeftRight } from "lucide-react";
+import { PackagePlus, ShoppingCart, ArrowLeftRight } from "lucide-react";
 import Entradas from "./Entradas";
-import Saidas from "./Saidas";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import TransferenciaEstoque from "@/components/movimentacoes/TransferenciaEstoque";
 
 export default function Movimentacoes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(tabFromUrl || "entradas");
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl && ["entradas", "pedidos_satelite", "transferencia"].includes(tabFromUrl) 
+      ? tabFromUrl 
+      : "entradas"
+  );
 
   useEffect(() => {
-    if (tabFromUrl && ["entradas", "saidas", "pedidos_satelite", "transferencia"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["entradas", "pedidos_satelite", "transferencia"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -46,7 +49,7 @@ export default function Movimentacoes() {
             Movimentações do Estoque Central
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Gerencie entradas, saídas, separação de pedidos da satélite e transferências entre estoques
+            Gerencie entradas, separação de pedidos da satélite e transferências entre estoques
           </p>
         </div>
       </div>
@@ -59,14 +62,6 @@ export default function Movimentacoes() {
           >
             <PackagePlus className="w-4 h-4 text-emerald-600" />
             Entradas
-          </TabsTrigger>
-
-          <TabsTrigger
-            value="saidas"
-            className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm flex items-center gap-2 font-medium"
-          >
-            <PackageMinus className="w-4 h-4 text-blue-600" />
-            Saídas
           </TabsTrigger>
 
           <TabsTrigger
@@ -93,10 +88,6 @@ export default function Movimentacoes() {
 
         <TabsContent value="entradas" className="mt-0">
           <Entradas isTab={true} />
-        </TabsContent>
-
-        <TabsContent value="saidas" className="mt-0">
-          <Saidas isTab={true} />
         </TabsContent>
 
         <TabsContent value="pedidos_satelite" className="mt-0">

@@ -40,12 +40,30 @@ import {
   Check,
   X,
   Droplet,
-  MessagesSquare
+  MessagesSquare,
+  Trash2
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
   // mode can be "satelite" or "central"
   const queryClient = useQueryClient();
+
+  // Permissão de Administrador
+  const isAdm = useMemo(() => {
+    try {
+      const stored = sessionStorage.getItem("axion_active_user") || localStorage.getItem("pharma_user");
+      if (stored) {
+        const u = JSON.parse(stored);
+        const role = String(u.cargo || u.perfil || u.role || "").toLowerCase();
+        const login = String(u.login || u.username || "").toLowerCase();
+        return role === "administrador" || role === "admin" || login === "admin";
+      }
+    } catch {}
+    return false;
+  }, []);
+
+  const [pedidoToDelete, setPedidoToDelete] = useState(null);
+  const [isDeleteAllDialogOpen, setIsDeleteAllDialogOpen] = useState(false);
 
   // State for order creation (satelite)
   const [selectedAlaIds, setSelectedAlaIds] = useState(["all"]);
@@ -749,9 +767,23 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           if (!med) continue;
 
           // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
-          const medLotes = freshLotes
+          let medLotes = freshLotes
             .filter(l => l.medicamento_id === med.id && (Number(l.quantidade_atual) || 0) > 0)
             .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+          // Se o operador selecionou um lote específico na separação, prioriza-o
+          if (item.lote_id) {
+            const chosenLote = medLotes.find(l => l.id === item.lote_id);
+            if (chosenLote) {
+              medLotes = [chosenLote, ...medLotes.filter(l => l.id !== item.lote_id)];
+            }
+          }
+
+          if (medLotes.length > 0) {
+            item.lote_id = medLotes[0].id;
+            item.numero_lote = medLotes[0].numero_lote || item.numero_lote;
+            item.data_validade = medLotes[0].data_validade || item.data_validade;
+          }
 
           let pendenteAlocar = qtdAtendida;
 
@@ -989,6 +1021,99 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const msg = typeof err === "string" ? err : (err?.message || JSON.stringify(err));
       console.error("Mutation updatePedidoMutation failed:", err);
       toast.error(`Erro ao atualizar pedido: ${msg}`);
+    }
+  });
+
+  // Mutation: Excluir um pedido específico (Somente Administrador)
+  const deletePedidoMutation = useMutation({
+    mutationFn: async (pedido) => {
+      if (!isAdm) {
+        throw new Error("Apenas administradores têm permissão para excluir pedidos.");
+      }
+
+      // 1. Remover transferências pendentes geradas por este pedido (se existirem)
+      try {
+        const allTransfers = await db.entities.TransferenciaPendente.list();
+        const related = (allTransfers || []).filter(
+          t => t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo
+        );
+        for (const tr of related) {
+          await db.entities.TransferenciaPendente.delete(tr.id);
+        }
+      } catch (e) {
+        console.warn("Erro ao limpar transferências pendentes associadas:", e);
+      }
+
+      // 2. Excluir o pedido da tabela PedidoSatelite
+      await db.entities.PedidoSatelite.delete(pedido.id);
+
+      // 3. Auditoria
+      try {
+        await db.logAction(
+          "Excluir Pedido",
+          "PedidoSatelite",
+          pedido.id,
+          `Pedido ${pedido.codigo} (${pedido.ala_nome || ""}) excluído do histórico pelo Administrador.`
+        );
+      } catch (e) {}
+    },
+    onSuccess: (_, pedido) => {
+      toast.success(`Pedido ${pedido.codigo} excluído com sucesso! Notificações pendentes zeradas.`);
+      queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      setPedidoToDelete(null);
+      if (selectedPedido?.id === pedido.id) {
+        setModalOpen(false);
+        setSelectedPedido(null);
+      }
+    },
+    onError: (err) => {
+      const msg = typeof err === "string" ? err : (err?.message || "Erro desconhecido");
+      toast.error(`Falha ao excluir pedido: ${msg}`);
+    }
+  });
+
+  // Mutation: Limpar todo o histórico de pedidos (Somente Administrador)
+  const clearAllPedidosMutation = useMutation({
+    mutationFn: async () => {
+      if (!isAdm) {
+        throw new Error("Apenas administradores têm permissão para limpar o histórico de pedidos.");
+      }
+
+      const allList = await db.entities.PedidoSatelite.list();
+      for (const p of (allList || [])) {
+        await db.entities.PedidoSatelite.delete(p.id);
+      }
+
+      try {
+        const allTransfers = await db.entities.TransferenciaPendente.list();
+        for (const t of (allTransfers || [])) {
+          if (t.pedido_id || t.pedido_codigo) {
+            await db.entities.TransferenciaPendente.delete(t.id);
+          }
+        }
+      } catch (e) {}
+
+      try {
+        await db.logAction(
+          "Limpar Histórico de Pedidos",
+          "PedidoSatelite",
+          "ALL",
+          "Histórico completo de pedidos da central/satélite apagado pelo Administrador."
+        );
+      } catch (e) {}
+    },
+    onSuccess: () => {
+      toast.success("Histórico de pedidos limpo com sucesso! Todas as notificações foram zeradas.");
+      queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      setIsDeleteAllDialogOpen(false);
+      setModalOpen(false);
+      setSelectedPedido(null);
+    },
+    onError: (err) => {
+      const msg = typeof err === "string" ? err : (err?.message || "Erro desconhecido");
+      toast.error(`Falha ao limpar histórico: ${msg}`);
     }
   });
 
@@ -1830,6 +1955,20 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                 <SelectItem value="Concluido">Concluído</SelectItem>
               </SelectContent>
             </Select>
+
+            {isAdm && pedidos.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDeleteAllDialogOpen(true)}
+                className="border-rose-200 dark:border-rose-900/50 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold gap-1.5 text-xs h-8 cursor-pointer shadow-xs"
+                title="Limpar todos os pedidos do histórico (Ação restrita ao Administrador)"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                Limpar Histórico
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1943,6 +2082,17 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                           <Eye className="w-3.5 h-3.5" />
                           {mode === "central" ? (p.status === "Pendente" || p.status === "Em Separação" ? "Separar / Processar" : "Ver Detalhes") : (p.status === "Separado" || p.status === "Entregue" ? "Conferir & Receber" : "Ver Detalhes")}
                         </Button>
+                        {isAdm && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setPedidoToDelete(p)}
+                            className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                            title="Excluir este Pedido do Histórico (Somente Administrador)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -1960,6 +2110,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           onOpenChange={setModalOpen}
           pedido={selectedPedido}
           mode={mode}
+          isAdm={isAdm}
+          lotes={lotes}
+          onDelete={(p) => setPedidoToDelete(p)}
           onPrint={(p) => handleOpenPrintPreview(p)}
           onUpdateStatus={(newStatus, updatedItens, motivoCancelamento) => {
             updatePedidoMutation.mutate({
@@ -1972,6 +2125,86 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           isPending={updatePedidoMutation.isPending}
         />
       )}
+
+      {/* ─── MODAL CONFIRMAR EXCLUSÃO INDIVIDUAL (ADMIN) ────────────────────── */}
+      <Dialog open={Boolean(pedidoToDelete)} onOpenChange={(open) => !open && setPedidoToDelete(null)}>
+        <DialogContent className="max-w-md bg-white dark:bg-slate-900">
+          <DialogHeader>
+            <DialogTitle className="text-rose-700 dark:text-rose-400 flex items-center gap-2 text-base font-bold">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              Excluir Pedido {pedidoToDelete?.codigo}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Esta ação é restrita ao <strong>Administrador</strong>. O pedido será permanentemente removido do histórico e as notificações pendentes serão zeradas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 space-y-1">
+            <div><strong>Código:</strong> {pedidoToDelete?.codigo}</div>
+            <div><strong>Ala / Setor:</strong> {pedidoToDelete?.ala_nome}</div>
+            <div><strong>Status atual:</strong> {pedidoToDelete?.status}</div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={deletePedidoMutation.isPending}
+              onClick={() => setPedidoToDelete(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={deletePedidoMutation.isPending}
+              onClick={() => deletePedidoMutation.mutate(pedidoToDelete)}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deletePedidoMutation.isPending ? "Excluindo..." : "Confirmar Exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL CONFIRMAR LIMPAR TODO HISTÓRICO (ADMIN) ──────────────────── */}
+      <Dialog open={isDeleteAllDialogOpen} onOpenChange={setIsDeleteAllDialogOpen}>
+        <DialogContent className="max-w-md bg-white dark:bg-slate-900">
+          <DialogHeader>
+            <DialogTitle className="text-rose-700 dark:text-rose-400 flex items-center gap-2 text-base font-bold">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              Limpar Todo o Histórico de Pedidos
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Atenção: Ação restrita ao <strong>Administrador</strong>. Todos os pedidos ({pedidos.length}) serão permanentemente apagados e as notificações pendentes serão zeradas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 text-xs text-rose-800 dark:text-rose-300">
+            ⚠️ Pacientes, medicamentos cadastrados e estoque físico não serão afetados. Apenas a fila de pedidos e transferências pendentes serão limpas.
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={clearAllPedidosMutation.isPending}
+              onClick={() => setIsDeleteAllDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={clearAllPedidosMutation.isPending}
+              onClick={() => clearAllPedidosMutation.mutate()}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              {clearAllPedidosMutation.isPending ? "Limpando..." : "Sim, Limpar Todo Histórico"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── MODAL DE PREVIEW DA IMPRESSÃO EM TELA ────────────────────── */}
       <Dialog open={Boolean(printOrderData)} onOpenChange={(open) => !open && setPrintOrderData(null)}>
@@ -2440,17 +2673,34 @@ function PrintOrderSheetContent({ data, selectedDepot = "todos", isPrintPortal =
 }
 
 // ─── SUBCOMPONENTE MODAL DE DETALHES & CONFERÊNCIA ───────────────────────────
-export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending, onPrint }) {
+export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateStatus, isPending, onPrint, onDelete, isAdm, lotes = [] }) {
   const [itensState, setItensState] = useState(() => {
     let rawItens = pedido.itens || pedido.itens_json || [];
     if (typeof rawItens === "string") {
       try { rawItens = JSON.parse(rawItens); } catch {}
     }
     const arr = Array.isArray(rawItens) ? rawItens : [];
-    return arr.map(i => ({
-      ...i,
-      qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida
-    }));
+    return arr.map(i => {
+      const medId = i.medicamento_id || i.id;
+      const medLotes = (lotes || [])
+        .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+        .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+      const fefoLote = medLotes[0];
+
+      const initialLoteId = i.lote_id || i.lote_previsto_id || fefoLote?.id || "";
+      const matchedLote = medLotes.find(l => l.id === initialLoteId) || fefoLote;
+
+      return {
+        ...i,
+        qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida,
+        lote_id: initialLoteId,
+        numero_lote: i.numero_lote || i.lote_previsto || matchedLote?.numero_lote || "",
+        data_validade: i.data_validade || i.lote_previsto_validade || matchedLote?.data_validade || "",
+        fefo_lote_id: fefoLote?.id || "",
+        fefo_numero_lote: fefoLote?.numero_lote || "",
+        motivo_troca_lote: i.motivo_troca_lote || ""
+      };
+    });
   });
 
   const [filterDepot, setFilterDepot] = useState("todos"); // "todos" | "clinico" | "psicotropico"
@@ -2488,6 +2738,29 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
   const handleToggleCheck = (index, field) => {
     const next = [...itensState];
     next[index][field] = !next[index][field];
+    setItensState(next);
+  };
+
+  const handleLoteChange = (index, newLoteId) => {
+    const next = [...itensState];
+    const item = next[index];
+    const medId = item.medicamento_id || item.id;
+    const medLotes = (lotes || []).filter(l => (l.medicamento_id === medId || l.medicamentoId === medId));
+    const selectedLote = medLotes.find(l => l.id === newLoteId);
+
+    item.lote_id = newLoteId;
+    item.numero_lote = selectedLote?.numero_lote || "";
+    item.data_validade = selectedLote?.data_validade || "";
+
+    if (item.fefo_lote_id && newLoteId !== item.fefo_lote_id) {
+      toast.warning(`Lote alterado! Por favor, justifique o motivo de trocar o lote sugerido pelo FEFO (${item.fefo_numero_lote}) para rastreabilidade.`);
+    }
+    setItensState(next);
+  };
+
+  const handleMotivoTrocaLoteChange = (index, val) => {
+    const next = [...itensState];
+    next[index].motivo_troca_lote = val;
     setItensState(next);
   };
 
@@ -2646,6 +2919,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                   <TableHead className="w-12 text-center">Conf.</TableHead>
                 )}
                 <TableHead>Medicamento / Concentração</TableHead>
+                <TableHead className="text-center min-w-[210px]">Lote / Validade (FEFO)</TableHead>
                 <TableHead className="text-center">Qtd Solicitada</TableHead>
                 <TableHead className="text-center bg-indigo-50/60 font-bold text-indigo-900">Qtd Enviada (Central)</TableHead>
                 {(pedido.status === "Separado" || pedido.status === "Entregue" || pedido.status === "Concluido") && (
@@ -2712,6 +2986,91 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                             </span>
                           )}
                         </p>
+                      )}
+                    </TableCell>
+
+                    {/* COLUNA LOTE / VALIDADE (FEFO) */}
+                    <TableCell className="min-w-[210px] text-xs">
+                      {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") ? (
+                        (() => {
+                          const medId = item.medicamento_id || item.id;
+                          const medLotes = (lotes || [])
+                            .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+                            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+                          
+                          const fefoLote = medLotes[0];
+                          const isDivergent = item.lote_id && fefoLote && item.lote_id !== fefoLote.id;
+
+                          if (medLotes.length === 0) {
+                            return (
+                              <div className="space-y-1">
+                                <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block font-semibold">
+                                  Sem lote em estoque Central
+                                </span>
+                                {item.numero_lote && (
+                                  <p className="text-[10px] text-slate-500 font-mono">Ref: {item.numero_lote}</p>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-1.5">
+                              <Select
+                                value={item.lote_id || fefoLote?.id || ""}
+                                onValueChange={(val) => handleLoteChange(idx, val)}
+                              >
+                                <SelectTrigger className={cn(
+                                  "h-8 text-xs font-mono font-medium bg-white",
+                                  isDivergent ? "border-amber-400 text-amber-900 bg-amber-50/30" : "border-slate-300"
+                                )}>
+                                  <SelectValue placeholder="Selecione o Lote" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {medLotes.map((l, lIdx) => (
+                                    <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
+                                      {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) - Saldo: {l.quantidade_atual} un
+                                      {lIdx === 0 ? " 🌟 [FEFO]" : ""}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {isDivergent && (
+                                <div className="space-y-1 bg-amber-50 p-1.5 rounded border border-amber-200">
+                                  <div className="flex items-center gap-1 text-[10px] font-bold text-amber-800">
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <span>Lote alterado (FEFO: {fefoLote?.numero_lote})</span>
+                                  </div>
+                                  <Input
+                                    placeholder="Motivo da troca de lote..."
+                                    value={item.motivo_troca_lote || ""}
+                                    onChange={(e) => handleMotivoTrocaLoteChange(idx, e.target.value)}
+                                    className="h-6 text-[11px] bg-white border-amber-300 placeholder:text-amber-400"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div className="space-y-1 font-mono">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="outline" className="bg-indigo-50 text-indigo-900 border-indigo-300 font-bold text-[11px] py-0.5">
+                              📦 Lote: {item.numero_lote || item.lote_previsto || "S/ Lote"}
+                            </Badge>
+                            {item.data_validade && (
+                              <span className="text-[11px] text-slate-600">
+                                Val: {format(new Date(item.data_validade), "dd/MM/yyyy")}
+                              </span>
+                            )}
+                          </div>
+                          {item.motivo_troca_lote && (
+                            <div className="text-[10px] text-amber-800 bg-amber-50 p-1 rounded border border-amber-200 leading-tight">
+                              <strong>⚠️ Troca:</strong> {item.motivo_troca_lote}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </TableCell>
 
@@ -2794,6 +3153,24 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
               >
                 <Ban className="w-4 h-4" />
                 Cancelar Pedido
+              </Button>
+            )}
+
+            {/* BOTAO EXCLUIR PEDIDO - APENAS ADMINISTRADOR */}
+            {isAdm && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  onOpenChange(false);
+                  if (onDelete) onDelete(pedido);
+                }}
+                disabled={isPending}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 text-xs shadow-xs"
+                title="Excluir este pedido do histórico e zerar notificações (Restrito ao Administrador)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir Pedido (Adm)
               </Button>
             )}
           </div>

@@ -352,6 +352,7 @@ export default function PacientesMedicao() {
   const [selectedPatientIds, setSelectedPatientIds] = useState([]);
   const [batchBaixaModalOpen, setBatchBaixaModalOpen] = useState(false);
   const [batchBaixaDias, setBatchBaixaDias] = useState(1);
+  const [selectedLotesBaixa, setSelectedLotesBaixa] = useState({});
 
   // Estados da Alta
   const [altaModalOpen, setAltaModalOpen] = useState(false);
@@ -775,17 +776,23 @@ export default function PacientesMedicao() {
             estoque_atual: newGeral
           });
 
-          const loteDoMed = lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
+          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+          const medLotes = (lotes || [])
+            .filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+          const loteDoMed = medLotes[0] || lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
+
           if (loteDoMed) {
             const novaQtdLote = Math.max(0, (loteDoMed.quantidade_atual || 0) - item.qtdPeriodo);
             await db.entities.Lote.update(loteDoMed.id, {
               quantidade_atual: novaQtdLote,
               status: novaQtdLote <= 0 ? "esgotado" : loteDoMed.status
             });
+            loteDoMed.quantidade_atual = novaQtdLote;
           }
 
           const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
-          const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Continuada";
+          const numeroLote = loteDoMed ? (loteDoMed.numero_lote || "S/ Lote") : "Saída Fixa Continuada";
 
           let responsavel = "Farmacêutico";
           let responsavelCrf = "";
@@ -873,15 +880,39 @@ export default function PacientesMedicao() {
         }
       }
 
-      // Etapa 3: Criar registros de saída para o estoque e histórico
+      // Etapa 3: Criar registros de saída para o estoque e histórico, e deduzir saldo do lote
       for (const saida of saidasParaRegistrar) {
         const { pr, pacId, medId, qtdSaida } = saida;
         
         const pac = selectedPacs.find(p => p.id === pacId);
         const med = medicamentos.find(m => m.id === medId);
-        const loteDoMed = lotes.find(l => (l.medicamento_id === medId || l.medicamentoId === medId));
-        const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
-        const numeroLote = loteDoMed ? loteDoMed.numero_lote : "Saída Fixa Paciente";
+
+        // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+        const medLotes = (lotes || [])
+          .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+        // Priorizar lote selecionado na interface ou o 1º lote pelo FEFO
+        const customLoteId = selectedLotesBaixa[pr.id];
+        let loteEscolhido = medLotes.find(l => l.id === customLoteId) || medLotes[0];
+
+        // Se não houver saldo em lotes ativos, busca qualquer lote cadastrado
+        if (!loteEscolhido) {
+          loteEscolhido = (lotes || []).find(l => (l.medicamento_id === medId || l.medicamentoId === medId));
+        }
+
+        const loteId = loteEscolhido ? loteEscolhido.id : null;
+        const numeroLote = loteEscolhido ? (loteEscolhido.numero_lote || "S/ Lote") : "S/ Lote";
+
+        // Se encontrou o lote, debita a quantidade utilizada
+        if (loteEscolhido && (Number(loteEscolhido.quantidade_atual) || 0) > 0) {
+          const novaQtdLote = Math.max(0, (Number(loteEscolhido.quantidade_atual) || 0) - qtdSaida);
+          await db.entities.Lote.update(loteEscolhido.id, {
+            quantidade_atual: novaQtdLote,
+            status: novaQtdLote <= 0 ? "esgotado" : loteEscolhido.status
+          });
+          loteEscolhido.quantidade_atual = novaQtdLote;
+        }
 
         let responsavel = "Farmacêutico";
         let responsavelCrf = "";
@@ -905,7 +936,7 @@ export default function PacientesMedicao() {
           ala_id: pac?.alaId || pac?.ala_id || null,
           ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
           motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
-          observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un`,
+          observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un | Lote: ${numeroLote}`,
           data_saida: todayDateStr,
           created_at: nowStr,
           responsavel: responsavel,
@@ -931,6 +962,7 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['gavetas_paciente'] });
       setBatchBaixaModalOpen(false);
       setSelectedPatientIds([]);
+      setSelectedLotesBaixa({});
       toast.success("Baixa em lote concluída! As saídas foram registradas com sucesso no módulo de Saídas.");
     },
     onError: (err) => {
@@ -2847,9 +2879,10 @@ export default function PacientesMedicao() {
                         <TableRow>
                           <TableHead>Paciente</TableHead>
                           <TableHead>Medicamento</TableHead>
+                          <TableHead className="text-center min-w-[200px]">Lote da Saída (FEFO)</TableHead>
                           <TableHead className="text-center">Dose Diária</TableHead>
                           <TableHead className="text-center">Total Saída ({batchBaixaDias}d)</TableHead>
-                          <TableHead className="text-right">Estoque Atual</TableHead>
+                          <TableHead className="text-right">Estoque Satélite</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2857,20 +2890,27 @@ export default function PacientesMedicao() {
                           const pac = selectedPacs.find(p => p.id === pr.pacienteId);
                           const med = medicamentos.find(m => m.id === pr.medicamentoId);
                           const qtdSaida = calculatePrescQtdParaDias(pr, batchBaixaDias);
-                          const estoqueDisponivel = med?.estoque_atual || 0;
+                          const estoqueDisponivel = med?.estoque_satelite || 0;
                           const temEstoqueSuficiente = estoqueDisponivel >= qtdSaida;
+
+                          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+                          const medLotes = (lotes || [])
+                            .filter(l => (l.medicamento_id === pr.medicamentoId || l.medicamentoId === pr.medicamentoId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+                            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+                          const fefoLote = medLotes[0];
+                          const selectedLoteId = selectedLotesBaixa[pr.id] || fefoLote?.id || "";
 
                           return (
                             <TableRow key={pr.id} className="hover:bg-slate-50/50">
-                              <TableCell className="max-w-[200px] min-w-[130px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                              <TableCell className="max-w-[180px] min-w-[120px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                                 <p className="font-bold text-xs text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{pac?.nome || "Paciente"}</p>
                                 <p className="text-[10px] text-slate-500 font-mono break-words">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
                               </TableCell>
-                              <TableCell className="max-w-[260px] min-w-[150px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
+                              <TableCell className="max-w-[240px] min-w-[140px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                                 <p className="font-bold text-xs text-blue-900 dark:text-blue-200 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
                                   {pr.medicamentoNome}
                                   {(() => {
-                                    const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
                                     const rawC = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
                                     const hasC = rawC && pr.medicamentoNome?.toLowerCase().includes(rawC.toLowerCase());
                                     return rawC && !hasC ? ` (${rawC})` : "";
@@ -2878,6 +2918,44 @@ export default function PacientesMedicao() {
                                 </p>
                                 <p className="text-[10px] text-slate-500">Cód: {pr.medicamentoCodigo || "N/A"}</p>
                               </TableCell>
+
+                              {/* Lote da Saída (FEFO) */}
+                              <TableCell className="min-w-[200px]">
+                                {medLotes.length === 0 ? (
+                                  <div className="text-center">
+                                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                      Sem lote específico / Saldo Geral
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <Select
+                                      value={selectedLoteId}
+                                      onValueChange={(val) => {
+                                        setSelectedLotesBaixa(prev => ({ ...prev, [pr.id]: val }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs font-mono font-medium bg-white border-slate-300">
+                                        <SelectValue placeholder="Selecione o Lote" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {medLotes.map((l, lIdx) => (
+                                          <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
+                                            {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) - {l.quantidade_atual} un
+                                            {lIdx === 0 ? " 🌟 [FEFO]" : ""}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    {selectedLoteId && fefoLote && selectedLoteId !== fefoLote.id && (
+                                      <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block font-semibold">
+                                        ⚠️ Lote alternativo (FEFO: {fefoLote.numero_lote})
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+
                               <TableCell className="text-center font-mono text-xs font-bold">
                                 {pr.totalDiario} un/dia
                               </TableCell>
@@ -2892,7 +2970,7 @@ export default function PacientesMedicao() {
                                     temEstoqueSuficiente ? "bg-slate-50 text-slate-700" : "bg-red-50 text-red-700 border-red-300"
                                   )}
                                 >
-                                  {estoqueDisponivel} em estoque
+                                  {estoqueDisponivel} na satélite
                                 </Badge>
                               </TableCell>
                             </TableRow>

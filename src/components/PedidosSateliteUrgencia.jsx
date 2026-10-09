@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { 
   PackagePlus, 
   Plus, 
@@ -26,7 +27,8 @@ import {
   CheckCircle2, 
   Eye, 
   Search,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -59,6 +61,11 @@ export default function PedidosSateliteUrgencia() {
     queryFn: () => db.entities.Medicamento.list(),
   });
 
+  const { data: lotes = [] } = useQuery({
+    queryKey: ['lotes'],
+    queryFn: () => db.entities.Lote.list(),
+  });
+
   const { data: pedidos = [], isLoading: isLoadingPedidos } = useQuery({
     queryKey: ['pedidos_satelite'],
     queryFn: async () => {
@@ -85,6 +92,15 @@ export default function PedidosSateliteUrgencia() {
     if (!selectedMedId) return null;
     return medicamentos.find(m => String(m.id) === String(selectedMedId));
   }, [medicamentos, selectedMedId]);
+
+  // Lote previsto que virá da Central baseado no sistema FEFO (o que vence primeiro)
+  const loteFefoPrevisto = useMemo(() => {
+    if (!selectedMedObj) return null;
+    const medLotes = (lotes || [])
+      .filter(l => String(l.medicamento_id) === String(selectedMedObj.id) && (Number(l.quantidade_atual) > 0) && l.status !== "Inativo")
+      .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+    return medLotes.length > 0 ? medLotes[0] : null;
+  }, [selectedMedObj, lotes]);
 
   // Add Item to List
   const handleAddItem = (e) => {
@@ -132,6 +148,9 @@ export default function PedidosSateliteUrgencia() {
         estoque_central_momento: selectedMedObj.estoque_atual || 0,
         qtd_solicitada: qtd,
         qtd_atendida: qtd,
+        lote_previsto: loteFefoPrevisto ? loteFefoPrevisto.numero_lote : "",
+        lote_previsto_id: loteFefoPrevisto ? loteFefoPrevisto.id : "",
+        lote_previsto_validade: loteFefoPrevisto ? loteFefoPrevisto.data_validade : "",
         separado: false,
         conferido: false,
         is_psicotropico: isPsico ? 1 : 0,
@@ -400,26 +419,56 @@ export default function PedidosSateliteUrgencia() {
 
           {/* Dica de Estoque do Medicamento Selecionado */}
           {selectedMedObj && (
-            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs">
-              <span className="text-slate-700 dark:text-slate-300">
-                Selecionado: <strong className="text-slate-900 dark:text-white">{selectedMedObj.nome} {selectedMedObj.concentracao}</strong>
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="text-indigo-700 dark:text-indigo-400">
-                Estoque Satélite: <strong>{selectedMedObj.estoque_satelite || 0} un</strong>
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-amber-600 font-bold"}>
-                Estoque Central: <strong>{selectedMedObj.estoque_atual || 0} un</strong>
-              </span>
-              {selectedMedObj.portaria_344 || isPsicotropico(selectedMedObj) ? (
-                <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 font-bold ml-auto">
-                  🧠 Portaria 344
-                </Badge>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs">
+                <span className="text-slate-700 dark:text-slate-300">
+                  Selecionado: <strong className="text-slate-900 dark:text-white">{selectedMedObj.nome} {selectedMedObj.concentracao}</strong>
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="text-indigo-700 dark:text-indigo-400">
+                  Estoque Satélite: <strong>{selectedMedObj.estoque_satelite || 0} un</strong>
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-amber-600 font-bold"}>
+                  Estoque Central: <strong>{selectedMedObj.estoque_atual || 0} un</strong>
+                </span>
+                {selectedMedObj.portaria_344 || isPsicotropico(selectedMedObj) ? (
+                  <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 font-bold ml-auto">
+                    🧠 Portaria 344
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300 font-semibold ml-auto">
+                    🏥 Clínico
+                  </Badge>
+                )}
+              </div>
+
+              {/* Destaque do Lote que virá pelo sistema FEFO (Primeiro que Vence) */}
+              {loteFefoPrevisto ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-2.5 rounded-lg text-emerald-900 dark:text-emerald-200 font-medium">
+                  <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
+                    ⭐ Lote Previsto (FEFO)
+                  </Badge>
+                  <span>
+                    Lote: <strong className="font-mono text-emerald-950 dark:text-emerald-100">{loteFefoPrevisto.numero_lote}</strong>
+                  </span>
+                  <span className="text-emerald-300">|</span>
+                  <span>
+                    Validade: <strong>{loteFefoPrevisto.data_validade ? format(new Date(loteFefoPrevisto.data_validade + 'T00:00:00'), "dd/MM/yyyy") : "N/I"}</strong>
+                  </span>
+                  <span className="text-emerald-300">|</span>
+                  <span>
+                    Saldo Central: <strong>{loteFefoPrevisto.quantidade_atual} un</strong>
+                  </span>
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 ml-auto italic">
+                    (Vence primeiro na Central — Sistema FEFO)
+                  </span>
+                </div>
               ) : (
-                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300 font-semibold ml-auto">
-                  🏥 Clínico
-                </Badge>
+                <div className="text-xs bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-2 rounded-lg text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Nenhum lote ativo com saldo encontrado na Central. O lote será associado durante a separação.</span>
+                </div>
               )}
             </div>
           )}
@@ -451,17 +500,18 @@ export default function PedidosSateliteUrgencia() {
                 <TableRow className="bg-slate-50 dark:bg-slate-800 text-slate-700">
                   <TableHead className="text-xs font-bold w-16">Cód</TableHead>
                   <TableHead className="text-xs font-bold">Medicamento / Apresentação</TableHead>
-                  <TableHead className="text-xs font-bold text-center w-28">Tipo</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-24">Tipo</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Central</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Satélite</TableHead>
-                  <TableHead className="text-xs font-bold text-center w-36">Quantidade a Pedir</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-36">Lote Previsto (FEFO)</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-28">Qtd Pedido</TableHead>
                   <TableHead className="text-xs font-bold text-right w-16">Ação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itensPedido.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-slate-400 italic text-xs">
+                    <TableCell colSpan={8} className="text-center py-8 text-slate-400 italic text-xs">
                       Nenhum medicamento adicionado ainda. Digite o nome do medicamento acima e clique em "Adicionar".
                     </TableCell>
                   </TableRow>
@@ -491,6 +541,22 @@ export default function PedidosSateliteUrgencia() {
                       </TableCell>
                       <TableCell className="text-center font-mono text-xs text-indigo-700 font-semibold">
                         {item.estoque_satelite_momento} un
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-xs">
+                        {item.lote_previsto ? (
+                          <div>
+                            <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                              {item.lote_previsto}
+                            </span>
+                            {item.lote_previsto_validade && (
+                              <div className="text-[10px] text-slate-500">
+                                Val: {format(new Date(item.lote_previsto_validade + 'T00:00:00'), "dd/MM/yyyy")}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Central definirá</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Input
@@ -597,6 +663,7 @@ export default function PedidosSateliteUrgencia() {
                 <TableHead className="text-xs font-bold">Código</TableHead>
                 <TableHead className="text-xs font-bold">Origem / Destino</TableHead>
                 <TableHead className="text-xs font-bold">Data Solicitação</TableHead>
+                <TableHead className="text-xs font-bold">Lote(s) / Vencimento</TableHead>
                 <TableHead className="text-xs font-bold text-center">Itens</TableHead>
                 <TableHead className="text-xs font-bold text-center">Status</TableHead>
                 <TableHead className="text-xs font-bold text-right">Ação</TableHead>
@@ -605,13 +672,13 @@ export default function PedidosSateliteUrgencia() {
             <TableBody>
               {isLoadingPedidos ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-slate-400 text-xs">
+                  <TableCell colSpan={7} className="text-center py-6 text-slate-400 text-xs">
                     Carregando pedidos...
                   </TableCell>
                 </TableRow>
               ) : pedidosFiltrados.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs italic">
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400 text-xs italic">
                     Nenhum pedido avulso registrado ainda.
                   </TableCell>
                 </TableRow>
@@ -628,6 +695,19 @@ export default function PedidosSateliteUrgencia() {
                       <TableCell className="font-semibold text-xs text-slate-800">{p.ala_nome}</TableCell>
                       <TableCell className="text-xs text-slate-600 font-mono">
                         {p.data_solicitacao ? format(new Date(p.data_solicitacao), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {itensArr.slice(0, 2).map((it, i) => (
+                          <div key={i} className="truncate max-w-[190px] font-mono text-[11px] flex items-center gap-1 mb-0.5">
+                            <span className="font-semibold text-slate-800">{it.medicamento_nome?.split(" ")[0]}:</span>
+                            <Badge variant="outline" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-800 border-emerald-300 font-bold">
+                              {it.numero_lote || it.lote_previsto || "FEFO"}
+                            </Badge>
+                          </div>
+                        ))}
+                        {itensArr.length > 2 && (
+                          <span className="text-[10px] text-slate-400">+{itensArr.length - 2} item(s)...</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-mono text-xs font-bold">{itensArr.length} item(s)</TableCell>
                       <TableCell className="text-center">{getStatusBadge(p.status)}</TableCell>
@@ -668,6 +748,7 @@ export default function PedidosSateliteUrgencia() {
           onOpenChange={setModalOpen}
           pedido={selectedPedido}
           mode="satelite"
+          lotes={lotes}
           onUpdateStatus={(newStatus, updatedItens, motivoCancelamento) => {
             updatePedidoMutation.mutate({
               pedido: selectedPedido,

@@ -70,3 +70,41 @@ SET "estoque_atual" = 0,
 4. Copie todo o código SQL acima e cole no editor.
 5. Pressione **F5** (ou clique no botão de Play/Execute).
 6. A mensagem `DO` e `UPDATE` indicará que o banco foi limpo com sucesso!
+
+---
+
+## 🔔 Limpeza Específica: Limpar Apenas Notificações e Pedidos da Central/Satélite
+
+> **Atenção:** Estes comandos **NÃO** apagam pacientes, medicamentos, lotes nem o estoque. Eles limpam apenas a fila de pedidos e as notificações geradas.
+
+### Opção 1: Zerar TODOS os pedidos e notificações (Recomendado para zerar tudo)
+```sql
+-- 1. Cancela qualquer transação pendente
+ROLLBACK;
+
+-- 2. Limpa todos os pedidos da Central e Satélite (zera a notificação do sininho)
+TRUNCATE TABLE "PedidoSatelite" RESTART IDENTITY CASCADE;
+
+-- 3. Limpa as transferências pendentes geradas pelos pedidos
+TRUNCATE TABLE "TransferenciaPendente" RESTART IDENTITY CASCADE;
+
+-- 4. Limpa notificações de prescrições médicas na farmácia (se houver)
+TRUNCATE TABLE "NotificacaoFarmacia" RESTART IDENTITY CASCADE;
+```
+
+### Opção 2: Apagar APENAS UM pedido específico feito errado (pelo código)
+```sql
+-- 1. Veja o código do pedido errado:
+SELECT id, codigo, ala_nome, status, created_at 
+FROM "PedidoSatelite" 
+ORDER BY created_at DESC;
+
+-- 2. Apague apenas o pedido errado (substitua 'PED-XXXX' pelo código real do seu pedido):
+DELETE FROM "TransferenciaPendente" 
+WHERE pedido_codigo = 'PED-XXXX' 
+   OR pedido_id IN (SELECT id FROM "PedidoSatelite" WHERE codigo = 'PED-XXXX');
+
+DELETE FROM "PedidoSatelite" 
+WHERE codigo = 'PED-XXXX';
+```
+

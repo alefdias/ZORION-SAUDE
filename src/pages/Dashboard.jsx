@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
 import { Package, TrendingUp, TrendingDown, Boxes } from "lucide-react";
-import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -162,28 +161,7 @@ export default function Dashboard() {
 
 
 
-  // Alerta de medicamentos próximos ao vencimento (até 4 meses)
-  useEffect(() => {
-    if (isLoading) return;
-    if (proximosVencer.length > 0) {
-      // Agrupa por urgência: até 30 dias e até 120 dias
-      const urgentes = proximosVencer.filter(l => l.diasRestantes <= 30);
-      const moderados = proximosVencer.filter(l => l.diasRestantes > 30 && l.diasRestantes <= 120);
 
-      if (urgentes.length > 0) {
-        toast.error(
-          `⚠️ ATENÇÃO: ${urgentes.length} lote(s) vencem em até 30 dias! Verifique o estoque.`,
-          { duration: 12000, id: "vencimento-urgente" }
-        );
-      }
-      if (moderados.length > 0) {
-        toast.warning(
-          `🕐 ${moderados.length} lote(s) vencem nos próximos 4 meses. Planeje o uso com antecedência.`,
-          { duration: 9000, id: "vencimento-moderado" }
-        );
-      }
-    }
-  }, [isLoading]);
 
   if (isLoading) {
     return (
