@@ -97,122 +97,92 @@ const IconUsers = ({ color }) => (
   </svg>
 );
 
-// ─── Paletas Completas de Temas Visuais ────────────────────────────────────────
+// ─── Paletas Completas de Temas Visuais (Elegantes e Harmoniosas) ───────────
 
 const THEME_PALETTES = {
   "theme-ocean": {
     name: "Oceano",
-    screenGradient: "linear-gradient(145deg, #06152d 0%, #0a2544 38%, #0f355c 70%, #06152d 100%)",
-    spotlight: "rgba(14, 165, 233, 0.18)",
-    areaBg: "linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(30, 58, 138, 0.22) 100%)",
-    areaBorder: "rgba(56, 189, 248, 0.38)",
-    areaShadow: "0 20px 60px -15px rgba(2, 132, 199, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
-    badgeBg: "rgba(14, 165, 233, 0.16)",
-    badgeBorder: "rgba(56, 189, 248, 0.4)",
-    badgeText: "#38bdf8",
+    screenGradient: "linear-gradient(145deg, #060e1d 0%, #0a172e 50%, #060d1b 100%)",
+    spotlight: "rgba(14, 165, 233, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(14, 165, 233, 0.16) 0%, transparent 65%)",
     brandColor: "#38bdf8",
-    modalBg: "linear-gradient(145deg, #091c35 0%, #0e2a4d 100%)",
-    modalBorder: "rgba(56, 189, 248, 0.45)",
-    modalGlow: "rgba(14, 165, 233, 0.35)",
     accentText: "#7dd3fc",
-    cardBg: "rgba(14, 165, 233, 0.08)",
-    cardBorder: "rgba(56, 189, 248, 0.3)",
-    cardHoverBg: "rgba(14, 165, 233, 0.18)",
+    modalBg: "linear-gradient(145deg, #091527 0%, #0d1e37 100%)",
+    modalBorder: "rgba(56, 189, 248, 0.3)",
+    modalGlow: "rgba(14, 165, 233, 0.25)",
+    badgeBg: "rgba(14, 165, 233, 0.12)",
+    badgeBorder: "rgba(56, 189, 248, 0.3)",
+    badgeText: "#38bdf8",
   },
   "theme-emerald": {
     name: "Esmeralda",
-    screenGradient: "linear-gradient(145deg, #022018 0%, #04382b 38%, #064e3b 70%, #021a14 100%)",
-    spotlight: "rgba(16, 185, 129, 0.2)",
-    areaBg: "linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.28) 100%)",
-    areaBorder: "rgba(52, 211, 153, 0.42)",
-    areaShadow: "0 20px 60px -15px rgba(5, 150, 105, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
-    badgeBg: "rgba(16, 185, 129, 0.18)",
-    badgeBorder: "rgba(52, 211, 153, 0.45)",
-    badgeText: "#34d399",
+    screenGradient: "linear-gradient(145deg, #04120e 0%, #071f18 50%, #04100c 100%)",
+    spotlight: "rgba(16, 185, 129, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(16, 185, 129, 0.16) 0%, transparent 65%)",
     brandColor: "#10b981",
-    modalBg: "linear-gradient(145deg, #03281f 0%, #053b2e 100%)",
-    modalBorder: "rgba(52, 211, 153, 0.45)",
-    modalGlow: "rgba(16, 185, 129, 0.4)",
     accentText: "#6ee7b7",
-    cardBg: "rgba(16, 185, 129, 0.08)",
-    cardBorder: "rgba(52, 211, 153, 0.3)",
-    cardHoverBg: "rgba(16, 185, 129, 0.18)",
+    modalBg: "linear-gradient(145deg, #061913 0%, #0a251d 100%)",
+    modalBorder: "rgba(52, 211, 153, 0.3)",
+    modalGlow: "rgba(16, 185, 129, 0.25)",
+    badgeBg: "rgba(16, 185, 129, 0.12)",
+    badgeBorder: "rgba(52, 211, 153, 0.3)",
+    badgeText: "#34d399",
   },
   "theme-sunset": {
     name: "Pôr do Sol",
-    screenGradient: "linear-gradient(145deg, #240c04 0%, #431707 38%, #5c2009 70%, #1e0902 100%)",
-    spotlight: "rgba(249, 115, 22, 0.2)",
-    areaBg: "linear-gradient(135deg, rgba(249, 115, 22, 0.12) 0%, rgba(124, 45, 18, 0.28) 100%)",
-    areaBorder: "rgba(251, 146, 60, 0.42)",
-    areaShadow: "0 20px 60px -15px rgba(234, 88, 12, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
-    badgeBg: "rgba(249, 115, 22, 0.18)",
-    badgeBorder: "rgba(251, 146, 60, 0.45)",
-    badgeText: "#fb923c",
+    screenGradient: "linear-gradient(145deg, #0f0c13 0%, #17101e 50%, #0d0a11 100%)",
+    spotlight: "rgba(249, 115, 22, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(249, 115, 22, 0.16) 0%, transparent 65%)",
     brandColor: "#f97316",
-    modalBg: "linear-gradient(145deg, #2e0f05 0%, #4a1908 100%)",
-    modalBorder: "rgba(251, 146, 60, 0.45)",
-    modalGlow: "rgba(249, 115, 22, 0.4)",
     accentText: "#fdba74",
-    cardBg: "rgba(249, 115, 22, 0.08)",
-    cardBorder: "rgba(251, 146, 60, 0.3)",
-    cardHoverBg: "rgba(249, 115, 22, 0.18)",
+    modalBg: "linear-gradient(145deg, #150f1c 0%, #1e1528 100%)",
+    modalBorder: "rgba(251, 146, 60, 0.3)",
+    modalGlow: "rgba(249, 115, 22, 0.25)",
+    badgeBg: "rgba(249, 115, 22, 0.12)",
+    badgeBorder: "rgba(251, 146, 60, 0.3)",
+    badgeText: "#fb923c",
   },
   "theme-amethyst": {
     name: "Ametista",
-    screenGradient: "linear-gradient(145deg, #180527 0%, #2e0b4a 38%, #440e6e 70%, #130320 100%)",
-    spotlight: "rgba(168, 85, 247, 0.2)",
-    areaBg: "linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(88, 28, 135, 0.28) 100%)",
-    areaBorder: "rgba(192, 132, 252, 0.42)",
-    areaShadow: "0 20px 60px -15px rgba(147, 51, 234, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
-    badgeBg: "rgba(168, 85, 247, 0.18)",
-    badgeBorder: "rgba(192, 132, 252, 0.45)",
-    badgeText: "#c084fc",
+    screenGradient: "linear-gradient(145deg, #0b0816 0%, #130d24 50%, #090612 100%)",
+    spotlight: "rgba(168, 85, 247, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(168, 85, 247, 0.16) 0%, transparent 65%)",
     brandColor: "#a855f7",
-    modalBg: "linear-gradient(145deg, #220738 0%, #380d59 100%)",
-    modalBorder: "rgba(192, 132, 252, 0.45)",
-    modalGlow: "rgba(168, 85, 247, 0.4)",
     accentText: "#d8b4fe",
-    cardBg: "rgba(168, 85, 247, 0.08)",
-    cardBorder: "rgba(192, 132, 252, 0.3)",
-    cardHoverBg: "rgba(168, 85, 247, 0.18)",
+    modalBg: "linear-gradient(145deg, #120c22 0%, #1a1130 100%)",
+    modalBorder: "rgba(192, 132, 252, 0.3)",
+    modalGlow: "rgba(168, 85, 247, 0.25)",
+    badgeBg: "rgba(168, 85, 247, 0.12)",
+    badgeBorder: "rgba(192, 132, 252, 0.3)",
+    badgeText: "#c084fc",
   },
   "theme-rose": {
     name: "Rosa Elegance",
-    screenGradient: "linear-gradient(145deg, #22030e 0%, #41081c 38%, #5e0d29 70%, #1b020a 100%)",
-    spotlight: "rgba(244, 63, 94, 0.2)",
-    areaBg: "linear-gradient(135deg, rgba(244, 63, 94, 0.12) 0%, rgba(136, 19, 55, 0.28) 100%)",
-    areaBorder: "rgba(251, 113, 133, 0.42)",
-    areaShadow: "0 20px 60px -15px rgba(225, 29, 72, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.18)",
-    badgeBg: "rgba(244, 63, 94, 0.18)",
-    badgeBorder: "rgba(251, 113, 133, 0.45)",
-    badgeText: "#fb7185",
+    screenGradient: "linear-gradient(145deg, #100810 0%, #190c19 50%, #0d060d 100%)",
+    spotlight: "rgba(244, 63, 94, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(244, 63, 94, 0.16) 0%, transparent 65%)",
     brandColor: "#f43f5e",
-    modalBg: "linear-gradient(145deg, #2e0413 0%, #4a0921 100%)",
-    modalBorder: "rgba(251, 113, 133, 0.45)",
-    modalGlow: "rgba(244, 63, 94, 0.4)",
     accentText: "#fda4af",
-    cardBg: "rgba(244, 63, 94, 0.08)",
-    cardBorder: "rgba(251, 113, 133, 0.3)",
-    cardHoverBg: "rgba(244, 63, 94, 0.18)",
+    modalBg: "linear-gradient(145deg, #180c17 0%, #241123 100%)",
+    modalBorder: "rgba(251, 113, 133, 0.3)",
+    modalGlow: "rgba(244, 63, 94, 0.25)",
+    badgeBg: "rgba(244, 63, 94, 0.12)",
+    badgeBorder: "rgba(251, 113, 133, 0.3)",
+    badgeText: "#fb7185",
   },
   "theme-midnight": {
     name: "Meia-noite",
-    screenGradient: "linear-gradient(145deg, #020617 0%, #0b1329 40%, #020617 100%)",
-    spotlight: "rgba(148, 163, 184, 0.15)",
-    areaBg: "linear-gradient(135deg, rgba(148, 163, 184, 0.08) 0%, rgba(30, 41, 59, 0.35) 100%)",
-    areaBorder: "rgba(148, 163, 184, 0.32)",
-    areaShadow: "0 20px 60px -15px rgba(15, 23, 42, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.12)",
-    badgeBg: "rgba(148, 163, 184, 0.15)",
-    badgeBorder: "rgba(148, 163, 184, 0.32)",
-    badgeText: "#94a3b8",
+    screenGradient: "linear-gradient(145deg, #03060f 0%, #080d19 50%, #02040a 100%)",
+    spotlight: "rgba(148, 163, 184, 0.12)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(148, 163, 184, 0.13) 0%, transparent 65%)",
     brandColor: "#94a3b8",
-    modalBg: "linear-gradient(145deg, #0b1120 0%, #151e33 100%)",
-    modalBorder: "rgba(148, 163, 184, 0.35)",
-    modalGlow: "rgba(148, 163, 184, 0.3)",
     accentText: "#cbd5e1",
-    cardBg: "rgba(148, 163, 184, 0.06)",
-    cardBorder: "rgba(148, 163, 184, 0.25)",
-    cardHoverBg: "rgba(148, 163, 184, 0.15)",
+    modalBg: "linear-gradient(145deg, #0a0f1b 0%, #11192b 100%)",
+    modalBorder: "rgba(148, 163, 184, 0.3)",
+    modalGlow: "rgba(148, 163, 184, 0.2)",
+    badgeBg: "rgba(148, 163, 184, 0.12)",
+    badgeBorder: "rgba(148, 163, 184, 0.3)",
+    badgeText: "#cbd5e1",
   }
 };
 
@@ -272,8 +242,8 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background: hovered ? (currentTheme?.cardHoverBg || "rgba(255,255,255,0.16)") : (currentTheme?.cardBg || "rgba(255,255,255,0.06)"),
-        border: `1.5px solid ${hovered ? mod.color : (currentTheme?.cardBorder || mod.border)}`,
+        background: hovered ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.03)",
+        border: `1.5px solid ${hovered ? mod.color : "rgba(255, 255, 255, 0.1)"}`,
         borderRadius: 22,
         padding: "26px 18px 20px",
         cursor: "pointer",
@@ -282,7 +252,7 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
         flexDirection: "column",
         alignItems: "center",
         gap: 13,
-        width: 168,
+        width: 172,
         position: "relative",
         overflow: "hidden",
         transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
@@ -292,9 +262,10 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
         opacity: visible ? 1 : 0,
         transitionDelay: visible ? `${delay}ms` : "0ms",
         boxShadow: hovered
-          ? `0 12px 35px ${mod.glow}, 0 0 0 1px ${mod.color}44`
-          : "0 4px 16px rgba(0,0,0,0.25)",
-        backdropFilter: "blur(12px)",
+          ? `0 14px 40px ${mod.glow}, 0 0 0 1px ${mod.color}55`
+          : "0 6px 20px rgba(0,0,0,0.3)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
       }}
     >
       <div style={{
@@ -306,16 +277,16 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
         justifyContent: "center",
         background: hovered
           ? `radial-gradient(circle, ${mod.glow} 0%, transparent 70%)`
-          : "rgba(255, 255, 255, 0.05)",
-        border: `1px solid ${hovered ? mod.color + "77" : "rgba(255, 255, 255, 0.1)"}`,
+          : `${mod.color}15`,
+        border: `1px solid ${hovered ? mod.color + "88" : mod.color + "33"}`,
         transition: "all 0.3s ease",
-        filter: hovered ? `drop-shadow(0 0 12px ${mod.color})` : "none",
+        filter: hovered ? `drop-shadow(0 0 14px ${mod.color})` : "none",
       }}>
         <mod.Icon color={mod.color} />
       </div>
       <div style={{ textAlign: "center" }}>
         <div style={{
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: 700,
           color: hovered ? "#ffffff" : "#f1f5f9",
           letterSpacing: 0.3,
@@ -737,71 +708,46 @@ export function WelcomeScreen({ onEnter }) {
         Selecione a unidade para acessar
       </p>
 
-      {/* Área Themed de Seleção entre Farmácia Central, Satélite e Demais Módulos */}
+      {/* Brilho Ambiente Dinâmico Conforme o Tema */}
       <div
         style={{
-          background: currentTheme.areaBg,
-          border: `1.5px solid ${currentTheme.areaBorder}`,
-          boxShadow: currentTheme.areaShadow,
-          borderRadius: 28,
-          padding: "24px 30px 28px",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
+          position: "absolute",
+          top: "42%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 860,
+          height: 460,
+          background: currentTheme.ambientGlow,
+          pointerEvents: "none",
+          zIndex: 0,
+          transition: "background 0.5s ease",
+          filter: "blur(50px)",
+        }}
+      />
+
+      {/* Grid de módulos (4 módulos) */}
+      <div
+        style={{
           display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          maxWidth: 830,
-          width: "92%",
+          gap: 20,
+          flexWrap: "wrap",
+          justifyContent: "center",
+          maxWidth: 840,
+          padding: "0 20px",
           position: "relative",
           zIndex: 1,
-          transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       >
-        {/* Badge identificador do tema na área de seleção */}
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 7,
-            padding: "5px 16px",
-            borderRadius: 999,
-            background: currentTheme.badgeBg,
-            border: `1px solid ${currentTheme.badgeBorder}`,
-            color: currentTheme.badgeText,
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: 1.2,
-            textTransform: "uppercase",
-            marginBottom: 20,
-            boxShadow: `0 2px 12px ${currentTheme.spotlight}`,
-            transition: "all 0.4s ease",
-          }}
-        >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: currentTheme.badgeText }} />
-          Módulos Hospitalares • Tema {currentTheme.name}
-        </div>
-
-        {/* Grid de módulos (4 módulos) */}
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            flexWrap: "wrap",
-            justifyContent: "center",
-            width: "100%",
-          }}
-        >
-          {MODULES.map((mod, index) => (
-            <ModuleCard
-              key={mod.key}
-              mod={mod}
-              currentTheme={currentTheme}
-              delay={120 + index * 60}
-              visible={visible}
-              onClick={() => handleModuleClick(mod)}
-            />
-          ))}
-        </div>
+        {MODULES.map((mod, index) => (
+          <ModuleCard
+            key={mod.key}
+            mod={mod}
+            currentTheme={currentTheme}
+            delay={120 + index * 60}
+            visible={visible}
+            onClick={() => handleModuleClick(mod)}
+          />
+        ))}
       </div>
 
       {/* Footer minimalista com Seletor de Temas */}
