@@ -108,6 +108,58 @@ export function MapaMensalDispensacao() {
       const medId = saida.medicamento_id || saida.medicamentoId;
       if (!medId || !mapaMeds[medId]) return;
 
+      // 1. REGRA RIGOROSA: Apenas saídas destinadas diretamente a pacientes reais
+      const nomePac = (saida.paciente_nome || saida.pacienteNome || "").trim();
+      const idPac = (saida.paciente_id || saida.pacienteId || "").trim();
+      
+      // Se não há paciente vinculado ou é texto genérico/placeholder, descarta (não entra no mapa)
+      if (!nomePac && !idPac) return;
+      const nomePacLower = nomePac.toLowerCase();
+      if (
+        nomePacLower === "paciente não informado" || 
+        nomePacLower === "sem paciente vinculado" ||
+        nomePacLower === "não informado" ||
+        nomePacLower === "n/i" ||
+        nomePacLower === "null" ||
+        nomePacLower === "undefined"
+      ) {
+        return;
+      }
+
+      // 2. REGRA RIGOROSA: Desconsidera movimentações internas, transferências, perdas, descarte, carrinho ou empréstimo
+      const tipo = (saida.tipo || "").toLowerCase();
+      const motivo = (saida.motivo || "").toLowerCase();
+      const destino = (saida.destino || "").toLowerCase();
+
+      if (
+        tipo.includes("transferencia") || 
+        tipo.includes("transferência") || 
+        tipo.includes("carrinho") || 
+        tipo.includes("abastecimento") ||
+        tipo.includes("perda") || 
+        tipo.includes("descarte") || 
+        tipo.includes("emprestimo") || 
+        tipo.includes("empréstimo") || 
+        tipo.includes("ajuste") ||
+        tipo.includes("inventario") ||
+        tipo.includes("inventário") ||
+        tipo.includes("estorno") ||
+        motivo.includes("transferência") ||
+        motivo.includes("transferencia") ||
+        motivo.includes("abastecimento") ||
+        motivo.includes("carrinho de parada") ||
+        motivo.includes("ajuste de estoque") ||
+        motivo.includes("perda") ||
+        motivo.includes("quebra") ||
+        destino.includes("farmácia satélite") ||
+        destino.includes("farmacia satelite") ||
+        destino.includes("estoque central") ||
+        destino.includes("carrinho de parada") ||
+        destino.includes("almoxarifado")
+      ) {
+        return;
+      }
+
       const qtd = Number(saida.quantidade) || 0;
       if (qtd <= 0) return;
 
@@ -667,22 +719,6 @@ export function MapaMensalDispensacao() {
                 </tfoot>
               </table>
             </div>
-
-            {/* Rodapé de Assinaturas da Folha 1 (visível na impressão) */}
-            <div className="hidden print:grid grid-cols-3 gap-6 pt-6 pb-2 text-center text-[9px] text-slate-700 border-t mt-4">
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Farmacêutico(a) Responsável Técnico</div>
-                CRF-UF • Visto / Data
-              </div>
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Supervisão de Enfermagem</div>
-                COREN • Conferência
-              </div>
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Coordenação Farmácia Central / Satélite</div>
-                Zorion Saúde • Gestão Hospitalar
-              </div>
-            </div>
           </div>
         )}
 
@@ -852,22 +888,6 @@ export function MapaMensalDispensacao() {
                   </tr>
                 </tfoot>
               </table>
-            </div>
-
-            {/* Rodapé de Assinaturas da Folha 2 */}
-            <div className="hidden print:grid grid-cols-3 gap-6 pt-6 pb-2 text-center text-[9px] text-slate-700 border-t mt-4">
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Farmacêutico(a) Responsável Técnico</div>
-                CRF-UF • Fechamento Mensal
-              </div>
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Supervisão de Enfermagem</div>
-                COREN • Conferência Final
-              </div>
-              <div>
-                <div className="border-t border-black pt-1 font-bold">Coordenação Farmácia Central / Satélite</div>
-                Zorion Saúde • Arquivamento Regulatório
-              </div>
             </div>
           </div>
         )}

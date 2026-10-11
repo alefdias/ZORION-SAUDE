@@ -26,6 +26,7 @@ const emptyForm = {
     ala_id: "",
     ala_nome: "",
     data_saida: getLocalDateString(),
+    paciente_id: "",
     paciente_nome: "",
     motivo: "",
     observacao: "",
@@ -34,6 +35,7 @@ const emptyForm = {
 export default function SaidaForm({ open, onClose, onSave, initialData = null, initialMedId = null, medicamentos = [], lotes = [], alas = [], isLoading }) {
     const [form, setForm] = useState(emptyForm);
     const [currentItem, setCurrentItem] = useState({ medicamento_id: "", medicamento_nome: "", lote_id: "", numero_lote: "", quantidade: "" });
+    const [modoDigitarManual, setModoDigitarManual] = useState(false);
 
     const { data: pacientes = [] } = useQuery({
         queryKey: ['pacientes'],
@@ -58,6 +60,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
 
     useEffect(() => {
         if (open) {
+            setModoDigitarManual(false);
             if (initialData) {
                 // Modo edição (apenas 1 item)
                 setForm({
@@ -71,6 +74,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                     ala_id: initialData.ala_id || "",
                     ala_nome: initialData.ala_nome || "",
                     data_saida: initialData.data_saida || getLocalDateString(),
+                    paciente_id: initialData.paciente_id || "",
                     paciente_nome: initialData.paciente_nome || "",
                     motivo: initialData.motivo || "",
                     observacao: initialData.observacao || "",
@@ -121,11 +125,27 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
 
     const handleAla = (id) => {
         if (id === "__none__") {
-            setForm((prev) => ({ ...prev, ala_id: "", ala_nome: "", paciente_nome: "" }));
+            setForm((prev) => ({ ...prev, ala_id: "", ala_nome: "", paciente_id: "", paciente_nome: "" }));
+            setModoDigitarManual(false);
             return;
         }
         const ala = alas.find((a) => a.id === id);
-        setForm((prev) => ({ ...prev, ala_id: id, ala_nome: ala?.nome || "", paciente_nome: "" }));
+        setForm((prev) => ({ ...prev, ala_id: id, ala_nome: ala?.nome || "", paciente_id: "", paciente_nome: "" }));
+        setModoDigitarManual(false);
+    };
+
+    const handlePacienteSelect = (val) => {
+        if (val === "__manual__") {
+            setModoDigitarManual(true);
+            setForm((prev) => ({ ...prev, paciente_id: "", paciente_nome: "" }));
+            return;
+        }
+        const pac = pacientes.find((p) => p.id === val || p.nome === val);
+        setForm((prev) => ({
+            ...prev,
+            paciente_id: pac?.id || "",
+            paciente_nome: pac ? pac.nome : val,
+        }));
     };
 
     const handleAddItem = () => {
@@ -182,21 +202,22 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
             return;
         }
 
-        if (!form.ala_id || form.ala_id === "__none__" || !form.ala_nome) {
-            toast.error("Por favor, selecione a Ala / Setor de Destino obrigatória.");
+        if (!form.ala_id || form.ala_id === "__none__" || !form.ala_nome || !form.ala_nome.trim()) {
+            toast.error("Por favor, selecione a Ala / Setor de Destino (obrigatória).");
             return;
         }
 
-        let requerNome = false;
-        for (const item of finalItens) {
-            const selectedMed = medicamentos.find(m => m.id === item.medicamento_id);
-            if (selectedMed && (isPsicotropico(selectedMed.grupo_terapeutico) || isMav(selectedMed.nome))) {
-                requerNome = true;
-            }
+        const nomePacienteLimpo = (form.paciente_nome || "").trim();
+        if (!nomePacienteLimpo || nomePacienteLimpo === "__nenhum__") {
+            toast.error("O Nome do Paciente é obrigatório. Não é permitido dispensar sem vincular o paciente.");
+            return;
         }
 
-        if (requerNome && (!form.paciente_nome || !form.paciente_nome.trim())) {
-            toast.warning("Recomendado: informe o nome do paciente para medicamentos de Controle Especial ou MAV.");
+        // Tentar resolver paciente_id se não estiver preenchido
+        let finalPacId = form.paciente_id || "";
+        if (!finalPacId && nomePacienteLimpo) {
+            const pacEncontrado = pacientes.find(p => p.nome && p.nome.trim().toLowerCase() === nomePacienteLimpo.toLowerCase());
+            if (pacEncontrado) finalPacId = pacEncontrado.id;
         }
 
         onSave({
@@ -204,10 +225,11 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
             itens: finalItens,
             ala_id: form.ala_id,
             ala_nome: form.ala_nome,
-            destino: form.ala_nome,
+            destino: `Paciente: ${nomePacienteLimpo} (${form.ala_nome})`,
             data_saida: form.data_saida,
-            paciente_nome: form.paciente_nome,
-            motivo: form.motivo || (form.paciente_nome ? `Atendimento Paciente: ${form.paciente_nome}` : `Dispensação Ala: ${form.ala_nome}`),
+            paciente_id: finalPacId,
+            paciente_nome: nomePacienteLimpo,
+            motivo: form.motivo || `Dispensação Paciente: ${nomePacienteLimpo}`,
             observacao: form.observacao
         });
     };
@@ -432,40 +454,75 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                             </Select>
                         </div>
 
-                        {/* Nome do Paciente (Opcional) */}
+                        {/* Nome do Paciente (Obrigatório) */}
                         <div className="space-y-1.5">
-                            <Label htmlFor="paciente_nome" className="text-xs font-semibold text-slate-700">
-                                Nome do Paciente <span className="text-slate-400 font-normal">(Opcional)</span>
-                            </Label>
+                            <div className="flex items-center justify-between">
+                                <Label htmlFor="paciente_nome" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                                    Nome do Paciente <span className="text-rose-500 font-bold">*</span>
+                                </Label>
+                                <span className="text-[10px] text-rose-600 font-bold uppercase tracking-wider bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                    Obrigatório
+                                </span>
+                            </div>
                             
                             {form.ala_id ? (
-                                <Select 
-                                    value={form.paciente_nome} 
-                                    onValueChange={(val) => setForm(prev => ({ ...prev, paciente_nome: val === "__nenhum__" ? "" : val }))}
-                                >
-                                    <SelectTrigger className="text-xs h-9 bg-white">
-                                        <SelectValue placeholder="Selecione um paciente da ala..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="__nenhum__">— Sem paciente vinculado —</SelectItem>
-                                        {pacientes
-                                            .filter(p => p.alaId === form.ala_id || p.alaNome === form.ala_nome)
-                                            .filter(p => p.status === "Ativo")
-                                            .map(p => (
-                                                <SelectItem key={p.id} value={p.nome}>
-                                                    {p.nome}
-                                                </SelectItem>
-                                            ))}
-                                    </SelectContent>
-                                </Select>
+                                (() => {
+                                    const pacientesDaAla = pacientes
+                                        .filter(p => (p.alaId === form.ala_id || p.alaNome === form.ala_nome) && p.status === "Ativo");
+
+                                    if (modoDigitarManual || pacientesDaAla.length === 0) {
+                                        return (
+                                            <div className="space-y-1">
+                                                <Input
+                                                    id="paciente_nome"
+                                                    placeholder={pacientesDaAla.length === 0 ? "Nenhum paciente cadastrado nesta ala. Digite o nome..." : "Digite o nome completo do paciente..."}
+                                                    value={form.paciente_nome}
+                                                    onChange={(e) => setForm(prev => ({ ...prev, paciente_nome: e.target.value, paciente_id: "" }))}
+                                                    className="text-xs h-9 bg-white border-slate-300"
+                                                    autoFocus={modoDigitarManual}
+                                                />
+                                                {pacientesDaAla.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setModoDigitarManual(false); setForm(prev => ({ ...prev, paciente_nome: "", paciente_id: "" })); }}
+                                                        className="text-[10px] text-indigo-600 hover:text-indigo-800 underline font-semibold"
+                                                    >
+                                                        ← Selecionar da lista de pacientes da ala
+                                                    </button>
+                                                )}
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="space-y-1">
+                                            <Select 
+                                                value={form.paciente_id || form.paciente_nome || ""} 
+                                                onValueChange={handlePacienteSelect}
+                                            >
+                                                <SelectTrigger className="text-xs h-9 bg-white">
+                                                    <SelectValue placeholder="Selecione o paciente da ala..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {pacientesDaAla.map(p => (
+                                                        <SelectItem key={p.id} value={p.id}>
+                                                            {p.nome} {p.leito ? `(Leito: ${p.leito})` : ""}
+                                                        </SelectItem>
+                                                    ))}
+                                                    <SelectItem value="__manual__" className="text-indigo-600 font-semibold border-t mt-1">
+                                                        ✏️ Digitar outro paciente manualmente...
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    );
+                                })()
                             ) : (
                                 <Input
                                     id="paciente_nome"
-                                    placeholder="Selecione a ala para listar os pacientes..."
-                                    disabled={!form.ala_id}
-                                    value={form.paciente_nome === "__nenhum__" ? "" : (form.paciente_nome || "")}
-                                    onChange={handleChange("paciente_nome")}
-                                    className="text-xs h-9 bg-white"
+                                    placeholder="Selecione a ala de destino primeiro..."
+                                    disabled={true}
+                                    className="text-xs h-9 bg-slate-50 text-slate-400 cursor-not-allowed"
                                 />
                             )}
                         </div>

@@ -98,6 +98,14 @@ export default function Saidas({ isTab = false }) {
     mutationFn: async (data) => {
       const { itens, ...commonData } = data;
       const createdSaidas = [];
+
+      // Validar obrigatoriedade de Ala e Paciente
+      if (!commonData.ala_nome || !commonData.ala_nome.trim()) {
+        throw new Error("A Ala / Setor de Destino é obrigatória para registrar a dispensação.");
+      }
+      if (!commonData.paciente_nome || !commonData.paciente_nome.trim()) {
+        throw new Error("O Nome do Paciente é obrigatório. Não é permitido dispensar sem identificar o paciente.");
+      }
       
       // Validar se há estoque suficiente na Farmácia Satélite para todos os itens primeiro
       for (const item of itens) {
@@ -119,6 +127,9 @@ export default function Saidas({ isTab = false }) {
         }
       } catch (e) {}
 
+      const pacNomeLimpo = commonData.paciente_nome.trim();
+      const alaNomeLimpa = commonData.ala_nome.trim();
+
       for (const item of itens) {
         const saidaData = {
           ...commonData,
@@ -127,6 +138,12 @@ export default function Saidas({ isTab = false }) {
           lote_id: item.lote_id,
           numero_lote: item.numero_lote,
           quantidade: item.quantidade,
+          paciente_id: commonData.paciente_id || null,
+          paciente_nome: pacNomeLimpo,
+          ala_id: commonData.ala_id || null,
+          ala_nome: alaNomeLimpa,
+          destino: commonData.destino || `Paciente: ${pacNomeLimpo} (${alaNomeLimpa})`,
+          motivo: commonData.motivo || `Dispensação Paciente: ${pacNomeLimpo}`,
           responsavel: commonData.responsavel || responsavel,
           responsavel_crf: commonData.responsavel_crf || responsavelCrf,
           usuario_nome: responsavel
