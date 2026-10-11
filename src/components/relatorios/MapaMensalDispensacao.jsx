@@ -267,7 +267,7 @@ export function MapaMensalDispensacao() {
       const qtd = Number(saida.quantidade) || 0;
       if (qtd <= 0) return;
 
-      // Caso A: Saída com cobertura de lote/ciclo (distribui nos dias do ciclo)
+      // Caso A: Saída com cobertura de lote/ciclo (distribui nos dias do ciclo em números inteiros)
       if (
         (saida.is_baixa_lote_paciente || (saida.dias_cobertura && saida.dias_cobertura > 1)) &&
         saida.data_inicio_cobertura &&
@@ -277,22 +277,38 @@ export function MapaMensalDispensacao() {
         const dFim = parseISO(saida.data_fim_cobertura);
 
         if (isValid(dInicio) && isValid(dFim)) {
-          const diasCob = Number(saida.dias_cobertura) || 1;
-          const doseDia = Number(saida.dose_diaria) || (qtd / diasCob);
-
-          // Percorre cada dia do intervalo de cobertura
+          // Lista todos os dias do ciclo de cobertura
+          const diasNoIntervalo = [];
           let curr = new Date(dInicio);
           while (curr <= dFim) {
-            const currAno = curr.getFullYear();
-            const currMes = curr.getMonth();
-            const currDia = curr.getDate();
-
-            // Se o dia estiver dentro do mês/ano selecionado
-            if (currAno === ano && currMes === mes && currDia <= totalDiasMes) {
-              mapaMeds[medId].dias[currDia] = (mapaMeds[medId].dias[currDia] || 0) + doseDia;
-            }
+            diasNoIntervalo.push(new Date(curr));
             curr = addDays(curr, 1);
           }
+
+          const totalDiasCob = diasNoIntervalo.length || 1;
+          const qtdTotalInt = Math.round(qtd);
+
+          // Se a dose diária informada for um número inteiro válido (ex: 2 un/dia)
+          const doseInformada = Number(saida.dose_diaria);
+          const isDoseInteira = Number.isFinite(doseInformada) && Number.isInteger(doseInformada) && doseInformada > 0;
+
+          // Se a dose informada for inteira e coincidir com a soma, usa a dose direta;
+          // senão divide a quantidade total inteira distribuindo o resto para que cada dia tenha unidades inteiras
+          const doseBase = isDoseInteira ? doseInformada : Math.floor(qtdTotalInt / totalDiasCob);
+          const resto = isDoseInteira ? 0 : (qtdTotalInt % totalDiasCob);
+
+          diasNoIntervalo.forEach((dt, idx) => {
+            const currAno = dt.getFullYear();
+            const currMes = dt.getMonth();
+            const currDia = dt.getDate();
+
+            // Unidades físicas discretas deste dia (nunca fração decimal como 1.3)
+            const doseDesteDia = doseBase + (idx < resto ? 1 : 0);
+
+            if (currAno === ano && currMes === mes && currDia <= totalDiasMes) {
+              mapaMeds[medId].dias[currDia] = (mapaMeds[medId].dias[currDia] || 0) + doseDesteDia;
+            }
+          });
           return;
         }
       }
@@ -305,12 +321,12 @@ export function MapaMensalDispensacao() {
       if (sAno === anoStr && sMes === mesStr) {
         const diaNum = parseInt(sDia, 10);
         if (diaNum >= 1 && diaNum <= totalDiasMes) {
-          mapaMeds[medId].dias[diaNum] = (mapaMeds[medId].dias[diaNum] || 0) + qtd;
+          mapaMeds[medId].dias[diaNum] = (mapaMeds[medId].dias[diaNum] || 0) + Math.round(qtd);
         }
       }
     });
 
-    // Calcular subtotais e totais por dia
+    // Calcular subtotais e totais por dia (estritamente inteiros)
     const totaisPorDia = {};
     for (let d = 1; d <= totalDiasMes; d++) {
       totaisPorDia[d] = 0;
@@ -328,7 +344,8 @@ export function MapaMensalDispensacao() {
       let tMes = 0;
 
       for (let d = 1; d <= totalDiasMes; d++) {
-        const val = Math.round(item.dias[d] * 10) / 10; // arredondamento com 1 casa se fração
+        // Unidades inteiras absolutas (elimina qualquer resíduo fracionário)
+        const val = Math.round(item.dias[d]);
         item.dias[d] = val;
 
         if (d <= 15) tQ1 += val;
