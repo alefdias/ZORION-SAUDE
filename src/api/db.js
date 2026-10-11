@@ -145,6 +145,12 @@ const ensureTableQuery = {
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "prescricao_id" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dias_cobertura" INTEGER;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_inicio_cobertura" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_fim_cobertura" TEXT;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dose_diaria" NUMERIC;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "is_baixa_lote_paciente" BOOLEAN DEFAULT false;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
   `,
   Lote: `
@@ -275,6 +281,9 @@ const ensureTableQuery = {
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativo';
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "foto" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ciclo_coberto_ate" TEXT;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ultimo_ciclo_dias" INTEGER;
+    ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "data_ultimo_ciclo" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
@@ -354,6 +363,13 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medico_alterou" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_alteracao" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "historico_alteracoes" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "coberto_ate" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "ultimo_lote_dias" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_ultima_dispensacao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dias_ultima_dispensacao" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_fim_dispensacao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose_diaria_dispensada" NUMERIC;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "quantidade_ultimo_lote" INTEGER;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
