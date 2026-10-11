@@ -38,6 +38,10 @@ import {
   CheckCircle2,
   HelpCircle,
   Pill,
+  Filter,
+  CheckSquare,
+  Square,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,14 +54,19 @@ export function AjusteDiasEntregaModal({
   lotes = [],
   onSuccess,
 }) {
+  const hoje = useMemo(() => new Date(), []);
+  const hojeStr = useMemo(() => format(hoje, "yyyy-MM-dd"), [hoje]);
+
+  // Data de referência da receita / alteração (padrão: hoje)
+  const [dataFiltroReceita, setDataFiltroReceita] = useState(hojeStr);
+  const [apenasDataReferencia, setApenasDataReferencia] = useState(true);
+
   const [dataFimCiclo, setDataFimCiclo] = useState("");
   const [selectedPrescIds, setSelectedPrescIds] = useState(new Set());
+  const [customDias, setCustomDias] = useState({});
   const [customQtds, setCustomQtds] = useState({});
   const [selectedLotes, setSelectedLotes] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const hoje = useMemo(() => new Date(), []);
-  const hojeStr = useMemo(() => format(hoje, "yyyy-MM-dd"), [hoje]);
 
   // Filtra as prescrições ativas do paciente
   const activePrescs = useMemo(() => {
@@ -75,7 +84,6 @@ export function AjusteDiasEntregaModal({
 
     let cicloFinal = patient?.ciclo_coberto_ate;
     if (!cicloFinal) {
-      // Procura a maior data de cobertura das prescrições ativas
       const coberturas = activePrescs
         .map((pr) => pr.coberto_ate)
         .filter((d) => d && d >= hojeStr)
@@ -85,106 +93,235 @@ export function AjusteDiasEntregaModal({
       }
     }
 
-    // Se ainda não tiver ou for no passado, sugere 7 dias à frente (fechando ciclo de 8 dias)
     if (!cicloFinal || cicloFinal < hojeStr) {
       cicloFinal = format(addDays(hoje, 7), "yyyy-MM-dd");
     }
 
     setDataFimCiclo(cicloFinal);
+    setDataFiltroReceita(hojeStr);
+    setApenasDataReferencia(true);
   }, [open, patient, activePrescs, hoje, hojeStr]);
 
-  // Calcula os dias restantes a cobrir
-  const diasRestantes = useMemo(() => {
+  // Dias restantes do ciclo geral do paciente
+  const diasRestantesCiclo = useMemo(() => {
     if (!dataFimCiclo) return 1;
     const dFim = parseISO(dataFimCiclo);
     if (!isValid(dFim)) return 1;
     const diff = differenceInCalendarDays(dFim, hoje);
-    // Dias a cobrir inclui o dia de hoje se ainda não foi tomado + os dias até o fim
     return Math.max(1, diff + 1);
   }, [dataFimCiclo, hoje]);
 
-  // Calcula para cada prescrição a dose diária atual vs anterior
-  const prescAnalise = useMemo(() => {
-    return activePrescs.map((pr) => {
-      const med = medicamentos.find(
-        (m) => m.id === (pr.medicamentoId || pr.medicamento_id)
-      );
+  // Função para verificar se a prescrição teve receita / alteração na data especificada
+  const teveAlteracaoNaData = (pr, dataAlvo) => {
+    if (!dataAlvo) return true;
+    const alvoISO = dataAlvo.split("T")[0];
+    const dAlt = pr.data_alteracao?.split("T")[0];
+    const dIni = (pr.dataInicio || pr.data_inicio)?.split("T")[0];
+    const dCrea = pr.created_at?.split("T")[0];
+    const dUpd = pr.updated_at?.split("T")[0];
+    const dDisp = pr.data_ultima_dispensacao?.split("T")[0];
 
-      // Dose diária atual da prescrição
-      const doseAtual = parseFloat(pr.totalDiario) || 0;
+    if (dAlt === alvoISO || dIni === alvoISO || dCrea === alvoISO || dUpd === alvoISO || dDisp === alvoISO) {
+      return true;
+    }
 
-      // Dose dispensada no último lote (se houver histórico)
-      const doseAnterior =
-        pr.dose_diaria_dispensada !== undefined &&
-        pr.dose_diaria_dispensada !== null
-          ? parseFloat(pr.dose_diaria_dispensada)
-          : null;
-
-      // Se não havia registro de dose dispensada anterior, verifica se é medicamento recém adicionado
-      const isNova = doseAnterior === null || doseAnterior === undefined;
-      const diferencaDose = isNova ? doseAtual : doseAtual - doseAnterior;
-
-      // Quantidade sugerida para cobrir até a data fim
-      let qtdSugerida = 0;
-      if (diferencaDose > 0) {
-        qtdSugerida = Math.ceil(diferencaDose * diasRestantes);
+    // Procura por formato brasileiro (ex: 11/10/2026 ou 11/10) nas observações
+    try {
+      const partes = alvoISO.split("-");
+      if (partes.length === 3) {
+        const diaMesAno = `${partes[2]}/${partes[1]}/${partes[0]}`;
+        const diaMes = `${partes[2]}/${partes[1]}`;
+        const obs = (pr.observacoes || "") + " " + (pr.historico_alteracoes || "") + " " + (pr.motivo_alteracao || "");
+        if (obs.includes(diaMesAno) || obs.includes(diaMes)) return true;
       }
+    } catch (e) {}
 
-      // Lotes FEFO disponíveis
-      const medLotes = (lotes || [])
-        .filter(
-          (l) =>
-            (l.medicamento_id === med?.id || l.medicamentoId === med?.id) &&
-            (Number(l.quantidade_atual) || 0) > 0 &&
-            l.status !== "Inativo"
-        )
-        .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+    return false;
+  };
 
-      return {
-        pr,
-        med,
-        doseAtual,
-        doseAnterior,
-        isNova,
-        diferencaDose,
-        qtdSugerida,
-        medLotes,
-        estoqueSatelite: med?.estoque_satelite || 0,
-      };
-    });
-  }, [activePrescs, medicamentos, lotes, diasRestantes]);
+  // Calcula para cada prescrição a dose diária atual vs anterior e o teto de dias do tratamento
+  const prescAnalise = useMemo(() => {
+    return activePrescs
+      .filter((pr) => {
+        if (!apenasDataReferencia) return true;
+        return teveAlteracaoNaData(pr, dataFiltroReceita);
+      })
+      .map((pr) => {
+        const med = medicamentos.find(
+          (m) => m.id === (pr.medicamentoId || pr.medicamento_id)
+        );
 
-  // Auto-seleciona os que têm aumento de dose ou são novos
+        // Dose diária atual da prescrição
+        const doseAtual = parseFloat(pr.totalDiario) || 0;
+
+        // Dose dispensada no último lote
+        const doseAnterior =
+          pr.dose_diaria_dispensada !== undefined &&
+          pr.dose_diaria_dispensada !== null
+            ? parseFloat(pr.dose_diaria_dispensada)
+            : null;
+
+        const isNova = doseAnterior === null || doseAnterior === undefined;
+        const diferencaDose = isNova ? doseAtual : doseAtual - doseAnterior;
+
+        // ── REGRA DE DURAÇÃO DO TRATAMENTO ────────────────────────────────────
+        // Se o medicamento foi prescrito com duração definida (ex: 5 dias), ele só entrega até o fim do tratamento!
+        let diasTratamento = null;
+        let dataFimTratamentoStr = null;
+
+        const dFimRaw = pr.dataFim || pr.data_fim;
+        if (dFimRaw) {
+          const dFimParsed = parseISO(dFimRaw.split("T")[0]);
+          if (isValid(dFimParsed)) {
+            dataFimTratamentoStr = format(dFimParsed, "yyyy-MM-dd");
+            const diffDias = differenceInCalendarDays(dFimParsed, hoje) + 1;
+            if (diffDias > 0) {
+              diasTratamento = diffDias;
+            }
+          }
+        }
+
+        // Se houver duração em dias registrada diretamente na prescrição
+        const duracaoDiasCampo = parseInt(pr.duracao_dias || pr.dias_tratamento || pr.dias, 10);
+        if (duracaoDiasCampo > 0 && !diasTratamento) {
+          diasTratamento = duracaoDiasCampo;
+          dataFimTratamentoStr = format(addDays(hoje, diasTratamento - 1), "yyyy-MM-dd");
+        }
+
+        // Tenta detectar menção de dias nas observações ou esquema (ex: "5 dias", "por 7 dias")
+        if (!diasTratamento) {
+          const matchDias =
+            (pr.observacoes || "").match(/(\d+)\s*(?:dias|dia)/i) ||
+            (pr.esquemaPosologico || "").match(/(\d+)\s*(?:dias|dia)/i);
+          if (matchDias) {
+            const num = parseInt(matchDias[1], 10);
+            if (num > 0) {
+              diasTratamento = num;
+              dataFimTratamentoStr = format(addDays(hoje, num - 1), "yyyy-MM-dd");
+            }
+          }
+        }
+
+        // O teto de dias para este medicamento é o menor entre o fim do tratamento e o ciclo do paciente
+        const diasSugeridos = diasTratamento
+          ? Math.min(diasRestantesCiclo, diasTratamento)
+          : diasRestantesCiclo;
+
+        const diasFinais =
+          customDias[pr.id] !== undefined
+            ? Math.max(1, parseInt(customDias[pr.id]) || 1)
+            : diasSugeridos;
+
+        // Quantidade sugerida calculada estritamente pelos dias efetivos
+        let qtdSugerida = 0;
+        if (diferencaDose > 0) {
+          qtdSugerida = Math.ceil(diferencaDose * diasFinais);
+        } else if (doseAtual > 0) {
+          qtdSugerida = Math.ceil(doseAtual * diasFinais);
+        }
+
+        // Lotes FEFO disponíveis da Farmácia Satélite
+        const medLotes = (lotes || [])
+          .filter(
+            (l) => l.medicamento_id === med?.id || l.medicamentoId === med?.id
+          )
+          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+        return {
+          pr,
+          med,
+          doseAtual,
+          doseAnterior,
+          isNova,
+          diferencaDose,
+          diasTratamento,
+          dataFimTratamentoStr,
+          diasSugeridos,
+          diasFinais,
+          qtdSugerida,
+          medLotes,
+          estoqueSatelite: Number(med?.estoque_satelite) || 0,
+        };
+      });
+  }, [activePrescs, medicamentos, lotes, diasRestantesCiclo, dataFiltroReceita, apenasDataReferencia, customDias, hoje]);
+
+  // Inicializa a seleção automaticamente apenas quando o modal for aberto ou quando a lista de itens mudar
   useEffect(() => {
     if (!open) return;
-    const newSelected = new Set();
-    const newQtds = {};
+    const initialSelected = new Set();
+    const initialQtds = {};
+    const initialDias = {};
 
     prescAnalise.forEach((item) => {
-      if (item.diferencaDose > 0 && item.qtdSugerida > 0) {
-        newSelected.add(item.pr.id);
-        newQtds[item.pr.id] = item.qtdSugerida;
+      // Auto-seleciona se tiver dose maior que 0
+      if (item.qtdSugerida > 0) {
+        initialSelected.add(item.pr.id);
+        initialQtds[item.pr.id] = item.qtdSugerida;
+        initialDias[item.pr.id] = item.diasFinais;
       }
     });
 
-    setSelectedPrescIds(newSelected);
-    setCustomQtds(newQtds);
-  }, [open, prescAnalise]);
+    setSelectedPrescIds(initialSelected);
+    setCustomQtds(initialQtds);
+    setCustomDias(initialDias);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, dataFiltroReceita, apenasDataReferencia]);
 
+  // Toggle de seleção individual por medicamento
   const toggleSelect = (prId, item) => {
-    const next = new Set(selectedPrescIds);
-    if (next.has(prId)) {
-      next.delete(prId);
-    } else {
-      next.add(prId);
-      if (customQtds[prId] === undefined) {
-        setCustomQtds((prev) => ({
-          ...prev,
-          [prId]: item.qtdSugerida || 1,
-        }));
+    setSelectedPrescIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(prId)) {
+        next.delete(prId);
+      } else {
+        next.add(prId);
+        if (customQtds[prId] === undefined) {
+          setCustomQtds((q) => ({
+            ...q,
+            [prId]: item.qtdSugerida || 1,
+          }));
+        }
+        if (customDias[prId] === undefined) {
+          setCustomDias((d) => ({
+            ...d,
+            [prId]: item.diasFinais || 1,
+          }));
+        }
       }
+      return next;
+    });
+  };
+
+  // Selecionar ou desmarcar todos os itens visíveis
+  const toggleSelectAll = () => {
+    if (selectedPrescIds.size === prescAnalise.length && prescAnalise.length > 0) {
+      setSelectedPrescIds(new Set());
+    } else {
+      const allIds = new Set(prescAnalise.map((p) => p.pr.id));
+      setSelectedPrescIds(allIds);
+      const newQtds = { ...customQtds };
+      const newDias = { ...customDias };
+      prescAnalise.forEach((item) => {
+        if (newQtds[item.pr.id] === undefined) {
+          newQtds[item.pr.id] = item.qtdSugerida || 1;
+        }
+        if (newDias[item.pr.id] === undefined) {
+          newDias[item.pr.id] = item.diasFinais || 1;
+        }
+      });
+      setCustomQtds(newQtds);
+      setCustomDias(newDias);
     }
-    setSelectedPrescIds(next);
+  };
+
+  // Alterar dias de uma prescrição específica
+  const handleDiasChange = (prId, diasVal, item) => {
+    const d = Math.max(1, parseInt(diasVal) || 1);
+    setCustomDias((prev) => ({ ...prev, [prId]: d }));
+    // Recalcula quantidade sugerida proporcional aos novos dias
+    const doseRef = item.diferencaDose > 0 ? item.diferencaDose : item.doseAtual;
+    const novaQtd = Math.ceil(doseRef * d);
+    setCustomQtds((prev) => ({ ...prev, [prId]: novaQtd }));
   };
 
   const handleConfirm = async () => {
@@ -212,16 +349,29 @@ export function AjusteDiasEntregaModal({
 
         if (item.estoqueSatelite < qtd) {
           throw new Error(
-            `Estoque insuficiente na Farmácia Satélite para ${item.med?.nome || "Medicamento"}. Necessário: ${qtd} un, Disponível: ${item.estoqueSatelite} un`
+            `Estoque insuficiente na Farmácia Satélite para: "${item.med?.nome || "Medicamento"}". Necessário: ${qtd} un, Disponível na Satélite: ${item.estoqueSatelite} un. Não é permitido dar baixa usando estoque da Central.`
           );
         }
 
         const loteId = selectedLotes[prescId] || item.medLotes[0]?.id || null;
         const loteObj = item.medLotes.find((l) => l.id === loteId) || item.medLotes[0];
 
+        const diasEfetivos =
+          customDias[prescId] !== undefined
+            ? customDias[prescId]
+            : item.diasFinais;
+
+        // Data fim da cobertura desta medicação (limitada estritamente aos dias que foram dispensados)
+        const dataFimCoberturaMed = format(
+          addDays(hoje, Math.max(1, diasEfetivos) - 1),
+          "yyyy-MM-dd"
+        );
+
         itensParaBaixar.push({
           item,
           qtd,
+          diasEfetivos,
+          dataFimCoberturaMed,
           loteObj,
         });
       }
@@ -243,37 +393,24 @@ export function AjusteDiasEntregaModal({
         }
       } catch (e) {}
 
-      // Executar as saídas e atualizações
-      for (const { item, qtd, loteObj } of itensParaBaixar) {
+      // Executar as saídas e atualizações EXCLUSIVAMENTE na Farmácia Satélite
+      for (const { item, qtd, diasEfetivos, dataFimCoberturaMed, loteObj } of itensParaBaixar) {
         const { pr, med, doseAtual } = item;
         const medId = med?.id || pr.medicamentoId;
         const loteId = loteObj?.id || null;
         const numeroLote = loteObj?.numero_lote || "S/ Lote";
 
-        // 1. Debitar do lote se houver
-        if (loteObj && Number(loteObj.quantidade_atual) > 0) {
-          const novaQtdLote = Math.max(
-            0,
-            Number(loteObj.quantidade_atual) - qtd
-          );
-          await db.entities.Lote.update(loteObj.id, {
-            quantidade_atual: novaQtdLote,
-            status: novaQtdLote <= 0 ? "esgotado" : loteObj.status,
-          });
-        }
-
-        // 2. Debitar do estoque da satélite
+        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
         if (med) {
           await db.entities.Medicamento.update(medId, {
             estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd),
           });
         }
 
-        // 3. Gravar registro em Saida com cobertura
+        // 2. Gravar registro em Saida com cobertura e lote rastreável
         await db.entities.Saida.create({
           medicamento_id: medId,
-          medicamento_nome:
-            pr.medicamentoNome || (med ? med.nome : "Medicamento"),
+          medicamento_nome: pr.medicamentoNome || (med ? med.nome : "Medicamento"),
           lote_id: loteId,
           numero_lote: numeroLote,
           quantidade: qtd,
@@ -284,35 +421,37 @@ export function AjusteDiasEntregaModal({
           ala_id: patient.alaId || patient.ala_id || null,
           ala_nome: patient.alaNome || patient.ala_nome || "Geral",
           motivo: "Ajuste de Dias de Entrega (Complemento de Ciclo)",
-          observacao: `Complemento de ${qtd} un para fechar ciclo até ${format(parseISO(dataFimCiclo), "dd/MM/yyyy")} (${diasRestantes} dias) | Dose: ${doseAtual} un/dia | Lote: ${numeroLote}`,
+          observacao: `Ajuste de ${qtd} un para cobertura de ${diasEfetivos} dias (até ${format(parseISO(dataFimCoberturaMed), "dd/MM/yyyy")}) | Dose: ${doseAtual} un/dia | Lote: ${numeroLote}`,
           data_saida: hojeStr,
           created_at: nowStr,
           responsavel: responsavel,
           responsavel_crf: responsavelCrf,
           usuario_nome: responsavel,
-          dias_cobertura: diasRestantes,
+          dias_cobertura: diasEfetivos,
           data_inicio_cobertura: hojeStr,
-          data_fim_cobertura: dataFimCiclo,
+          data_fim_cobertura: dataFimCoberturaMed,
           dose_diaria: item.diferencaDose > 0 ? item.diferencaDose : doseAtual,
           is_baixa_lote_paciente: true,
         });
 
-        // 4. Atualizar a prescrição
+        // 3. Atualizar a prescrição com a nova cobertura calculada
         await db.entities.PrescricaoPaciente.update(pr.id, {
-          coberto_ate: dataFimCiclo,
+          coberto_ate: dataFimCoberturaMed,
           dose_diaria_dispensada: doseAtual,
           data_ultima_dispensacao: hojeStr,
+          quantidade_ultimo_lote: qtd,
+          ultimo_lote_dias: diasEfetivos,
         });
       }
 
-      // 5. Atualizar o ciclo no paciente
+      // 4. Atualizar o ciclo geral no paciente se todas as medicações fecharam
       await db.entities.Paciente.update(patient.id, {
         ciclo_coberto_ate: dataFimCiclo,
         data_ultimo_ajuste_ciclo: hojeStr,
       });
 
       toast.success(
-        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) complementado(s) com sucesso até ${format(parseISO(dataFimCiclo), "dd/MM/yyyy")}.`
+        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`
       );
 
       if (onSuccess) onSuccess();
@@ -325,94 +464,177 @@ export function AjusteDiasEntregaModal({
     }
   };
 
+  const isAllSelected =
+    prescAnalise.length > 0 &&
+    prescAnalise.every((p) => selectedPrescIds.has(p.pr.id));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-indigo-600" />
-            Ajuste de Dias de Entrega (Complemento de Ciclo)
-          </DialogTitle>
+      <DialogContent className="sm:max-w-[900px] max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6">
+        <DialogHeader className="border-b pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Ajuste de Dias de Entrega (Receitas do Dia & Complemento)
+              </DialogTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Equalize a entrega de medicações prescritas ou alteradas no dia para fechar o ciclo do paciente
+              </p>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Card do Paciente e Configuração do Ciclo */}
-          <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl p-4">
+        <div className="space-y-4 pt-2">
+          {/* Barra de Filtro de Data da Receita e Fechamento do Ciclo */}
+          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-extrabold text-indigo-950 dark:text-indigo-200">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
                     {patient?.nome || "Paciente"}
                   </h3>
-                  <Badge variant="outline" className="bg-white text-indigo-700 border-indigo-300 text-xs">
+                  <Badge variant="outline" className="bg-white text-indigo-700 border-indigo-200 text-xs font-mono font-bold">
                     Pront: {patient?.prontuario || "N/A"}
                   </Badge>
-                  <Badge variant="outline" className="bg-white text-indigo-700 border-indigo-300 text-xs">
+                  <Badge variant="outline" className="bg-white text-indigo-700 border-indigo-200 text-xs font-mono font-bold">
                     Leito: {patient?.leito || "S/L"}
                   </Badge>
                 </div>
-                <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
-                  Equalize a entrega de novos medicamentos ou aumentos de posologia até a data de fechamento do lote deste paciente.
+                <p className="text-xs text-slate-500 mt-1">
+                  Ala: <strong>{patient?.alaNome || patient?.ala_nome || "Geral"}</strong>
                 </p>
               </div>
 
               {/* Seletor da Data Final do Ciclo */}
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-lg border border-indigo-200 shrink-0">
+              <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-xs shrink-0">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />
                 <div className="text-left">
                   <Label className="text-[10px] font-bold text-slate-500 uppercase block">
-                    Fechar Ciclo Até:
+                    Fechar Ciclo do Paciente Até:
                   </Label>
                   <Input
                     type="date"
                     min={hojeStr}
                     value={dataFimCiclo}
                     onChange={(e) => setDataFimCiclo(e.target.value)}
-                    className="h-7 text-xs font-bold font-mono px-2 py-0 w-[130px]"
+                    className="h-7 text-xs font-bold font-mono px-2 py-0 w-[130px] border-slate-300"
                   />
                 </div>
-                <div className="border-l pl-2 text-center">
-                  <span className="text-[10px] text-slate-500 font-bold block">
-                    Restam
+                <div className="border-l border-slate-200 dark:border-slate-700 pl-2.5 text-center">
+                  <span className="text-[10px] text-slate-400 font-bold block">
+                    Ciclo
                   </span>
                   <span className="text-xs font-black text-indigo-600 font-mono">
-                    {diasRestantes}d
+                    {diasRestantesCiclo}d
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* Filtro Obrigatório: Apenas Receitas do Dia */}
+            <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  Data da Receita / Alteração:
+                </span>
+                <Input
+                  type="date"
+                  value={dataFiltroReceita}
+                  onChange={(e) => setDataFiltroReceita(e.target.value)}
+                  className="h-7 text-xs font-bold font-mono px-2 py-0 w-[125px] bg-white border-slate-300"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 dark:text-slate-300 font-semibold bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
+                <input
+                  type="checkbox"
+                  checked={apenasDataReferencia}
+                  onChange={(e) => setApenasDataReferencia(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span>Exibir apenas receitas alteradas nesta data</span>
+              </label>
             </div>
           </div>
 
           {/* Tabela de Prescrições para Ajuste */}
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-3.5 h-3.5 text-indigo-600" />
-                Prescrições Ativas do Paciente ({prescAnalise.length})
-              </h4>
-              <span className="text-[11px] text-slate-500">
-                {selectedPrescIds.size} selecionado(s) para entrega complementar
+            <div className="flex justify-between items-center px-1">
+              <div className="flex items-center gap-3">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Pill className="w-3.5 h-3.5 text-indigo-600" />
+                  Medicamentos Disponíveis para Ajuste ({prescAnalise.length})
+                </h4>
+                {prescAnalise.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleSelectAll}
+                    className="h-6 px-2 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                  >
+                    {isAllSelected ? "Desmarcar Todos" : "Selecionar Todos"}
+                  </Button>
+                )}
+              </div>
+              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                {selectedPrescIds.size} selecionado(s)
               </span>
             </div>
 
             {prescAnalise.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 border border-dashed rounded-xl">
-                Nenhuma medicação ativa cadastrada para este paciente.
+              <div className="p-8 text-center text-slate-500 border border-dashed rounded-xl bg-slate-50/50 space-y-2">
+                <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+                <p className="font-bold text-sm text-slate-700">
+                  Nenhuma receita ou alteração encontrada em {format(parseISO(dataFiltroReceita), "dd/MM/yyyy")}.
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  O ajuste de dias de entrega é restrito a medicações que tiveram alteração ou inclusão na data selecionada.
+                </p>
+                {apenasDataReferencia && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setApenasDataReferencia(false)}
+                    className="text-xs font-semibold mt-2"
+                  >
+                    Exibir todas as receitas ativas do paciente
+                  </Button>
+                )}
               </div>
             ) : (
-              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
                 <Table>
-                  <TableHeader className="bg-slate-100/80 dark:bg-slate-800">
+                  <TableHeader className="bg-slate-100/90 dark:bg-slate-800 border-b border-slate-200">
                     <TableRow>
-                      <TableHead className="w-10 text-center"></TableHead>
-                      <TableHead>Medicamento / Posologia</TableHead>
-                      <TableHead className="text-center">Status do Ajuste</TableHead>
-                      <TableHead className="text-center">Lote (FEFO)</TableHead>
-                      <TableHead className="text-center w-28">Complemento ({diasRestantes}d)</TableHead>
-                      <TableHead className="text-right">Satélite</TableHead>
+                      <TableHead className="w-12 text-center">
+                        <button
+                          type="button"
+                          onClick={toggleSelectAll}
+                          className="flex items-center justify-center mx-auto text-slate-600 hover:text-indigo-600"
+                          title={isAllSelected ? "Desmarcar Todos" : "Selecionar Todos"}
+                        >
+                          {isAllSelected ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-left font-bold text-xs text-slate-700">Medicamento / Posologia</TableHead>
+                      <TableHead className="text-center font-bold text-xs text-slate-700">Status / Motivo</TableHead>
+                      <TableHead className="text-center font-bold text-xs text-slate-700 w-28">Dias a Entregar</TableHead>
+                      <TableHead className="text-center font-bold text-xs text-slate-700">Lote</TableHead>
+                      <TableHead className="text-center font-bold text-xs text-slate-700 w-28">Quantidade</TableHead>
+                      <TableHead className="text-right font-bold text-xs text-slate-700">Saldo Satélite</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {prescAnalise.map((item) => {
                       const {
                         pr,
@@ -421,6 +643,9 @@ export function AjusteDiasEntregaModal({
                         doseAnterior,
                         isNova,
                         diferencaDose,
+                        diasTratamento,
+                        dataFimTratamentoStr,
+                        diasFinais,
                         qtdSugerida,
                         medLotes,
                         estoqueSatelite,
@@ -437,15 +662,16 @@ export function AjusteDiasEntregaModal({
                       return (
                         <TableRow
                           key={pr.id}
+                          onClick={() => toggleSelect(pr.id, item)}
                           className={cn(
-                            "transition-colors",
+                            "cursor-pointer transition-colors select-none",
                             isSelected
-                              ? "bg-indigo-50/40 dark:bg-indigo-950/20"
-                              : "hover:bg-slate-50/50"
+                              ? "bg-indigo-50/70 dark:bg-indigo-950/40 font-medium"
+                              : "hover:bg-slate-50/60"
                           )}
                         >
                           {/* Checkbox de Seleção */}
-                          <TableCell className="text-center">
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -460,7 +686,7 @@ export function AjusteDiasEntregaModal({
                               {pr.medicamentoNome}
                             </p>
                             <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-1 rounded">
+                              <span className="font-mono text-[11px] font-semibold text-slate-600 bg-white px-1.5 py-0.2 rounded border border-slate-200">
                                 {pr.esquemaPosologico}
                               </span>
                               <span className="text-[10px] text-slate-500">
@@ -473,7 +699,7 @@ export function AjusteDiasEntregaModal({
                           <TableCell className="text-center">
                             {isNova ? (
                               <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-bold">
-                                🆕 Nova no Ciclo (+{doseAtual} un/dia)
+                                🆕 Receita Nova (+{doseAtual} un/dia)
                               </Badge>
                             ) : diferencaDose > 0 ? (
                               <div className="space-y-0.5">
@@ -485,27 +711,46 @@ export function AjusteDiasEntregaModal({
                                 </span>
                               </div>
                             ) : (
-                              <div className="space-y-0.5">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-slate-50 text-slate-600 border-slate-200 text-[10px] font-medium"
-                                >
-                                  {diferencaDose < 0
-                                    ? "🔻 Dose Reduzida (Sem complemento)"
-                                    : "✅ Dose Mantida"}
-                                </Badge>
-                                <span className="text-[9px] text-slate-400 block font-mono">
-                                  Cobertura OK
-                                </span>
-                              </div>
+                              <Badge
+                                variant="outline"
+                                className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-medium"
+                              >
+                                Dose Mantida ({doseAtual} un/dia)
+                              </Badge>
                             )}
                           </TableCell>
 
+                          {/* Dias a Entregar (com trava automática de fim do tratamento) */}
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="flex items-center justify-center gap-1">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max={diasTratamento || diasRestantesCiclo}
+                                  value={diasFinais}
+                                  disabled={!isSelected}
+                                  onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
+                                  className="w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300"
+                                />
+                                <span className="text-xs text-slate-600 font-bold">dias</span>
+                              </div>
+                              {diasTratamento && (
+                                <span
+                                  className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"
+                                  title={`Tratamento prescrito com duração máxima de ${diasTratamento} dias até ${format(parseISO(dataFimTratamentoStr), "dd/MM/yyyy")}`}
+                                >
+                                  ⏳ Tratamento: {diasTratamento}d
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+
                           {/* Seletor de Lote (FEFO) */}
-                          <TableCell className="min-w-[170px]">
+                          <TableCell className="min-w-[170px]" onClick={(e) => e.stopPropagation()}>
                             {medLotes.length === 0 ? (
                               <span className="text-[10px] text-slate-400">
-                                Sem lote com saldo
+                                Sem lote cadastrado
                               </span>
                             ) : (
                               <Select
@@ -518,7 +763,7 @@ export function AjusteDiasEntregaModal({
                                 }
                                 disabled={!isSelected}
                               >
-                                <SelectTrigger className="h-7 text-xs font-mono bg-white">
+                                <SelectTrigger className="h-7 text-xs font-mono bg-white border-slate-300">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -528,7 +773,7 @@ export function AjusteDiasEntregaModal({
                                       value={l.id}
                                       className="text-xs font-mono"
                                     >
-                                      {l.numero_lote} ({l.quantidade_atual} un)
+                                      {l.numero_lote} (Val: {l.data_validade || "N/I"})
                                       {idx === 0 ? " 🌟 FEFO" : ""}
                                     </SelectItem>
                                   ))}
@@ -538,7 +783,7 @@ export function AjusteDiasEntregaModal({
                           </TableCell>
 
                           {/* Quantidade Editável */}
-                          <TableCell className="text-center">
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-1">
                               <Input
                                 type="number"
@@ -556,7 +801,7 @@ export function AjusteDiasEntregaModal({
                                   }));
                                 }}
                                 className={cn(
-                                  "w-16 h-7 text-center font-mono font-bold text-xs bg-white",
+                                  "w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300",
                                   !temEstoque && isSelected && "border-red-500 bg-red-50"
                                 )}
                               />
@@ -566,7 +811,7 @@ export function AjusteDiasEntregaModal({
                             </div>
                             {isSelected &&
                               customVal !== undefined &&
-                              customVal !== qtdSugerida && (
+                              Number(customVal) !== qtdSugerida && (
                                 <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded block mt-0.5">
                                   Sugerido: {qtdSugerida} un
                                 </span>
@@ -578,9 +823,9 @@ export function AjusteDiasEntregaModal({
                             <Badge
                               variant="outline"
                               className={cn(
-                                "font-mono text-[11px]",
+                                "font-mono text-[11px] font-bold",
                                 temEstoque
-                                  ? "bg-slate-50 text-slate-700"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                                   : "bg-red-50 text-red-700 border-red-300"
                               )}
                             >
@@ -596,10 +841,10 @@ export function AjusteDiasEntregaModal({
             )}
           </div>
 
-          <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2">
+          <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2">
             <HelpCircle className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
             <div>
-              <strong>Regra Clínica de Equalização:</strong> As doses diminuídas não geram débito e os comprimidos restantes permanecem no posto até eventual devolução manual. Medicamentos aumentados ou novos geram saída apenas para a quantidade complementar exata dos <strong>{diasRestantes} dias restantes</strong> até o fechamento do lote.
+              <strong>Regra de Dispensação de Tratamento Limitado:</strong> Se a receita possui duração delimitada (ex: tratamento de 5 dias), o sistema limita automaticamente a entrega a <strong>5 dias</strong>, não ultrapassando o fim do tratamento mesmo que o ciclo do paciente vá além. O saldo é debitado <strong>estritamente da Farmácia Satélite</strong>.
             </div>
           </div>
         </div>
@@ -609,18 +854,19 @@ export function AjusteDiasEntregaModal({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isSubmitting}
+            className="text-xs font-semibold"
           >
             Cancelar
           </Button>
           <Button
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2 shadow-sm"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-2 shadow-sm"
             onClick={handleConfirm}
             disabled={isSubmitting || selectedPrescIds.size === 0}
           >
             <PackageMinus className="w-4 h-4" />
             {isSubmitting
               ? "Processando Saídas..."
-              : `Confirmar Entrega Complementar (${selectedPrescIds.size} itens)`}
+              : `Confirmar Entrega (${selectedPrescIds.size} itens selecionados)`}
           </Button>
         </DialogFooter>
       </DialogContent>
