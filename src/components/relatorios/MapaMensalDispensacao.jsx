@@ -38,6 +38,110 @@ import { isMav, isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+export function formatarApresentacaoMed(med) {
+  if (!med) return "COMPRIMIDO";
+
+  const rawApres = (med.apresentacao || "").trim().toUpperCase();
+  const rawForma = (med.forma_farmaceutica || "").trim().toUpperCase();
+  const rawUnidade = (med.unidade_medida || "").trim().toUpperCase();
+  const rawVia = (med.via_administracao || "").trim().toUpperCase();
+  const nomeUpper = (med.nome || "").trim().toUpperCase();
+
+  // 1. Frasco-ampola
+  if (
+    rawApres.includes("FRASCO-AMPOLA") || rawApres.includes("F/A") || rawApres.includes("FA ") ||
+    rawForma.includes("FRASCO-AMPOLA") ||
+    rawUnidade === "FA" || rawUnidade === "F/A" ||
+    nomeUpper.includes("FRASCO-AMPOLA") || nomeUpper.includes(" F/A") || nomeUpper.includes(" FA ")
+  ) {
+    return "FRASCO-AMPOLA";
+  }
+
+  // 2. Ampola / Injetável
+  if (
+    rawApres.includes("AMPOLA") || rawApres.includes("AMP") ||
+    rawForma.includes("AMPOLA") ||
+    rawUnidade === "AMP" || rawUnidade === "AMPOLA" ||
+    nomeUpper.includes("AMPOLA") || nomeUpper.includes(" AMP ") || nomeUpper.endsWith(" AMP") || nomeUpper.includes("AMP/")
+  ) {
+    if (rawApres && (rawApres.includes("ML") || rawApres.includes("MG"))) {
+      return rawApres;
+    }
+    return "AMPOLA";
+  }
+
+  // Se é injetável explícito
+  if (
+    rawForma.includes("INJETÁVEL") || rawForma.includes("INJETAVEL") || rawForma.includes("INJ") ||
+    rawApres.includes("INJETÁVEL") || rawApres.includes("INJETAVEL") || rawApres.includes("INJ") ||
+    nomeUpper.includes(" INJ") || nomeUpper.includes("INJETÁVEL") || nomeUpper.includes("INJETAVEL") ||
+    ["EV", "IM", "IV", "SC", "ID", "ENDOVENOSA", "INTRAMUSCULAR"].includes(rawVia)
+  ) {
+    if (nomeUpper.includes("FRASCO") || rawApres.includes("FRASCO")) return "FRASCO / INJETÁVEL";
+    if (rawApres && (rawApres.includes("ML") || rawApres.includes("MG"))) return `AMPOLA (${rawApres})`;
+    return "AMPOLA / INJETÁVEL";
+  }
+
+  // 3. Frasco
+  if (
+    rawApres.includes("FRASCO") || rawApres.includes("FR ") || rawApres.endsWith("FR") ||
+    rawForma.includes("FRASCO") ||
+    rawUnidade === "FR" || rawUnidade === "FRASCO" ||
+    nomeUpper.includes("FRASCO") || nomeUpper.includes(" FR ") || nomeUpper.endsWith(" FR") ||
+    nomeUpper.includes("GOTAS") || nomeUpper.includes("XAROPE") || nomeUpper.includes("SUSP")
+  ) {
+    if (rawApres && rawApres.includes("ML")) return rawApres;
+    if (nomeUpper.includes("GOTAS") || rawApres.includes("GOTAS")) return "FRASCO (GOTAS)";
+    if (nomeUpper.includes("XAROPE") || rawApres.includes("XAROPE")) return "FRASCO (XAROPE)";
+    return "FRASCO";
+  }
+
+  // 4. Blister
+  if (
+    rawApres.includes("BLISTER") || rawApres.includes("BLÍSTER") ||
+    rawForma.includes("BLISTER") || rawForma.includes("BLÍSTER") ||
+    rawUnidade === "BLIST" || rawUnidade === "BLISTER" || rawUnidade === "BLÍSTER" ||
+    nomeUpper.includes("BLISTER") || nomeUpper.includes("BLÍSTER")
+  ) {
+    return "BLISTER";
+  }
+
+  // 5. Cápsula
+  if (
+    rawApres.includes("CÁPSULA") || rawApres.includes("CAPSULA") || rawApres.includes("CAP") ||
+    rawForma.includes("CÁPSULA") || rawForma.includes("CAPSULA") ||
+    rawUnidade === "CAP" || rawUnidade === "CAPSULA" || rawUnidade === "CÁPSULA" ||
+    nomeUpper.includes("CÁPSULA") || nomeUpper.includes("CAPSULA") || nomeUpper.includes(" CAP ") || nomeUpper.endsWith(" CAP")
+  ) {
+    return "CÁPSULA";
+  }
+
+  // 6. Comprimido
+  if (
+    rawApres.includes("COMPRIMIDO") || rawApres.includes("COMP") || rawApres.includes("CP") ||
+    rawForma.includes("COMPRIMIDO") || rawForma.includes("SÓLIDA") ||
+    rawUnidade === "COMP" || rawUnidade === "COMPRIMIDO" || rawUnidade === "CP" ||
+    nomeUpper.includes("COMPRIMIDO") || nomeUpper.includes(" COMP ") || nomeUpper.endsWith(" COMP") || nomeUpper.includes(" CP ") || nomeUpper.endsWith(" CP")
+  ) {
+    return "COMPRIMIDO";
+  }
+
+  // 7. Pomada / Creme / Gel
+  if (rawApres.includes("POMADA") || rawForma.includes("POMADA") || nomeUpper.includes("POMADA")) return "POMADA";
+  if (rawApres.includes("CREME") || rawForma.includes("CREME") || nomeUpper.includes("CREME")) return "CREME";
+  if (rawApres.includes("GEL") || rawForma.includes("GEL") || nomeUpper.includes("GEL")) return "GEL";
+
+  // 8. Sachê / Envelope
+  if (rawApres.includes("SACHÊ") || rawApres.includes("SACHE") || nomeUpper.includes("SACHE") || nomeUpper.includes("SACHÊ")) return "SACHÊ";
+  if (rawApres.includes("ENVELOPE") || nomeUpper.includes("ENVELOPE")) return "ENVELOPE";
+
+  if (rawApres) return rawApres;
+  if (rawForma) return rawForma;
+  if (rawUnidade && !["UN", "UNIDADE", "UNID", "-", ""].includes(rawUnidade)) return rawUnidade;
+
+  return "COMPRIMIDO";
+}
+
 export function MapaMensalDispensacao() {
   const hoje = useMemo(() => new Date(), []);
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -252,6 +356,7 @@ export function MapaMensalDispensacao() {
       item.isMav = ehMav;
       item.listaP344 = listaP344;
       item.isClinica = !ehPsi && !ehMav;
+      item.apresentacaoFormatada = formatarApresentacaoMed(med);
 
       // Inclui apenas itens que tiveram movimentação no mês ou todos com estoque ativo
       if (item.totalMes > 0 || (med.estoque_satelite && med.estoque_satelite > 0)) {
@@ -306,7 +411,7 @@ export function MapaMensalDispensacao() {
         const med = item.medicamento;
         const cod = med.codigo || "S/C";
         const nome = `"${med.nome.replace(/"/g, '""')}"`;
-        const apres = `"${(med.apresentacao || med.unidade_medida || "un").replace(/"/g, '""')}"`;
+        const apres = `"${(item.apresentacaoFormatada || med.apresentacao || med.unidade_medida || "un").replace(/"/g, '""')}"`;
         const cat = item.isPsicotropico ? "Psicotrópico" : item.isMav ? "MAV" : "Clínico Geral";
         const p344 = item.listaP344 || "-";
 
@@ -632,8 +737,11 @@ export function MapaMensalDispensacao() {
                             <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px]" title={med.nome}>
                               {med.nome}
                             </div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                              <span>Cód: {med.codigo || "S/C"}</span>
+                            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                              <span className="font-mono">Cód: {med.codigo || "S/C"}</span>
+                              <span className="font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-300">
+                                {item.apresentacaoFormatada}
+                              </span>
                               {med.concentracao && <span>• {med.concentracao}</span>}
                               {item.isPsicotropico && (
                                 <span className="text-[9px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200">
@@ -795,8 +903,11 @@ export function MapaMensalDispensacao() {
                             <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px]" title={med.nome}>
                               {med.nome}
                             </div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                              <span>Cód: {med.codigo || "S/C"}</span>
+                            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                              <span className="font-mono">Cód: {med.codigo || "S/C"}</span>
+                              <span className="font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-300">
+                                {item.apresentacaoFormatada}
+                              </span>
                               {med.concentracao && <span>• {med.concentracao}</span>}
                               {item.isPsicotropico && (
                                 <span className="text-[9px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200">

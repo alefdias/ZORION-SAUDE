@@ -757,46 +757,34 @@ export default function PacientesMedicao() {
     mutationFn: async (itensConsolidados) => {
       const nowStr = new Date().toISOString();
       const todayDateStr = getLocalDateString();
+      // 1. Validar se TODOS os itens possuem estoque suficiente EXCLUSIVAMENTE na Farmácia Satélite
+      for (const item of itensConsolidados) {
+        const med = medicamentos.find(m => m.id === item.medicamentoId);
+        const saldoSatelite = med ? (Number(med.estoque_satelite) || 0) : 0;
+        if (saldoSatelite < item.qtdPeriodo) {
+          throw new Error(
+            `Estoque insuficiente na Farmácia Satélite para: "${med?.nome || item.nome}". Necessário: ${item.qtdPeriodo} un, Disponível na Satélite: ${saldoSatelite} un. Não é permitido dar baixa usando estoque da Central.`
+          );
+        }
+      }
+
       for (const item of itensConsolidados) {
         const med = medicamentos.find(m => m.id === item.medicamentoId);
         if (med) {
-          let remQtd = item.qtdPeriodo;
-          let newSatelite = med.estoque_satelite || 0;
-          let newGeral = med.estoque_atual || 0;
+          const novoSatelite = Math.max(0, (Number(med.estoque_satelite) || 0) - item.qtdPeriodo);
 
-          if (newSatelite > 0) {
-            if (newSatelite >= remQtd) {
-              newSatelite -= remQtd;
-              remQtd = 0;
-            } else {
-              remQtd -= newSatelite;
-              newSatelite = 0;
-            }
-          }
-          if (remQtd > 0) {
-            newGeral = Math.max(0, newGeral - remQtd);
-          }
-
+          // Atualiza EXCLUSIVAMENTE o estoque_satelite (NUNCA toca no estoque_atual da Central)
           await db.entities.Medicamento.update(med.id, {
-            estoque_satelite: newSatelite,
-            estoque_atual: newGeral
+            estoque_satelite: novoSatelite
           });
 
-          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO) para identificação e rastreabilidade
           const medLotes = (lotes || [])
-            .filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+            .filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id))
             .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
           const loteDoMed = medLotes[0] || lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
 
-          if (loteDoMed) {
-            const novaQtdLote = Math.max(0, (loteDoMed.quantidade_atual || 0) - item.qtdPeriodo);
-            await db.entities.Lote.update(loteDoMed.id, {
-              quantidade_atual: novaQtdLote,
-              status: novaQtdLote <= 0 ? "esgotado" : loteDoMed.status
-            });
-            loteDoMed.quantidade_atual = novaQtdLote;
-          }
-
+          // A baixa da Satélite NUNCA altera a quantidade_atual do lote físico da Central
           const loteId = loteDoMed ? loteDoMed.id : (lotes[0]?.id || "lote_fixo");
           const numeroLote = loteDoMed ? (loteDoMed.numero_lote || "S/ Lote") : "Saída Fixa Continuada";
 
@@ -919,15 +907,7 @@ export default function PacientesMedicao() {
         const loteId = loteEscolhido ? loteEscolhido.id : null;
         const numeroLote = loteEscolhido ? (loteEscolhido.numero_lote || "S/ Lote") : "S/ Lote";
 
-        // Se encontrou o lote, debita a quantidade utilizada
-        if (loteEscolhido && (Number(loteEscolhido.quantidade_atual) || 0) > 0) {
-          const novaQtdLote = Math.max(0, (Number(loteEscolhido.quantidade_atual) || 0) - qtdSaida);
-          await db.entities.Lote.update(loteEscolhido.id, {
-            quantidade_atual: novaQtdLote,
-            status: novaQtdLote <= 0 ? "esgotado" : loteEscolhido.status
-          });
-          loteEscolhido.quantidade_atual = novaQtdLote;
-        }
+        // A baixa realizada pela Farmácia Satélite é estritamente vinculada ao estoque_satelite e nunca reduz a quantidade_atual do lote físico da Central
 
         let responsavel = "Farmacêutico";
         let responsavelCrf = "";
@@ -1622,7 +1602,7 @@ export default function PacientesMedicao() {
           codigo: med.codigo,
           apresentacao: med.apresentacao,
           concentracao: med.concentracao,
-          estoqueAtual: med.estoque_atual || 0,
+          estoqueAtual: Number(med.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdPeriodo: 0,
           pacientesSet: new Set()
@@ -1733,7 +1713,7 @@ export default function PacientesMedicao() {
           codigo: med.codigo,
           apresentacao: med.apresentacao,
           concentracao: med.concentracao,
-          estoqueAtual: med.estoque_atual || 0,
+          estoqueAtual: Number(med.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdPeriodo: 0,
           pacientesSet: new Set()
@@ -3030,12 +3010,12 @@ export default function PacientesMedicao() {
                                         <SelectValue placeholder="Selecione o Lote" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {medLotes.map((l, lIdx) => (
-                                          <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
-                                            {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) - {l.quantidade_atual} un
-                                            {lIdx === 0 ? " 🌟 [FEFO]" : ""}
-                                          </SelectItem>
-                                        ))}
+                                          {medLotes.map((l, lIdx) => (
+                                            <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
+                                              {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"})
+                                              {lIdx === 0 ? " 🌟 [FEFO]" : ""}
+                                            </SelectItem>
+                                          ))}
                                       </SelectContent>
                                     </Select>
                                     {selectedLoteId && fefoLote && selectedLoteId !== fefoLote.id && (
