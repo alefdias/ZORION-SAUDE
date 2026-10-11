@@ -1,0 +1,17 @@
+# Configuração do GitHub Linguist para detecção correta de linguagens do Zorion Saúde
+
+# Ignorar relatórios estáticos pesados e arquivos gerados da contagem de linguagens
+relatorio-axion/** linguist-vendored
+relatorio-axion/** linguist-generated
+relatorio-axion/** -diff
+
+# Documentação e templates de impressão isolados da contagem de código principal
+modelo_*.html linguist-documentation
+docs/** linguist-documentation
+
+# Habilitar detecção das linguagens de código do projeto
+*.rs linguist-detectable=true
+*.jsx linguist-detectable=true
+*.js linguist-detectable=true
+*.css linguist-detectable=true
+*.sql linguist-detectable=true
