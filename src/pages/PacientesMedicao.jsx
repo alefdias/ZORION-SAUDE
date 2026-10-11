@@ -2843,6 +2843,7 @@ export default function PacientesMedicao() {
         patient={currentViewPatient || viewPatientDetails}
         prescricoes={prescricoes}
         medicamentos={medicamentos}
+        lotes={lotes}
         onOpenNewPrescricao={(target) => handleOpenNewPresc(target)}
         onEditPrescricao={(pr) => handleOpenEditPresc(pr)}
         onOpenPrintReceita={(pat) => handleOpenPrintPrescModal([pat?.id || pat])}

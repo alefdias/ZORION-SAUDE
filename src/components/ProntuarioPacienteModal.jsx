@@ -135,6 +135,7 @@ export function ProntuarioPacienteModal({
   patient,
   prescricoes = [],
   medicamentos = [],
+  lotes = [],
   onOpenNewPrescricao,
   onEditPrescricao,
   onOpenPrintReceita,
@@ -2706,6 +2707,7 @@ export function ProntuarioPacienteModal({
         patient={patient}
         prescricoes={prescricoes}
         medicamentos={medicamentos}
+        lotes={lotes}
         onSuccess={() => {
           if (onRefresh) onRefresh();
         }}

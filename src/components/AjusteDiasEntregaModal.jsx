@@ -18,6 +18,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
+  SelectSeparator,
 } from "@/components/ui/select";
 import {
   Table,
@@ -67,6 +70,95 @@ export function AjusteDiasEntregaModal({
   const [customQtds, setCustomQtds] = useState({});
   const [selectedLotes, setSelectedLotes] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [internalLotes, setInternalLotes] = useState([]);
+  const [internalMedicamentos, setInternalMedicamentos] = useState([]);
+
+  // Busca lotes e medicamentos frescos diretamente do banco ao abrir o modal
+  useEffect(() => {
+    if (!open) return;
+    let isMounted = true;
+    Promise.all([
+      db.entities.Lote.list().catch(() => []),
+      db.entities.Medicamento.list().catch(() => []),
+    ]).then(([lotesData, medsData]) => {
+      if (isMounted) {
+        if (Array.isArray(lotesData)) setInternalLotes(lotesData);
+        if (Array.isArray(medsData)) setInternalMedicamentos(medsData);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [open]);
+
+  // Lista unificada de medicamentos
+  const todosMedicamentos = useMemo(() => {
+    const list = [...(medicamentos || []), ...internalMedicamentos];
+    const map = new Map();
+    for (const m of list) {
+      if (m && m.id && !map.has(String(m.id))) {
+        map.set(String(m.id), m);
+      }
+    }
+    return Array.from(map.values());
+  }, [medicamentos, internalMedicamentos]);
+
+  // Mapa rápido de medicamentos por ID
+  const medsMap = useMemo(() => {
+    const map = new Map();
+    for (const m of todosMedicamentos) {
+      if (m?.id) map.set(String(m.id), m);
+    }
+    return map;
+  }, [todosMedicamentos]);
+
+  // Lista unificada e completa de lotes
+  const todosLotes = useMemo(() => {
+    const list = [...(lotes || []), ...internalLotes];
+    const map = new Map();
+    for (const l of list) {
+      if (l && l.id && !map.has(String(l.id))) {
+        map.set(String(l.id), l);
+      }
+    }
+    return Array.from(map.values());
+  }, [lotes, internalLotes]);
+
+  // Lotes enriquecidos com nome e código do medicamento vinculado
+  const lotesEnriquecidos = useMemo(() => {
+    return todosLotes.map((l) => {
+      const medId = String(l.medicamento_id || l.medicamentoId || "");
+      const medObj = medsMap.get(medId);
+      return {
+        ...l,
+        medicamento_nome: l.medicamento_nome || medObj?.nome || "",
+        medicamento_codigo: l.medicamento_codigo || medObj?.codigo || "",
+      };
+    });
+  }, [todosLotes, medsMap]);
+
+  // Normalização fonética e de caracteres para matching infalível de nomes de medicamentos
+  const normalize = (str) =>
+    (str || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .trim();
+
+  const namesMatch = (nameA, nameB) => {
+    const a = normalize(nameA);
+    const b = normalize(nameB);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+    const wordsA = a.split(/\s+/).filter((w) => w.length >= 3);
+    const wordsB = b.split(/\s+/).filter((w) => w.length >= 3);
+    if (wordsA.length > 0 && wordsB.length > 0 && wordsA[0] === wordsB[0]) {
+      return true;
+    }
+    return false;
+  };
 
   // Filtra as prescrições ativas do paciente
   const activePrescs = useMemo(() => {
@@ -147,9 +239,19 @@ export function AjusteDiasEntregaModal({
         return teveAlteracaoNaData(pr, dataFiltroReceita);
       })
       .map((pr) => {
-        const med = medicamentos.find(
-          (m) => m.id === (pr.medicamentoId || pr.medicamento_id)
+        const prMedId = String(pr.medicamentoId || pr.medicamento_id || "");
+        const prMedNome = pr.medicamentoNome || pr.medicamento_nome || "";
+        const prMedCodigo = pr.medicamentoCodigo || pr.medicamento_codigo || "";
+
+        const med = todosMedicamentos.find(
+          (m) =>
+            (m.id && String(m.id) === prMedId) ||
+            (m.codigo && prMedCodigo && m.codigo === prMedCodigo) ||
+            (m.nome && prMedNome && namesMatch(m.nome, prMedNome))
         );
+
+        const medId = med?.id || prMedId;
+        const medNome = med?.nome || prMedNome;
 
         // Dose diária atual da prescrição
         const doseAtual = parseFloat(pr.totalDiario) || 0;
@@ -220,12 +322,30 @@ export function AjusteDiasEntregaModal({
           qtdSugerida = Math.ceil(doseAtual * diasFinais);
         }
 
-        // Lotes FEFO disponíveis da Farmácia Satélite
-        const medLotes = (lotes || [])
-          .filter(
-            (l) => l.medicamento_id === med?.id || l.medicamentoId === med?.id
-          )
-          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+        // Lotes disponíveis vinculados a este medicamento, ordenados por validade (FEFO)
+        const medLotes = lotesEnriquecidos
+          .filter((l) => {
+            const lMedId = String(l.medicamento_id || l.medicamentoId || "");
+            if (lMedId && (lMedId === String(medId) || lMedId === prMedId || (med?.id && lMedId === String(med.id)))) {
+              return true;
+            }
+            if (l.medicamento_nome && (namesMatch(l.medicamento_nome, medNome) || namesMatch(l.medicamento_nome, prMedNome))) {
+              return true;
+            }
+            if (med?.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo) {
+              return true;
+            }
+            if (pr.lote_id && String(l.id) === String(pr.lote_id)) {
+              return true;
+            }
+            if (pr.numero_lote && l.numero_lote && l.numero_lote.trim().toUpperCase() === pr.numero_lote.trim().toUpperCase()) {
+              return true;
+            }
+            return false;
+          })
+          .sort((a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31"));
+
+        const outrosLotes = lotesEnriquecidos.filter((l) => !medLotes.some((ml) => ml.id === l.id));
 
         return {
           pr,
@@ -240,10 +360,11 @@ export function AjusteDiasEntregaModal({
           diasFinais,
           qtdSugerida,
           medLotes,
+          outrosLotes,
           estoqueSatelite: Number(med?.estoque_satelite) || 0,
         };
       });
-  }, [activePrescs, medicamentos, lotes, diasRestantesCiclo, dataFiltroReceita, apenasDataReferencia, customDias, hoje]);
+  }, [activePrescs, todosMedicamentos, lotesEnriquecidos, diasRestantesCiclo, dataFiltroReceita, apenasDataReferencia, customDias, hoje]);
 
   // Inicializa a seleção automaticamente apenas quando o modal for aberto ou quando a lista de itens mudar
   useEffect(() => {
@@ -353,8 +474,8 @@ export function AjusteDiasEntregaModal({
           );
         }
 
-        const loteId = selectedLotes[prescId] || item.medLotes[0]?.id || null;
-        const loteObj = item.medLotes.find((l) => l.id === loteId) || item.medLotes[0];
+        const loteId = selectedLotes[prescId] || item.medLotes[0]?.id || (item.medLotes.length === 0 ? "SEM_LOTE" : null);
+        const loteObj = lotesEnriquecidos.find((l) => l.id === loteId) || item.medLotes.find((l) => l.id === loteId) || item.medLotes[0];
 
         const diasEfetivos =
           customDias[prescId] !== undefined
@@ -453,7 +574,7 @@ export function AjusteDiasEntregaModal({
           is_baixa_lote_paciente: true,
         });
 
-        // 3. Atualizar a prescrição com a nova cobertura calculada
+        // 3. Atualizar a prescrição com a nova cobertura calculada e lote
         if (pr?.id) {
           await db.entities.PrescricaoPaciente.update(pr.id, {
             coberto_ate: dataFimCoberturaMed,
@@ -461,6 +582,8 @@ export function AjusteDiasEntregaModal({
             data_ultima_dispensacao: hojeStr,
             quantidade_ultimo_lote: qtd,
             ultimo_lote_dias: diasEfetivos,
+            lote_id: loteId,
+            numero_lote: numeroLote,
           });
         }
       }
@@ -677,6 +800,7 @@ export function AjusteDiasEntregaModal({
                         diasFinais,
                         qtdSugerida,
                         medLotes,
+                        outrosLotes,
                         estoqueSatelite,
                       } = item;
 
@@ -686,7 +810,8 @@ export function AjusteDiasEntregaModal({
                         customVal !== undefined ? customVal : qtdSugerida;
                       const temEstoque = estoqueSatelite >= valorFinal;
                       const selectedLoteId =
-                        selectedLotes[pr.id] || medLotes[0]?.id || "";
+                        selectedLotes[pr.id] || medLotes[0]?.id || (medLotes.length === 0 ? "SEM_LOTE" : "");
+                      const selectedLoteObj = lotesEnriquecidos.find((l) => l.id === selectedLoteId);
 
                       return (
                         <TableRow
@@ -775,40 +900,98 @@ export function AjusteDiasEntregaModal({
                             </div>
                           </TableCell>
 
-                          {/* Seletor de Lote (FEFO) */}
-                          <TableCell className="min-w-[170px]" onClick={(e) => e.stopPropagation()}>
-                            {medLotes.length === 0 ? (
-                              <span className="text-[10px] text-slate-400">
-                                Sem lote cadastrado
-                              </span>
-                            ) : (
-                              <Select
-                                value={selectedLoteId}
-                                onValueChange={(val) =>
-                                  setSelectedLotes((prev) => ({
-                                    ...prev,
-                                    [pr.id]: val,
-                                  }))
-                                }
-                                disabled={!isSelected}
-                              >
-                                <SelectTrigger className="h-7 text-xs font-mono bg-white border-slate-300">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {medLotes.map((l, idx) => (
-                                    <SelectItem
-                                      key={l.id}
-                                      value={l.id}
-                                      className="text-xs font-mono"
-                                    >
-                                      {l.numero_lote} (Val: {l.data_validade || "N/I"})
-                                      {idx === 0 ? " 🌟 FEFO" : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
+                          {/* Seletor de Lote com Escolha Manual e FEFO */}
+                          <TableCell className="min-w-[210px]" onClick={(e) => e.stopPropagation()}>
+                            <Select
+                              value={selectedLoteId}
+                              onValueChange={(val) =>
+                                setSelectedLotes((prev) => ({
+                                  ...prev,
+                                  [pr.id]: val,
+                                }))
+                              }
+                              disabled={!isSelected}
+                            >
+                              <SelectTrigger className="h-8 text-xs font-mono bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 shadow-xs">
+                                <SelectValue placeholder="Selecione o Lote">
+                                  {selectedLoteObj ? (
+                                    <span className="flex items-center gap-1.5 truncate">
+                                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                                        {selectedLoteObj.numero_lote}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500">
+                                        (Val: {selectedLoteObj.data_validade || "N/I"})
+                                      </span>
+                                      {medLotes[0]?.id === selectedLoteObj.id && (
+                                        <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1 rounded shrink-0">
+                                          🌟 FEFO
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : selectedLoteId === "SEM_LOTE" ? (
+                                    <span className="text-slate-400 italic text-[11px]">⚪ S/ Lote Específico</span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px]">Selecione o Lote...</span>
+                                  )}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="max-h-72">
+                                {medLotes.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel className="text-[10px] text-indigo-700 dark:text-indigo-300 font-bold uppercase tracking-wider">
+                                      Lotes deste Medicamento (FEFO):
+                                    </SelectLabel>
+                                    {medLotes.map((l, idx) => (
+                                      <SelectItem
+                                        key={l.id}
+                                        value={l.id}
+                                        className="text-xs font-mono py-1.5 cursor-pointer"
+                                      >
+                                        <div className="flex items-center justify-between gap-2 w-full">
+                                          <span>
+                                            <strong>{l.numero_lote}</strong> (Val: {l.data_validade || "N/I"}) [Saldo: {l.quantidade_atual ?? l.quantidade ?? 0}]
+                                          </span>
+                                          {idx === 0 && (
+                                            <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded ml-1 shrink-0">
+                                              🌟 FEFO
+                                            </span>
+                                          )}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+
+                                <SelectItem value="SEM_LOTE" className="text-xs font-mono text-slate-500 py-1.5">
+                                  ⚪ Dispensar Sem Lote Específico
+                                </SelectItem>
+
+                                {outrosLotes && outrosLotes.length > 0 && (
+                                  <>
+                                    <SelectSeparator />
+                                    <SelectGroup>
+                                      <SelectLabel className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                        Outros Lotes do Sistema:
+                                      </SelectLabel>
+                                      {outrosLotes.slice(0, 30).map((ol) => (
+                                        <SelectItem
+                                          key={ol.id}
+                                          value={ol.id}
+                                          className="text-xs font-mono py-1.5 cursor-pointer"
+                                        >
+                                          <div className="flex items-center justify-between gap-2 w-full truncate">
+                                            <span className="truncate">
+                                              {ol.medicamento_nome ? `${ol.medicamento_nome} - ` : ""}
+                                              <strong>{ol.numero_lote}</strong> (Val: {ol.data_validade || "N/I"}) [Saldo: {ol.quantidade_atual ?? ol.quantidade ?? 0}]
+                                            </span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
 
                           {/* Quantidade Editável */}
