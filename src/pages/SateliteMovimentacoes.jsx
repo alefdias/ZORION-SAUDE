@@ -3,9 +3,10 @@ import { useLocation } from "react-router-dom";
 import Saidas from "./Saidas";
 import Devolucoes from "./Devolucoes";
 import PassagemPlantao from "./PassagemPlantao";
-import { ShoppingCart, PackagePlus, RotateCcw, PackageMinus, ClipboardList } from "lucide-react";
+import { ShoppingCart, PackagePlus, RotateCcw, PackageMinus, ClipboardList, Calendar } from "lucide-react";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import PedidosSateliteUrgencia from "@/components/PedidosSateliteUrgencia";
+import { MapaMensalDispensacao } from "@/components/relatorios/MapaMensalDispensacao";
 import { cn } from "@/lib/utils";
 
 
@@ -94,6 +95,22 @@ export default function SateliteMovimentacoes() {
           <ClipboardList className="w-4 h-4 text-purple-600" />
           Passagem de Plantão
         </button>
+
+        <button
+          onClick={() => setActiveTab("mapa_mensal")}
+          className={cn(
+            "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
+            activeTab === "mapa_mensal"
+              ? "border-blue-600 text-blue-700 font-bold bg-blue-50/50"
+              : "border-transparent text-slate-600 hover:text-slate-800"
+          )}
+        >
+          <Calendar className="w-4 h-4 text-blue-600" />
+          Mapa Mensal de Dispensação
+          <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-bold border border-blue-200">
+            A4
+          </span>
+        </button>
       </div>
 
       {/* Conteúdo */}
@@ -110,6 +127,10 @@ export default function SateliteMovimentacoes() {
           <Devolucoes isTab={true} />
         ) : activeTab === "saidas" ? (
           <Saidas isTab={true} />
+        ) : activeTab === "mapa_mensal" ? (
+          <div className="p-6">
+            <MapaMensalDispensacao />
+          </div>
         ) : (
           <PassagemPlantao isTab={true} />
         )}

@@ -96,6 +96,16 @@ export function ComboboxMedicamento({
                         {formatMedLabel(m)}
                         {isMav(m) && " (MAV)"}
                     </span>
+                    {m.estoque_satelite !== undefined && (
+                        <span className={cn(
+                            "text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ml-auto whitespace-nowrap",
+                            hasSatelite
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : "bg-slate-100 text-slate-500 border border-slate-200"
+                        )}>
+                            Sat: {Number(m.estoque_satelite) || 0} un
+                        </span>
+                    )}
                 </div>
                 {value === m.id && (
                     <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600 shrink-0" />
@@ -132,6 +142,11 @@ export function ComboboxMedicamento({
                                 {formatMedLabel(selectedMed)}
                                 {isMav(selectedMed) && " (MAV)"}
                             </span>
+                            {selectedMed.estoque_satelite !== undefined && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-emerald-100 text-emerald-800 border border-emerald-200 mt-0.5">
+                                    Saldo Satélite: {selectedMed.estoque_satelite || 0} un
+                                </span>
+                            )}
                         </div>
                     ) : (
                         <span className="text-muted-foreground truncate">{placeholder}</span>

@@ -35,13 +35,17 @@ const ANOS = (() => {
 function buildConsumoMap(saidas) {
   const map = {};
   (saidas || []).forEach(s => {
-    if (!s.medicamento_id || !s.quantidade || !s.data_saida) return;
-    const d = parseISO(s.data_saida.split("T")[0]);
+    const medId = String(s.medicamento_id || s.medicamentoId || "");
+    const qtd = Number(s.quantidade) || 0;
+    const rawData = s.data_saida || s.dataSaida || s.created_at;
+    if (!medId || qtd <= 0 || !rawData) return;
+    const dStr = typeof rawData === 'string' ? rawData.split("T")[0] : "";
+    const d = dStr ? parseISO(dStr) : new Date(rawData);
     if (!isValid(d)) return;
     const mes = getMonth(d), ano = getYear(d);
-    if (!map[s.medicamento_id]) map[s.medicamento_id] = {};
-    if (!map[s.medicamento_id][ano]) map[s.medicamento_id][ano] = Array(12).fill(0);
-    map[s.medicamento_id][ano][mes] += (s.quantidade || 0);
+    if (!map[medId]) map[medId] = {};
+    if (!map[medId][ano]) map[medId][ano] = Array(12).fill(0);
+    map[medId][ano][mes] += qtd;
   });
   return map;
 }
@@ -62,8 +66,18 @@ export default function SateliteEvolucao() {
   const [ano, setAno] = useState(String(new Date().getFullYear()));
   const [medId, setMedId] = useState("__all__");
 
-  const { data: medicamentos = [] } = useQuery({ queryKey: ['medicamentos'], queryFn: () => db.entities.Medicamento.list() });
-  const { data: saidas = [] } = useQuery({ queryKey: ['saidas'], queryFn: () => db.entities.Saida.list() });
+  const { data: medicamentos = [] } = useQuery({ 
+    queryKey: ['medicamentos'], 
+    queryFn: () => db.entities.Medicamento.list(),
+    staleTime: 0,
+    refetchInterval: 3000
+  });
+  const { data: saidas = [] } = useQuery({ 
+    queryKey: ['saidas'], 
+    queryFn: () => db.entities.Saida.list(),
+    staleTime: 0,
+    refetchInterval: 2000
+  });
 
   const consumoMap = useMemo(() => buildConsumoMap(saidas), [saidas]);
 
@@ -80,8 +94,8 @@ export default function SateliteEvolucao() {
           valAnt += mapa[anoAnt]?.[i] || 0;
         });
       } else {
-        val = consumoMap[medId]?.[anoNum]?.[i] || 0;
-        valAnt = consumoMap[medId]?.[anoAnt]?.[i] || 0;
+        val = consumoMap[String(medId)]?.[anoNum]?.[i] || consumoMap[medId]?.[anoNum]?.[i] || 0;
+        valAnt = consumoMap[String(medId)]?.[anoAnt]?.[i] || consumoMap[medId]?.[anoAnt]?.[i] || 0;
       }
       return { mes: m, [ano]: val, [String(anoAnt)]: valAnt };
     });
@@ -114,11 +128,13 @@ export default function SateliteEvolucao() {
     }));
   }, [serieMensal, ano]);
 
-  // ── Top 8 medicamentos ────────────────────────────────────────────────────
+  // ── Top 8 medicamentos (recalcula instantaneamente) ────────────────────────
   const topMeds = useMemo(() => {
     return medicamentos
       .map(m => {
-        const total = (consumoMap[m.id]?.[anoNum] || []).reduce((a, b) => a + b, 0);
+        const mIdStr = String(m.id);
+        const mapaAno = consumoMap[mIdStr]?.[anoNum] || consumoMap[m.id]?.[anoNum] || [];
+        const total = mapaAno.reduce((a, b) => a + b, 0);
         return { ...m, total };
       })
       .filter(m => m.total > 0)

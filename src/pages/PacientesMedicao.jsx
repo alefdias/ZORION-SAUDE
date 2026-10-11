@@ -54,6 +54,8 @@ import {
 import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
 import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
+import { AjusteDiasEntregaModal } from "@/components/AjusteDiasEntregaModal";
+import { SeparacaoLoteModal } from "@/components/SeparacaoLoteModal";
 
 const getLocalDateString = () => {
   const d = new Date();
@@ -350,9 +352,13 @@ export default function PacientesMedicao() {
 
   const [baixaModalOpen, setBaixaModalOpen] = useState(false);
   const [selectedPatientIds, setSelectedPatientIds] = useState([]);
+  const [separacaoModalOpen, setSeparacaoModalOpen] = useState(false);
   const [batchBaixaModalOpen, setBatchBaixaModalOpen] = useState(false);
-  const [batchBaixaDias, setBatchBaixaDias] = useState(1);
+  const [batchBaixaDias, setBatchBaixaDias] = useState(8);
   const [selectedLotesBaixa, setSelectedLotesBaixa] = useState({});
+  const [customQtdsBaixa, setCustomQtdsBaixa] = useState({});
+  const [ajusteCicloModalOpen, setAjusteCicloModalOpen] = useState(false);
+  const [ajusteCicloPatient, setAjusteCicloPatient] = useState(null);
 
   // Estados da Alta
   const [altaModalOpen, setAltaModalOpen] = useState(false);
@@ -836,9 +842,14 @@ export default function PacientesMedicao() {
 
   // Baixa em Lote dos Pacientes Selecionados
   const efetuandoBaixaLoteMutation = useMutation({
-    mutationFn: async ({ patientIds, dias }) => {
+    mutationFn: async ({ patientIds, dias, customQtds = {} }) => {
       const nowStr = new Date().toISOString();
       const todayDateStr = getLocalDateString();
+      const hojeDate = new Date();
+      const dataInicioStr = todayDateStr;
+      const dataFimDate = addDays(hojeDate, Math.max(1, dias) - 1);
+      const dataFimStr = format(dataFimDate, "yyyy-MM-dd");
+
       const selectedPacs = pacientes.filter(p => patientIds.includes(p.id));
       const activePrescs = prescricoes.filter(pr => {
         const pId = pr.pacienteId || pr.paciente_id;
@@ -861,13 +872,17 @@ export default function PacientesMedicao() {
         const calculatedDaily = d08 + d14 + d22 + d06;
         const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
-        const qtdSaida = calculatePrescQtdParaDias(pr, dias);
+        const qtdSugerida = calculatePrescQtdParaDias(pr, dias);
+        const qtdSaida = (customQtds && customQtds[pr.id] !== undefined && customQtds[pr.id] !== "")
+          ? Math.max(0, parseInt(customQtds[pr.id]) || 0)
+          : qtdSugerida;
+
         if (qtdSaida <= 0) continue;
 
         deducoesEstoqueCentral[medId] = (deducoesEstoqueCentral[medId] || 0) + qtdSaida;
 
         saidasParaRegistrar.push({
-           pr, pacId, medId, qtdSaida
+           pr, pacId, medId, qtdSaida, dailyTotal
         });
       }
 
@@ -882,7 +897,7 @@ export default function PacientesMedicao() {
 
       // Etapa 3: Criar registros de saída para o estoque e histórico, e deduzir saldo do lote
       for (const saida of saidasParaRegistrar) {
-        const { pr, pacId, medId, qtdSaida } = saida;
+        const { pr, pacId, medId, qtdSaida, dailyTotal } = saida;
         
         const pac = selectedPacs.find(p => p.id === pacId);
         const med = medicamentos.find(m => m.id === medId);
@@ -933,15 +948,40 @@ export default function PacientesMedicao() {
           quantidade: qtdSaida,
           destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
           paciente_nome: pac ? pac.nome : "",
+          paciente_id: pacId,
+          prescricao_id: pr.id,
           ala_id: pac?.alaId || pac?.ala_id || null,
           ala_nome: pac ? (pac.alaNome || pac.ala_nome || "Ala Geral") : "Geral",
           motivo: `Baixa de medicação (${dias} ${dias === 1 ? 'dia' : 'dias'})`,
-          observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un | Lote: ${numeroLote}`,
+          observacao: `Grade: ${pr.esquemaPosologico || '4 Horários'} | Qt: ${qtdSaida} un | Lote: ${numeroLote} | Cobertura: ${format(hojeDate, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
           data_saida: todayDateStr,
           created_at: nowStr,
           responsavel: responsavel,
           responsavel_crf: responsavelCrf,
-          usuario_nome: responsavel
+          usuario_nome: responsavel,
+          dias_cobertura: dias,
+          data_inicio_cobertura: dataInicioStr,
+          data_fim_cobertura: dataFimStr,
+          dose_diaria: dailyTotal,
+          is_baixa_lote_paciente: true
+        });
+
+        // Atualizar prescrição com cobertura e dose dispensada
+        await db.entities.PrescricaoPaciente.update(pr.id, {
+          coberto_ate: dataFimStr,
+          ultimo_lote_dias: dias,
+          data_ultima_dispensacao: dataInicioStr,
+          dose_diaria_dispensada: dailyTotal,
+          quantidade_ultimo_lote: qtdSaida
+        });
+      }
+
+      // Atualizar ciclo nos pacientes
+      for (const pac of selectedPacs) {
+        await db.entities.Paciente.update(pac.id, {
+          ciclo_coberto_ate: dataFimStr,
+          ultimo_ciclo_dias: dias,
+          data_ultimo_ciclo: dataInicioStr
         });
       }
 
@@ -960,10 +1000,13 @@ export default function PacientesMedicao() {
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       queryClient.invalidateQueries({ queryKey: ['gavetas_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       setBatchBaixaModalOpen(false);
       setSelectedPatientIds([]);
       setSelectedLotesBaixa({});
-      toast.success("Baixa em lote concluída! As saídas foram registradas com sucesso no módulo de Saídas.");
+      setCustomQtdsBaixa({});
+      toast.success("Baixa em lote concluída! As saídas foram registradas com sucesso no módulo de Saídas e as coberturas foram atualizadas.");
     },
     onError: (err) => {
       toast.error("Erro ao efetuar baixa em lote: " + (err.message || err));
@@ -2223,12 +2266,13 @@ export default function PacientesMedicao() {
             </Button>
 
             <Button
-              onClick={() => setBatchBaixaModalOpen(true)}
+              onClick={() => setSeparacaoModalOpen(true)}
               size="sm"
-              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs"
+              className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5 shadow-xs"
+              title="Iniciar separação das medicações com conferência, divisão de lotes e impressão"
             >
               <PackageMinus className="w-3.5 h-3.5" />
-              Dar Baixa em Lote ({selectedPatientIds.length})
+              Começar Separação ({selectedPatientIds.length})
             </Button>
           </div>
         </div>
@@ -2432,6 +2476,18 @@ export default function PacientesMedicao() {
                             title="Ver Prontuário & Prescrições"
                           >
                             <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => {
+                              setAjusteCicloPatient(p);
+                              setAjusteCicloModalOpen(true);
+                            }}
+                            className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700" 
+                            title="Ajuste de Dias de Entrega (Complemento de Ciclo)"
+                          >
+                            <Sparkles className="w-4 h-4 text-indigo-600" />
                           </Button>
                           <Button 
                             size="sm" 
@@ -2817,6 +2873,37 @@ export default function PacientesMedicao() {
         }}
       />
 
+      {/* ─── MODAL: AJUSTE DE DIAS DE ENTREGA (COMPLEMENTO DE CICLO) ─────────── */}
+      <AjusteDiasEntregaModal
+        open={ajusteCicloModalOpen}
+        onOpenChange={setAjusteCicloModalOpen}
+        patient={ajusteCicloPatient}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        lotes={lotes}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+          queryClient.invalidateQueries({ queryKey: ["lotes"] });
+          queryClient.invalidateQueries({ queryKey: ["saidas"] });
+          queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+        }}
+      />
+
+      {/* ─── MODAL: COMEÇAR SEPARAÇÃO & BAIXA EM LOTE COM MULTI-LOTE ─────── */}
+      <SeparacaoLoteModal
+        open={separacaoModalOpen}
+        onOpenChange={setSeparacaoModalOpen}
+        selectedPatientIds={selectedPatientIds}
+        pacientes={pacientes}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        lotes={lotes}
+        onSuccess={() => {
+          setSelectedPatientIds([]);
+        }}
+      />
+
       {/* ─── MODAL: CONFIRMAÇÃO DE BAIXA EM LOTE DO ESTOQUE ───────────────── */}
       <Dialog open={batchBaixaModalOpen} onOpenChange={setBatchBaixaModalOpen}>
         <DialogContent className="sm:max-w-[750px] max-h-[85vh] overflow-y-auto">
@@ -2840,13 +2927,17 @@ export default function PacientesMedicao() {
 
               <div className="flex items-center gap-2 shrink-0">
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Período:</Label>
-                <Select value={String(batchBaixaDias)} onValueChange={(v) => setBatchBaixaDias(Number(v))}>
-                  <SelectTrigger className="w-[120px] h-9 bg-white dark:bg-slate-900 font-bold">
+                <Select value={String(batchBaixaDias)} onValueChange={(v) => {
+                  setBatchBaixaDias(Number(v));
+                  setCustomQtdsBaixa({});
+                }}>
+                  <SelectTrigger className="w-[150px] h-9 bg-white dark:bg-slate-900 font-bold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="1">1 dia</SelectItem>
                     <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="8">8 dias (Ciclo Padrão)</SelectItem>
                     <SelectItem value="15">15 dias</SelectItem>
                     <SelectItem value="30">30 dias</SelectItem>
                   </SelectContent>
@@ -2959,8 +3050,38 @@ export default function PacientesMedicao() {
                               <TableCell className="text-center font-mono text-xs font-bold">
                                 {pr.totalDiario} un/dia
                               </TableCell>
-                              <TableCell className="text-center font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                -{qtdSaida} un
+                              <TableCell className="text-center w-32">
+                                {(() => {
+                                  const valCustom = customQtdsBaixa[pr.id];
+                                  const valAtual = valCustom !== undefined ? valCustom : qtdSaida;
+                                  const isAlterado = valCustom !== undefined && Number(valCustom) !== qtdSaida;
+                                  return (
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          value={valAtual}
+                                          onChange={(e) => {
+                                            const v = e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value) || 0);
+                                            setCustomQtdsBaixa(prev => ({ ...prev, [pr.id]: v }));
+                                          }}
+                                          className={cn(
+                                            "w-20 h-7 text-center font-mono font-bold text-xs bg-white dark:bg-slate-900",
+                                            isAlterado ? "border-amber-500 bg-amber-50 text-amber-900" : "border-slate-300 text-emerald-600"
+                                          )}
+                                          title="Você pode alterar a quantidade manualmente antes de confirmar"
+                                        />
+                                        <span className="text-xs text-slate-500 font-semibold">un</span>
+                                      </div>
+                                      {isAlterado && (
+                                        <span className="text-[9px] text-amber-800 bg-amber-100/80 px-1 rounded font-medium">
+                                          Sugerido: {qtdSaida} un
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </TableCell>
                               <TableCell className="text-right">
                                 <Badge 
@@ -2994,7 +3115,8 @@ export default function PacientesMedicao() {
               onClick={() => {
                 efetuandoBaixaLoteMutation.mutate({
                   patientIds: selectedPatientIds,
-                  dias: batchBaixaDias
+                  dias: batchBaixaDias,
+                  customQtds: customQtdsBaixa
                 });
               }}
             >

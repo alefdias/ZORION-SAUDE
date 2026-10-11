@@ -72,6 +72,7 @@ import SateliteEvolucao from './pages/SateliteEvolucao';
 import SateliteAdiantamento from './pages/SateliteAdiantamento';
 import Compras from './pages/Compras';
 import PassagemPlantao from './pages/PassagemPlantao';
+import SateliteInventario from './pages/SateliteInventario';
 import __Layout from './Layout.jsx';
 
 
@@ -94,6 +95,7 @@ export const PAGES = {
   "ResponsavelTecnico": ResponsavelTecnico,
   "SatelitePortaria": LivroRegistro,
   "SateliteEstoque": SateliteEstoque,
+  "SateliteInventario": SateliteInventario,
   "CarrinhoParada": CarrinhoParada,
   "PacientesMedicao": PacientesMedicao,
   "LivroRegistro": LivroRegistro,

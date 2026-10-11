@@ -31,7 +31,9 @@ import {
   CreditCard,
   ShoppingCart,
   ShieldCheck,
-  ClipboardList
+  ClipboardList,
+  ClipboardCheck,
+  Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,6 +67,7 @@ const moduleSections = [
       { name: "Medicamentos", icon: Package, page: "Medicamentos" },
       { name: "Movimentações", icon: ArrowLeftRight, page: "Movimentacoes" },
       { name: "Estoque", icon: Boxes, page: "Estoque" },
+      { name: "Balanço", icon: ClipboardCheck, page: "Inventario" },
       { name: "Vencimentos", icon: CalendarX2, page: "Vencimentos" },
       { name: "Compras", icon: ShoppingCart, page: "Compras" },
       { name: "Relatórios", icon: FileText, page: "Relatorios" },
@@ -84,6 +87,8 @@ const moduleSections = [
       { name: "Passagem de Plantão", icon: ClipboardList, page: "PassagemPlantao" },
       { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Estoque", icon: Package, page: "SateliteEstoque" },
+      { name: "Balanço", icon: ClipboardCheck, page: "SateliteInventario" },
+      { name: "Mapa de Dispensação", icon: Calendar, page: "Relatorios" },
     ]
   },
   {
@@ -134,7 +139,7 @@ function getCurrentSection(pageName) {
   }
 
   // Páginas exclusivas da Farmácia Satélite
-  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "PassagemPlantao" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria") {
+  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "PassagemPlantao" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria" || pageName === "SateliteInventario") {
     try { sessionStorage.setItem("zorion_active_section", "satelite"); } catch (e) {}
     return moduleSections.find(sec => sec.id === "satelite");
   }

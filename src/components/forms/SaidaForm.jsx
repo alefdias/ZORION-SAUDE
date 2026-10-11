@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,7 @@ const emptyForm = {
     observacao: "",
 };
 
-export default function SaidaForm({ open, onClose, onSave, initialData = null, medicamentos = [], lotes = [], alas = [], isLoading }) {
+export default function SaidaForm({ open, onClose, onSave, initialData = null, initialMedId = null, medicamentos = [], lotes = [], alas = [], isLoading }) {
     const [form, setForm] = useState(emptyForm);
     const [currentItem, setCurrentItem] = useState({ medicamento_id: "", medicamento_nome: "", lote_id: "", numero_lote: "", quantidade: "" });
 
@@ -39,6 +39,22 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
         queryKey: ['pacientes'],
         queryFn: () => db.entities.Paciente.list(),
     });
+
+    // Filtra estritamente apenas medicamentos que possuem saldo na Farmácia Satélite para evitar qualquer confusão
+    const medsParaExibir = useMemo(() => {
+        return medicamentos.filter(m => {
+            if (initialData?.medicamento_id === m.id || currentItem.medicamento_id === m.id) return true;
+            return m.ativo !== false && !m.deleted_at && (Number(m.estoque_satelite) || 0) > 0;
+        });
+    }, [medicamentos, initialData, currentItem.medicamento_id]);
+
+    const selectLoteFEFO = (medId) => {
+        const lotesDoMed = lotes
+            .filter(l => l.medicamento_id === medId)
+            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+        const loteComQtd = lotesDoMed.find(l => l.quantidade_atual > 0);
+        return loteComQtd || (lotesDoMed.length > 0 ? lotesDoMed[0] : null);
+    };
 
     useEffect(() => {
         if (open) {
@@ -59,12 +75,23 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
                     motivo: initialData.motivo || "",
                     observacao: initialData.observacao || "",
                 });
+            } else if (initialMedId) {
+                setForm(emptyForm);
+                const med = medicamentos.find(m => m.id === initialMedId);
+                const loteFefo = selectLoteFEFO(initialMedId);
+                setCurrentItem({
+                    medicamento_id: initialMedId,
+                    medicamento_nome: med?.nome || "",
+                    lote_id: loteFefo ? loteFefo.id : "",
+                    numero_lote: loteFefo ? loteFefo.numero_lote : "",
+                    quantidade: ""
+                });
             } else {
                 setForm(emptyForm);
                 setCurrentItem({ medicamento_id: "", medicamento_nome: "", lote_id: "", numero_lote: "", quantidade: "" });
             }
         }
-    }, [open, initialData]);
+    }, [open, initialData, initialMedId]);
 
     const handleChange = (field) => (e) => {
         setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -72,13 +99,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
 
     const handleMedicamento = (id) => {
         const med = medicamentos.find((m) => m.id === id);
-        
-        // FEFO: Encontrar o lote que vence primeiro
-        const lotesDoMed = lotes
-            .filter(l => l.medicamento_id === id && l.quantidade_atual > 0)
-            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
-        
-        const loteFefo = lotesDoMed.length > 0 ? lotesDoMed[0] : null;
+        const loteFefo = selectLoteFEFO(id);
 
         setCurrentItem((prev) => ({
             ...prev,
@@ -111,12 +132,24 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
         if (!currentItem.medicamento_id) {
             toast.error("Selecione um medicamento"); return;
         }
-        if (!currentItem.lote_id) {
+        if (filteredLotes.length > 0 && !currentItem.lote_id) {
             toast.error("Selecione um lote disponível"); return;
         }
         if (!currentItem.quantidade || Number(currentItem.quantidade) <= 0) {
             toast.error("Informe uma quantidade válida"); return;
         }
+
+        const med = medicamentos.find(m => m.id === currentItem.medicamento_id);
+        const saldoDisponivel = Number(med?.estoque_satelite) || 0;
+        const jaAdicionado = form.itens
+            .filter(i => i.medicamento_id === currentItem.medicamento_id)
+            .reduce((acc, i) => acc + (Number(i.quantidade) || 0), 0);
+            
+        if (Number(currentItem.quantidade) + jaAdicionado > saldoDisponivel) {
+            toast.error(`Quantidade informada (${Number(currentItem.quantidade) + jaAdicionado}) excede o saldo da Farmácia Satélite (${saldoDisponivel} un).`);
+            return;
+        }
+
         setForm(prev => ({ ...prev, itens: [...prev.itens, { ...currentItem, quantidade: Number(currentItem.quantidade) }] }));
         setCurrentItem({ medicamento_id: "", medicamento_nome: "", lote_id: "", numero_lote: "", quantidade: "" });
     };
@@ -130,7 +163,17 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
 
         // Se o usuário preencheu o item atual mas não clicou em "Adicionar", vamos adicionar silenciosamente se for uma nova saída
         let finalItens = [...form.itens];
-        if (!initialData && currentItem.medicamento_id && currentItem.lote_id && Number(currentItem.quantidade) > 0) {
+        if (!initialData && currentItem.medicamento_id && (currentItem.lote_id || filteredLotes.length === 0) && Number(currentItem.quantidade) > 0) {
+            const med = medicamentos.find(m => m.id === currentItem.medicamento_id);
+            const saldoDisponivel = Number(med?.estoque_satelite) || 0;
+            const jaAdicionado = finalItens
+                .filter(i => i.medicamento_id === currentItem.medicamento_id)
+                .reduce((acc, i) => acc + (Number(i.quantidade) || 0), 0);
+                
+            if (Number(currentItem.quantidade) + jaAdicionado > saldoDisponivel) {
+                toast.error(`Quantidade informada (${Number(currentItem.quantidade) + jaAdicionado}) excede o saldo da Farmácia Satélite (${saldoDisponivel} un).`);
+                return;
+            }
             finalItens.push({ ...currentItem, quantidade: Number(currentItem.quantidade) });
         }
 
@@ -211,12 +254,27 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                                 <div className="space-y-1.5">
-                                    <Label className="text-xs font-semibold text-slate-700">Medicamento</Label>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs font-semibold text-slate-700">Medicamento</Label>
+                                        <span 
+                                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-300 flex items-center gap-1"
+                                            title="Exibindo exclusivamente medicamentos com saldo disponível na Farmácia Satélite"
+                                        >
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            Estoque Satélite ({medsParaExibir.length})
+                                        </span>
+                                    </div>
                                     <ComboboxMedicamento
-                                        medicamentos={medicamentos}
+                                        medicamentos={medsParaExibir}
                                         value={currentItem.medicamento_id}
                                         onChange={handleMedicamento}
+                                        placeholder={medsParaExibir.length === 0 ? "Nenhum medicamento com estoque na Satélite" : "Selecione o medicamento..."}
                                     />
+                                    {medsParaExibir.length === 0 && (
+                                        <p className="text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200 mt-1">
+                                            ⚠️ Nenhum medicamento com saldo disponível na Farmácia Satélite. Solicite itens à Farmácia Central na aba de Pedidos.
+                                        </p>
+                                    )}
                                     {isMav(currentItem.medicamento_nome) && (
                                         <p className="text-[10px] font-bold text-red-700 mt-1 flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200">
                                             <AlertTriangle className="w-3 h-3 text-red-600" /> Medicamento de Alta Vigilância (MAV)
@@ -255,15 +313,28 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, m
                             </div>
                             <div className="flex gap-3 items-end pt-1">
                                 <div className="flex-1 space-y-1.5">
-                                    <Label className="text-xs font-semibold text-slate-700">Quantidade</Label>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs font-semibold text-slate-700">Quantidade</Label>
+                                        {selectedMed && (
+                                            <span className="text-[10px] text-slate-500">
+                                                Disponível na Satélite: <strong className="text-emerald-700 font-bold">{selectedMed.estoque_satelite || 0} un</strong>
+                                            </span>
+                                        )}
+                                    </div>
                                     <Input
                                         type="number"
                                         min="1"
+                                        max={selectedMed ? (selectedMed.estoque_satelite || 0) : undefined}
                                         placeholder="Qtd a dispensar..."
                                         value={currentItem.quantidade}
                                         onChange={(e) => setCurrentItem({ ...currentItem, quantidade: e.target.value })}
                                         className="text-xs h-9 bg-white"
                                     />
+                                    {selectedMed && Number(currentItem.quantidade) > (selectedMed.estoque_satelite || 0) && (
+                                        <p className="text-[10px] font-bold text-rose-600">
+                                            ⚠️ Quantidade excede o saldo disponível na Satélite ({selectedMed.estoque_satelite || 0} un)
+                                        </p>
+                                    )}
                                 </div>
                                 <Button 
                                     type="button" 

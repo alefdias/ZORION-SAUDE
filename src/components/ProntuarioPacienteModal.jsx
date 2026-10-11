@@ -42,7 +42,8 @@ import {
   CheckCircle2,
   FileCheck,
   Thermometer,
-  Eye
+  Eye,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -50,6 +51,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { PrescricaoService, VisitaService, PacienteService, AlaService } from "../api/db";
 import { ProntuarioService } from "../api/prontuarioService";
+import { AjusteDiasEntregaModal } from "./AjusteDiasEntregaModal";
 const DIAS_SEMANA_MAP = [
   { id: 1, label: "Seg" },
   { id: 2, label: "Ter" },
@@ -166,6 +168,9 @@ export function ProntuarioPacienteModal({
   const [prescToSuspend, setPrescToSuspend] = useState(null);
   const [motivoSuspensao, setMotivoSuspensao] = useState("");
   const [isSuspending, setIsSuspending] = useState(false);
+
+  // Modal: Ajuste de Dias de Entrega (Complemento de Ciclo)
+  const [ajusteCicloModalOpen, setAjusteCicloModalOpen] = useState(false);
 
   // Modal: Nova Evolução Clínica
   const [evolucaoModalOpen, setEvolucaoModalOpen] = useState(false);
@@ -1148,13 +1153,25 @@ export function ProntuarioPacienteModal({
                       </div>
                     </div>
                     
-                    <Button 
-                      className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 gap-2 font-semibold shadow-sm cursor-pointer" 
-                      onClick={() => onOpenNewPrescricao(patient?.id || patient)}
-                    >
-                      <Plus className="w-4 h-4" />
-                      Adicionar Medicação
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline"
+                        className="border-indigo-300 text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 rounded-lg px-3 gap-1.5 font-bold shadow-xs cursor-pointer text-xs h-9" 
+                        onClick={() => setAjusteCicloModalOpen(true)}
+                        title="Equalizar novas medicações ou alterações de dose até a data de fechamento do lote deste paciente"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        Ajuste de Dias de Entrega (Complemento de Ciclo)
+                      </Button>
+
+                      <Button 
+                        className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 gap-2 font-semibold shadow-sm cursor-pointer h-9 text-xs" 
+                        onClick={() => onOpenNewPrescricao(patient?.id || patient)}
+                      >
+                        <Plus className="w-4 h-4" />
+                        Adicionar Medicação
+                      </Button>
+                    </div>
                   </div>
                   
                   <div className="overflow-x-auto">
@@ -2681,6 +2698,18 @@ export function ProntuarioPacienteModal({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── MODAL: AJUSTE DE DIAS DE ENTREGA (COMPLEMENTO DE CICLO) ─────────── */}
+      <AjusteDiasEntregaModal
+        open={ajusteCicloModalOpen}
+        onOpenChange={setAjusteCicloModalOpen}
+        patient={patient}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        onSuccess={() => {
+          if (onRefresh) onRefresh();
+        }}
+      />
     </>
   );
 }

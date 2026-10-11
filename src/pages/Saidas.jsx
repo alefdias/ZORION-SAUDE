@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { 
     Plus, Search, PackageMinus, Trash2, FileText, Printer, Edit, 
-    AlertTriangle, Settings2,
+    AlertTriangle, Settings2, Boxes,
     Calendar as CalendarIcon, User, Building2, ArrowDownRight, X, Sparkles, Clock, CheckCircle2, ShieldAlert
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,9 +41,10 @@ export default function Saidas({ isTab = false }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [editData, setEditData] = useState(null);
+  const [preselectedMedId, setPreselectedMedId] = useState(null);
   const [dateRange, setDateRange] = useState({ from: undefined, to: undefined });
   const [displayCount, setDisplayCount] = useState(50);
-  const [activeCategory, setActiveCategory] = useState("todos"); // "todos", "pacientes", "geral", "logs"
+  const [activeCategory, setActiveCategory] = useState("disponiveis_satelite"); // "disponiveis_satelite", "todos", "pacientes", "geral", "perdas"
 
   // Reset display count when filters change
   useEffect(() => {
@@ -169,25 +170,41 @@ export default function Saidas({ isTab = false }) {
   const deleteSaidaMutation = useMutation({
     mutationFn: async (saida) => {
       // 1. Reverter estoque do medicamento (Apenas Satélite)
-      const medicamento = medicamentos.find(m => m.id === saida.medicamento_id);
+      const medId = saida.medicamento_id || saida.medicamentoId;
+      const medicamento = medicamentos.find(m => String(m.id) === String(medId));
       if (medicamento) {
         await db.entities.Medicamento.update(medicamento.id, {
-          estoque_satelite: (medicamento.estoque_satelite || 0) + saida.quantidade,
+          estoque_satelite: (medicamento.estoque_satelite || 0) + (Number(saida.quantidade) || 0),
         });
       }
 
-      // 3. Deletar a saída
+      // 2. Reverter saldo do lote físico se houver lote vinculado
+      const loteId = saida.lote_id || saida.loteId;
+      if (loteId) {
+        const loteObj = (lotes || []).find(l => String(l.id) === String(loteId));
+        if (loteObj) {
+          const novoSaldo = (Number(loteObj.quantidade_atual) || 0) + (Number(saida.quantidade) || 0);
+          await db.entities.Lote.update(loteObj.id, {
+            quantidade_atual: novoSaldo,
+            status: "ativo"
+          });
+        }
+      }
+
+      // 3. Deletar a saída no banco de dados
       await db.entities.Saida.delete(saida.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       setDeleteId(null);
-      toast.success("Saída deletada com sucesso!");
+      toast.success("Dispensação deletada e estoque estornado com sucesso!");
     },
-    onError: () => {
-      toast.error("Erro ao deletar saída");
+    onError: (err) => {
+      toast.error("Erro ao deletar saída: " + (err.message || err));
     },
   });
 
@@ -316,6 +333,36 @@ export default function Saidas({ isTab = false }) {
     return map;
   }, [medicamentos]);
 
+  // Medicamentos com saldo ativo na Farmácia Satélite
+  const medicamentosSatelite = useMemo(() => {
+    return (medicamentos || [])
+      .filter(m => m.ativo !== false && !m.deleted_at && (Number(m.estoque_satelite) || 0) > 0)
+      .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+  }, [medicamentos]);
+
+  const totalUnidadesSatelite = useMemo(() => {
+    return medicamentosSatelite.reduce((acc, m) => acc + (Number(m.estoque_satelite) || 0), 0);
+  }, [medicamentosSatelite]);
+
+  const filteredMedicamentosSatelite = useMemo(() => {
+    if (!search || !search.trim()) return medicamentosSatelite;
+    const term = normalizeSearch(search);
+    const terms = term.split(/\s+/).filter(Boolean);
+    return medicamentosSatelite.filter(m => {
+      const fullText = normalizeSearch(`${m.nome || ""} ${m.codigo || ""} ${m.concentracao || ""} ${m.apresentacao || ""} ${m.unidade_medida || ""}`);
+      return terms.every(t => fullText.includes(t));
+    });
+  }, [medicamentosSatelite, search]);
+
+  const lotesByMedId = useMemo(() => {
+    const map = {};
+    (lotes || []).forEach(l => {
+      if (!map[l.medicamento_id]) map[l.medicamento_id] = [];
+      map[l.medicamento_id].push(l);
+    });
+    return map;
+  }, [lotes]);
+
   const counts = useMemo(() => {
     let todos = 0, pacientes = 0, geral = 0, perdas = 0, totalUnidades = 0;
     (saidas || []).forEach(s => {
@@ -400,7 +447,8 @@ export default function Saidas({ isTab = false }) {
   const lastElementRef = (node) => {
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && displayCount < filteredSaidas.length) {
+      const currentListLength = activeCategory === "disponiveis_satelite" ? filteredMedicamentosSatelite.length : filteredSaidas.length;
+      if (entries[0].isIntersecting && displayCount < currentListLength) {
         setDisplayCount(prev => prev + 50);
       }
     });
@@ -514,7 +562,7 @@ export default function Saidas({ isTab = false }) {
         Relatório
       </Button>
       <Button 
-        onClick={() => { setEditData(null); setFormOpen(true); }} 
+        onClick={() => { setEditData(null); setPreselectedMedId(null); setFormOpen(true); }} 
         className="h-9 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 gap-1.5"
       >
         <Plus className="w-4 h-4" />
@@ -570,18 +618,48 @@ export default function Saidas({ isTab = false }) {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
             <PackageMinus className="w-5 h-5 text-blue-600" />
-            <span className="font-bold text-sm text-slate-800">Histórico de Saídas da Satélite</span>
+            <span className="font-bold text-sm text-slate-800">Saídas da Farmácia Satélite</span>
           </div>
           {actionButtons}
         </div>
       )}
 
       {/* KPI Stats Summary Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Card 1: Total Saídas */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {/* Card 0: Saldo Disponível na Satélite */}
+        <div 
+          onClick={() => setActiveCategory("disponiveis_satelite")}
+          className={cn(
+            "p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition-all",
+            activeCategory === "disponiveis_satelite"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 ring-2 ring-emerald-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 hover:border-emerald-300"
+          )}
+        >
           <div className="space-y-0.5">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Saídas</p>
+            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Saldo na Satélite</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-extrabold text-emerald-700 dark:text-emerald-300">{medicamentosSatelite.length}</span>
+              <span className="text-[10px] text-emerald-600 font-medium">({totalUnidadesSatelite} un)</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600">
+            <Boxes className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Card 1: Total Saídas */}
+        <div 
+          onClick={() => setActiveCategory("todos")}
+          className={cn(
+            "p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition-all",
+            activeCategory === "todos"
+              ? "bg-blue-50 dark:bg-blue-950/40 border-blue-400 ring-2 ring-blue-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 hover:border-blue-300"
+          )}
+        >
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Dispensado</p>
             <div className="flex items-baseline gap-1.5">
               <span className="text-lg font-extrabold text-slate-800 dark:text-white">{counts.todos}</span>
               <span className="text-[10px] text-slate-400 font-medium">({counts.totalUnidades} un)</span>
@@ -593,7 +671,15 @@ export default function Saidas({ isTab = false }) {
         </div>
 
         {/* Card 2: Saídas por Pacientes */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div 
+          onClick={() => setActiveCategory("pacientes")}
+          className={cn(
+            "p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition-all",
+            activeCategory === "pacientes"
+              ? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-400 ring-2 ring-indigo-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 hover:border-indigo-300"
+          )}
+        >
           <div className="space-y-0.5">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Por Pacientes</p>
             <div className="flex items-baseline gap-1.5">
@@ -607,7 +693,15 @@ export default function Saidas({ isTab = false }) {
         </div>
 
         {/* Card 3: Saídas Gerais / Avulsas */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div 
+          onClick={() => setActiveCategory("geral")}
+          className={cn(
+            "p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition-all",
+            activeCategory === "geral"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 ring-2 ring-emerald-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 hover:border-emerald-300"
+          )}
+        >
           <div className="space-y-0.5">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gerais / Avulsas</p>
             <div className="flex items-baseline gap-1.5">
@@ -621,7 +715,15 @@ export default function Saidas({ isTab = false }) {
         </div>
 
         {/* Card 4: Histórico de Perdas */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div 
+          onClick={() => setActiveCategory("perdas")}
+          className={cn(
+            "p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition-all",
+            activeCategory === "perdas"
+              ? "bg-rose-50 dark:bg-rose-950/40 border-rose-400 ring-2 ring-rose-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 hover:border-rose-300"
+          )}
+        >
           <div className="space-y-0.5">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perdas & Descartes</p>
             <div className="flex items-baseline gap-1.5">
@@ -641,6 +743,26 @@ export default function Saidas({ isTab = false }) {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setActiveCategory("disponiveis_satelite")}
+            className={cn(
+              "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
+              activeCategory === "disponiveis_satelite" 
+                ? "bg-emerald-600 text-white shadow-xs" 
+                : "text-slate-600 dark:text-slate-400 hover:bg-white/50"
+            )}
+          >
+            <Boxes className="w-3.5 h-3.5 text-emerald-200" />
+            Disponíveis na Satélite
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+              activeCategory === "disponiveis_satelite" ? "bg-emerald-700 text-emerald-100" : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+            )}>
+              {medicamentosSatelite.length}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setActiveCategory("todos")}
             className={cn(
               "h-8 rounded-lg text-xs font-bold gap-2 transition-all",
@@ -650,7 +772,7 @@ export default function Saidas({ isTab = false }) {
             )}
           >
             <PackageMinus className="w-3.5 h-3.5 text-blue-600" />
-            Todas as Saídas
+            Histórico Geral
             <span className={cn(
               "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
               activeCategory === "todos" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-600"
@@ -670,7 +792,7 @@ export default function Saidas({ isTab = false }) {
             )}
           >
             <User className="w-3.5 h-3.5 text-indigo-300" />
-            Saídas por Pacientes
+            Por Pacientes
             <span className={cn(
               "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
               activeCategory === "pacientes" ? "bg-indigo-700 text-indigo-100" : "bg-slate-200 text-slate-600"
@@ -690,7 +812,7 @@ export default function Saidas({ isTab = false }) {
             )}
           >
             <Building2 className="w-3.5 h-3.5 text-emerald-300" />
-            Saídas Gerais / Avulsas
+            Gerais / Setores
             <span className={cn(
               "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
               activeCategory === "geral" ? "bg-emerald-700 text-emerald-100" : "bg-slate-200 text-slate-600"
@@ -710,7 +832,7 @@ export default function Saidas({ isTab = false }) {
             )}
           >
             <AlertTriangle className="w-3.5 h-3.5 text-rose-300" />
-            Histórico de Perdas
+            Perdas
             <span className={cn(
               "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
               activeCategory === "perdas" ? "bg-rose-700 text-rose-100" : "bg-slate-200 text-slate-600"
@@ -721,7 +843,11 @@ export default function Saidas({ isTab = false }) {
         </div>
 
         <div className="text-xs text-slate-500 font-medium">
-          Exibindo <strong>{Math.min(filteredSaidas.length, displayCount)}</strong> de <strong>{filteredSaidas.length}</strong> registro(s)
+          {activeCategory === "disponiveis_satelite" ? (
+            <>Exibindo <strong>{Math.min(filteredMedicamentosSatelite.length, displayCount)}</strong> de <strong>{filteredMedicamentosSatelite.length}</strong> medicamento(s) com saldo na Satélite</>
+          ) : (
+            <>Exibindo <strong>{Math.min(filteredSaidas.length, displayCount)}</strong> de <strong>{filteredSaidas.length}</strong> registro(s)</>
+          )}
         </div>
       </div>
 
@@ -731,7 +857,7 @@ export default function Saidas({ isTab = false }) {
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <Input
-              placeholder="Buscar por medicamento, lote, paciente ou ala..."
+              placeholder={activeCategory === "disponiveis_satelite" ? "Buscar por medicamento, código ou apresentação disponível na Satélite..." : "Buscar por medicamento, lote, paciente ou ala..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-10 pr-9 h-9.5 bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:bg-white transition-all"
@@ -819,17 +945,28 @@ export default function Saidas({ isTab = false }) {
         <div className="overflow-auto flex-1">
           <Table className="min-w-[1200px] w-full">
             <TableHeader className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800">
-              <TableRow className="hover:bg-transparent">
-                {visibleColumns.codigo && <TableHead className="w-20 text-[11px] font-bold uppercase tracking-wider text-slate-600">Cód.</TableHead>}
-                {visibleColumns.medicamento && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Medicamento</TableHead>}
-                {visibleColumns.lote && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lote</TableHead>}
-                {visibleColumns.dataSaida && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Data Saída</TableHead>}
-                {visibleColumns.qtd && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Qtd</TableHead>}
-                {visibleColumns.ala && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Ala / Destino</TableHead>}
-                {visibleColumns.paciente && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Paciente</TableHead>}
-                {visibleColumns.observacao && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Observação / Motivo</TableHead>}
-                {visibleColumns.acoes && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Ações</TableHead>}
-              </TableRow>
+              {activeCategory === "disponiveis_satelite" ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-24 text-[11px] font-bold uppercase tracking-wider text-slate-600">Cód.</TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Medicamento</TableHead>
+                  <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Saldo Satélite</TableHead>
+                  <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Estoque Central</TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lotes Cadastrados</TableHead>
+                  <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Ações</TableHead>
+                </TableRow>
+              ) : (
+                <TableRow className="hover:bg-transparent">
+                  {visibleColumns.codigo && <TableHead className="w-20 text-[11px] font-bold uppercase tracking-wider text-slate-600">Cód.</TableHead>}
+                  {visibleColumns.medicamento && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Medicamento</TableHead>}
+                  {visibleColumns.lote && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lote</TableHead>}
+                  {visibleColumns.dataSaida && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Data Saída</TableHead>}
+                  {visibleColumns.qtd && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Qtd</TableHead>}
+                  {visibleColumns.ala && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Ala / Destino</TableHead>}
+                  {visibleColumns.paciente && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Paciente</TableHead>}
+                  {visibleColumns.observacao && <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Observação / Motivo</TableHead>}
+                  {visibleColumns.acoes && <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Ações</TableHead>}
+                </TableRow>
+              )}
             </TableHeader>
             <TableBody>
               {isLoading ? (
@@ -840,6 +977,130 @@ export default function Saidas({ isTab = false }) {
                     ))}
                   </TableRow>
                 ))
+              ) : activeCategory === "disponiveis_satelite" ? (
+                filteredMedicamentosSatelite.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-16">
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3.5 ring-8 ring-emerald-50/50 dark:ring-emerald-950/20">
+                          <Boxes className="w-7 h-7" />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">Nenhum item com saldo na Farmácia Satélite</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                          {search
+                            ? "Nenhum medicamento encontrado para o termo pesquisado."
+                            : "Atualmente não há medicamentos com saldo positivo na Farmácia Satélite."}
+                        </p>
+                        {search && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setSearch("")}
+                            className="text-xs font-semibold"
+                          >
+                            Limpar Busca
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredMedicamentosSatelite.slice(0, displayCount).map((med, index) => {
+                    const isLastElement = index === Math.min(filteredMedicamentosSatelite.length, displayCount) - 1;
+                    const mav = isMav(med.nome);
+                    const p344 = isPsicotropico(med.grupo_terapeutico);
+                    const medLotes = (lotesByMedId[med.id] || []).sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+                    const loteFefo = medLotes[0];
+
+                    return (
+                      <TableRow 
+                        ref={isLastElement ? lastElementRef : null} 
+                        key={med.id} 
+                        className="hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/60"
+                      >
+                        <TableCell>
+                          <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {med.codigo || "S/C"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={cn("font-bold text-xs text-slate-800 dark:text-slate-100", mav && "text-red-700 dark:text-red-400")}>
+                              {med.nome}
+                            </span>
+                            {mav && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-red-100 text-red-700 border border-red-200">
+                                <AlertTriangle className="w-2.5 h-2.5" /> MAV
+                              </span>
+                            )}
+                            {p344 && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-purple-100 text-purple-700 border border-purple-200">
+                                <ShieldAlert className="w-2.5 h-2.5" /> P344
+                              </span>
+                            )}
+                            {med.is_adiantamento && (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.2 rounded">
+                                💳 Adiantamento
+                              </span>
+                            )}
+                          </div>
+                          {(med.concentracao || med.unidade_medida || med.apresentacao) && (
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-medium">
+                              {(med.concentracao || med.unidade_medida) && <span>{med.concentracao || med.unidade_medida}</span>}
+                              {(med.concentracao || med.unidade_medida) && med.apresentacao && <span>•</span>}
+                              {med.apresentacao && <span>{med.apresentacao}</span>}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                            {med.estoque_satelite || 0} {med.unidade_medida || "un"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-xs font-semibold text-slate-500">
+                            {med.estoque_atual || 0} {med.unidade_medida || "un"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {loteFefo ? (
+                            <div className="text-xs flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded border text-[11px] font-medium text-slate-700">
+                                {loteFefo.numero_lote}
+                              </span>
+                              {loteFefo.data_validade && (
+                                <span className="text-[10px] text-slate-500">
+                                  (Val: {safeFormatDate(loteFefo.data_validade)})
+                                </span>
+                              )}
+                              {medLotes.length > 1 && (
+                                <span className="ml-1 text-[10px] text-slate-400 font-medium">
+                                  +{medLotes.length - 1} lote(s)
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Sem lote específico</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setEditData(null);
+                              setPreselectedMedId(med.id);
+                              setFormOpen(true);
+                            }}
+                            className="h-8 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-xs gap-1.5"
+                          >
+                            <PackageMinus className="w-3.5 h-3.5" />
+                            Dar Saída
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )
               ) : filteredSaidas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-16">
@@ -1000,9 +1261,9 @@ export default function Saidas({ isTab = false }) {
             </TableBody>
           </Table>
         </div>
-        {filteredSaidas.length > displayCount && (
+        {((activeCategory === "disponiveis_satelite" ? filteredMedicamentosSatelite.length : filteredSaidas.length) > displayCount) && (
           <div className="py-2 text-center text-xs text-slate-500 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80">
-            Carregando mais saídas ao rolar...
+            Carregando mais itens ao rolar...
           </div>
         )}
       </div>
@@ -1010,9 +1271,10 @@ export default function Saidas({ isTab = false }) {
       {/* Form Modal */}
       <SaidaForm
         open={formOpen}
-        onClose={() => { setFormOpen(false); setEditData(null); }}
+        onClose={() => { setFormOpen(false); setEditData(null); setPreselectedMedId(null); }}
         onSave={handleSave}
         initialData={editData}
+        initialMedId={preselectedMedId}
         medicamentos={medicamentos}
         lotes={lotes}
         alas={alas}

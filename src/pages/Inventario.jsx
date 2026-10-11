@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {  format , parseISO } from "date-fns";
@@ -16,7 +16,10 @@ import {
     Boxes,
     Save,
     Trash2,
-    Settings2
+    Settings2,
+    EyeOff,
+    Pill,
+    ShieldAlert
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -38,6 +41,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isPsicotropico } from "@/utils/mavUtils";
 import logo from "../assets/logo-tr.png";
 
 export default function Inventario() {
@@ -45,6 +49,7 @@ export default function Inventario() {
     const printRef = useRef();
     const [activeTab, setActiveTab] = useState("historico");
     const [searchTerm, setSearchTerm] = useState("");
+    const [filterType, setFilterType] = useState("todos"); // "todos" | "clinicos" | "psicotropicos"
     const [isNewInventarioOpen, setIsNewInventarioOpen] = useState(false);
     const [currentInventario, setCurrentInventario] = useState(null);
     const [inventarioItems, setInventarioItems] = useState([]);
@@ -336,47 +341,218 @@ export default function Inventario() {
         enabled: !!inventarioEmAndamento,
     });
 
-    const handlePrint = () => {
-        window.print();
+    const [isBlindCount, setIsBlindCount] = useState(false);
+
+    const statsCentral = useMemo(() => {
+        const rawList = inventarioEmAndamento && inventarioItems.length > 0 
+            ? inventarioItems 
+            : lotes.filter(l => (Number(l.quantidade_atual) || 0) > 0);
+
+        let clinicos = 0;
+        let psicotropicos = 0;
+
+        rawList.forEach(item => {
+            const med = medicamentos.find(m => m.id === item.medicamento_id);
+            const isCtrl = (med && (med.portaria_344 || isPsicotropico(med.grupo_terapeutico)));
+            if (isCtrl) {
+                psicotropicos++;
+            } else {
+                clinicos++;
+            }
+        });
+
+        return {
+            total: rawList.length,
+            clinicos,
+            psicotropicos
+        };
+    }, [inventarioEmAndamento, inventarioItems, lotes, medicamentos]);
+
+    const printItems = useMemo(() => {
+        let baseList = [];
+        if (inventarioEmAndamento && inventarioItems.length > 0) {
+            baseList = inventarioItems;
+        } else {
+            baseList = lotes
+                .filter(l => (Number(l.quantidade_atual) || 0) > 0)
+                .map(l => {
+                    const med = medicamentos.find(m => m.id === l.medicamento_id);
+                    return {
+                        id: l.id,
+                        medicamento_id: l.medicamento_id,
+                        medicamento_nome: med?.nome || l.medicamento_nome || "Medicamento",
+                        medicamento_codigo: med?.codigo || "S/C",
+                        numero_lote: l.numero_lote || "-",
+                        quantidade_sistema: l.quantidade_atual || 0,
+                        quantidade_fisica: null,
+                        divergencia: 0,
+                        portaria_344: med?.portaria_344,
+                        grupo_terapeutico: med?.grupo_terapeutico
+                    };
+                });
+        }
+
+        if (filterType === "clinicos") {
+            baseList = baseList.filter(item => {
+                const med = medicamentos.find(m => m.id === item.medicamento_id);
+                const isCtrl = (med && (med.portaria_344 || isPsicotropico(med.grupo_terapeutico))) || item.portaria_344;
+                return !isCtrl;
+            });
+        } else if (filterType === "psicotropicos") {
+            baseList = baseList.filter(item => {
+                const med = medicamentos.find(m => m.id === item.medicamento_id);
+                const isCtrl = (med && (med.portaria_344 || isPsicotropico(med.grupo_terapeutico))) || item.portaria_344;
+                return isCtrl;
+            });
+        }
+
+        return [...baseList].sort((a, b) => a.medicamento_nome.localeCompare(b.medicamento_nome));
+    }, [inventarioEmAndamento, inventarioItems, lotes, medicamentos, filterType]);
+
+    const handlePrintManual = (blind = false) => {
+        setIsBlindCount(blind);
+        setTimeout(() => {
+            window.print();
+        }, 150);
     };
 
-    const filteredItems = inventarioItems.filter(item =>
-        item.medicamento_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.numero_lote?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.medicamento_codigo?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handlePrint = () => {
+        handlePrintManual(false);
+    };
+
+    const filteredItems = useMemo(() => {
+        let list = inventarioItems;
+        if (filterType === "clinicos") {
+            list = list.filter(item => {
+                const med = medicamentos.find(m => m.id === item.medicamento_id);
+                return !(med?.portaria_344 || isPsicotropico(med?.grupo_terapeutico));
+            });
+        } else if (filterType === "psicotropicos") {
+            list = list.filter(item => {
+                const med = medicamentos.find(m => m.id === item.medicamento_id);
+                return !!(med?.portaria_344 || isPsicotropico(med?.grupo_terapeutico));
+            });
+        }
+
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            list = list.filter(item =>
+                item.medicamento_nome?.toLowerCase().includes(term) ||
+                item.numero_lote?.toLowerCase().includes(term) ||
+                item.medicamento_codigo?.toLowerCase().includes(term)
+            );
+        }
+
+        return list;
+    }, [inventarioItems, filterType, searchTerm, medicamentos]);
 
     return (
         <div className="p-6 space-y-6">
             <div className="no-print space-y-6">
-                <div className="flex justify-between items-start">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800">Balanço de Estoque</h1>
-                        <p className="text-slate-500 text-sm">Conferência física e ajuste de divergências</p>
+                        <h1 className="text-2xl font-bold text-slate-800">Balanço - Farmácia Central</h1>
+                        <p className="text-slate-500 text-sm">Conferência física manual por lotes e ajuste de divergências</p>
                     </div>
 
-                    {!inventarioEmAndamento && (
-                        <Button onClick={startNewInventario} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-                            <Plus className="w-4 h-4" />
-                            Iniciar Novo Balanço
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            onClick={() => handlePrintManual(false)}
+                            variant="outline"
+                            className="gap-2 border-slate-300 hover:bg-slate-100 font-semibold text-slate-700 h-10 px-3.5"
+                        >
+                            <Printer className="w-4 h-4 text-indigo-600" />
+                            Imprimir Folha de Contagem
                         </Button>
-                    )}
+                        <Button
+                            onClick={() => handlePrintManual(true)}
+                            variant="outline"
+                            className="gap-2 border-slate-300 hover:bg-slate-100 font-semibold text-slate-700 h-10 px-3.5"
+                            title="Oculta os saldos do sistema para contagem sem viés"
+                        >
+                            <EyeOff className="w-4 h-4 text-amber-600" />
+                            Folha Cega (Sem Saldo)
+                        </Button>
+                        {!inventarioEmAndamento && (
+                            <Button onClick={startNewInventario} className="gap-2 bg-indigo-600 hover:bg-indigo-700 font-semibold h-10 px-4">
+                                <Plus className="w-4 h-4" />
+                                Iniciar Novo Balanço
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
-                        <TabsTrigger value="historico" className="gap-2">
-                            <History className="w-4 h-4" />
-                            Histórico
-                        </TabsTrigger>
-                        <TabsTrigger value="andamento" disabled={!inventarioEmAndamento} className="gap-2">
-                            <ClipboardCheck className="w-4 h-4" />
-                            Em Andamento
-                            {inventarioEmAndamento && (
-                                <Badge variant="secondary" className="ml-1 bg-amber-100 text-amber-700 border-0">1</Badge>
-                            )}
-                        </TabsTrigger>
-                    </TabsList>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                        <div className="inline-flex flex-wrap p-1 bg-slate-100 rounded-xl text-xs font-semibold gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setFilterType("todos")}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                                    filterType === "todos"
+                                        ? "bg-white text-indigo-600 shadow-xs font-bold"
+                                        : "text-slate-600 hover:text-slate-900"
+                                )}
+                            >
+                                Todos ({statsCentral.total})
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFilterType("clinicos")}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                                    filterType === "clinicos"
+                                        ? "bg-white text-blue-600 shadow-xs font-bold"
+                                        : "text-slate-600 hover:text-slate-900"
+                                )}
+                                title="Medicamentos clínicos gerais (não sujeitos à Portaria 344)"
+                            >
+                                <Pill className="w-3.5 h-3.5 text-blue-500" />
+                                <span>Clínicos</span>
+                                <span className={cn(
+                                    "px-1.5 py-0.5 rounded-full text-[10px] font-mono",
+                                    filterType === "clinicos" ? "bg-blue-100 text-blue-700 font-bold" : "bg-slate-200 text-slate-600"
+                                )}>
+                                    {statsCentral.clinicos}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFilterType("psicotropicos")}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                                    filterType === "psicotropicos"
+                                        ? "bg-white text-amber-600 shadow-xs font-bold"
+                                        : "text-slate-600 hover:text-slate-900"
+                                )}
+                                title="Medicamentos sob controle especial da Portaria SVS/MS 344/98"
+                            >
+                                <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                                <span>Psicotrópicos (Portaria 344)</span>
+                                <span className={cn(
+                                    "px-1.5 py-0.5 rounded-full text-[10px] font-mono",
+                                    filterType === "psicotropicos" ? "bg-amber-100 text-amber-700 font-bold" : "bg-slate-200 text-slate-600"
+                                )}>
+                                    {statsCentral.psicotropicos}
+                                </span>
+                            </button>
+                        </div>
+
+                        <TabsList className="grid w-full sm:w-[320px] grid-cols-2">
+                            <TabsTrigger value="historico" className="gap-2">
+                                <History className="w-4 h-4" />
+                                Histórico
+                            </TabsTrigger>
+                            <TabsTrigger value="andamento" disabled={!inventarioEmAndamento} className="gap-2">
+                                <ClipboardCheck className="w-4 h-4" />
+                                Em Andamento
+                                {inventarioEmAndamento && (
+                                    <Badge variant="secondary" className="ml-1 bg-amber-100 text-amber-700 border-0">1</Badge>
+                                )}
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
 
                     <TabsContent value="historico" className="mt-6">
                         <Card className="border-0 shadow-sm">
@@ -658,9 +834,13 @@ export default function Inventario() {
                     <div className="w-full h-px bg-slate-800 mb-6"></div>
 
                     <div className="text-center mb-8">
-                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Folha de Contagem de Estoque</h2>
+                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
+                            {isBlindCount ? "Folha de Contagem Cega de Estoque" : "Folha de Contagem de Estoque"}
+                        </h2>
                         <div className="inline-block px-4 py-1 bg-slate-100 rounded-full mt-2">
-                            <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider italic">Balanço Geral de Medicamentos e Insumos</p>
+                            <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider italic">
+                                Farmácia Central • {filterType === "psicotropicos" ? "Psicotrópicos (Portaria SVS/MS 344/98)" : filterType === "clinicos" ? "Medicamentos Clínicos Gerais (Não Controlados)" : "Balanço Geral por Lotes e Validades"}
+                            </p>
                         </div>
                     </div>
 
@@ -671,43 +851,45 @@ export default function Inventario() {
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status da Sessão</p>
                                     <Badge variant="default" className={cn(
                                         "px-3 py-1 text-xs font-bold border-0 rounded-md",
-                                        inventarioEmAndamento?.status === 'em_andamento' ? "bg-amber-500 text-white" : "bg-emerald-500 text-white"
+                                        inventarioEmAndamento?.status === 'em_andamento' 
+                                            ? "bg-amber-500 text-white" 
+                                            : "bg-indigo-600 text-white"
                                     )}>
-                                        {inventarioEmAndamento?.status === 'em_andamento' ? "EM ANDAMENTO" : "FINALIZADO"}
+                                        {inventarioEmAndamento?.status === 'em_andamento' ? "EM ANDAMENTO" : "CONTAGEM AVULSA"}
                                     </Badge>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Início da Sessão</p>
-                                    <p className="text-sm font-bold text-slate-700">{inventarioEmAndamento ? format(parseISO(inventarioEmAndamento.data_inicio), "dd/MM/yyyy 'às' HH:mm") : "-"}</p>
+                                    <p className="text-sm font-bold text-slate-700">
+                                        {inventarioEmAndamento 
+                                            ? format(parseISO(inventarioEmAndamento.data_inicio), "dd/MM/yyyy 'às' HH:mm") 
+                                            : format(new Date(), "dd/MM/yyyy 'às' HH:mm")}
+                                    </p>
                                 </div>
                             </div>
 
                             <div className="space-y-3 border-x border-slate-200 px-6">
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Responsável</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Responsável / Conferente</p>
                                     <div className="flex items-center gap-2">
                                         <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
-                                            {inventarioEmAndamento?.responsavel?.charAt(0) || "A"}
+                                            {inventarioEmAndamento?.responsavel?.charAt(0) || "C"}
                                         </div>
-                                        <p className="text-sm font-bold text-slate-700">{inventarioEmAndamento?.responsavel || "Administrador"}</p>
+                                        <p className="text-sm font-bold text-slate-700">{inventarioEmAndamento?.responsavel || "____________________"}</p>
                                     </div>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Itens</p>
-                                    <p className="text-sm font-bold text-slate-700">{inventarioItems.length} lotes listados</p>
+                                    <p className="text-sm font-bold text-slate-700">{printItems.length} lotes listados</p>
                                 </div>
                             </div>
 
                             <div className="space-y-3">
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Progresso</p>
-                                    <div className="flex items-end justify-between mb-1">
-                                        <p className="text-xl font-black text-slate-900 leading-none">
-                                            {inventarioItems.filter(i => i.quantidade_fisica !== null).length} <span className="text-xs font-bold text-slate-400">/ {inventarioItems.length}</span>
-                                        </p>
-                                        <p className="text-[10px] font-bold text-slate-500">{Math.round((inventarioItems.filter(i => i.quantidade_fisica !== null).length / (inventarioItems.length || 1)) * 100)}%</p>
-                                    </div>
-                                    <Progress value={(inventarioItems.filter(i => i.quantidade_fisica !== null).length / (inventarioItems.length || 1)) * 100} className="h-2 bg-slate-200" />
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Turno da Contagem</p>
+                                    <p className="text-xs font-bold text-slate-700">
+                                        (&nbsp;&nbsp;) Manhã &nbsp;&nbsp; (&nbsp;&nbsp;) Tarde &nbsp;&nbsp; (&nbsp;&nbsp;) Noite
+                                    </p>
                                 </div>
                                 <p className="text-[9px] text-slate-400 italic font-medium leading-tight">
                                     Este documento deve ser preenchido manualmente durante a contagem física e posteriormente validado no sistema.
@@ -723,15 +905,17 @@ export default function Inventario() {
                                     <TableHead className="text-white font-bold h-12 px-6 uppercase tracking-wider text-[11px] w-24">Cód.</TableHead>
                                     <TableHead className="text-white font-bold h-12 px-2 uppercase tracking-wider text-[11px]">Medicamento / Descrição</TableHead>
                                     <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[120px]">Lote</TableHead>
-                                    <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[100px]">Sistema</TableHead>
+                                    {!isBlindCount && (
+                                        <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[100px]">Sistema</TableHead>
+                                    )}
                                     <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[130px]">Físico (Contagem)</TableHead>
                                     <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[100px]">Diverg.</TableHead>
-                                    <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[60px]">Status</TableHead>
+                                    <TableHead className="text-white font-bold text-center h-12 uppercase tracking-wider text-[11px] w-[60px]">Visto</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {inventarioItems.length > 0 ? (
-                                    inventarioItems.map((item, index) => (
+                                {printItems.length > 0 ? (
+                                    printItems.map((item, index) => (
                                         <TableRow key={item.id} className={cn(
                                             "h-14 border-b border-slate-100",
                                             index % 2 === 1 ? "bg-slate-50/50" : "bg-white"
@@ -754,9 +938,11 @@ export default function Inventario() {
                                                     {item.numero_lote}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell className="text-center font-black text-slate-900 text-base">
-                                                {item.quantidade_sistema}
-                                            </TableCell>
+                                            {!isBlindCount && (
+                                                <TableCell className="text-center font-black text-slate-900 text-base">
+                                                    {item.quantidade_sistema}
+                                                </TableCell>
+                                            )}
                                             <TableCell className="text-center px-4">
                                                 <div className="w-full h-10 border-2 border-slate-300 rounded bg-white flex items-center justify-center">
                                                     <span className="text-slate-200 font-light text-xs uppercase tracking-widest">{item.quantidade_fisica !== null ? item.quantidade_fisica : "____"}</span>
@@ -776,19 +962,13 @@ export default function Inventario() {
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-center">
-                                                {item.quantidade_fisica !== null ? (
-                                                    <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center mx-auto border border-emerald-200">
-                                                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-5 h-5 rounded-full border border-slate-300 mx-auto"></div>
-                                                )}
+                                                <div className="w-5 h-5 rounded-full border border-slate-300 mx-auto"></div>
                                             </TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="text-center py-12 text-slate-400 italic">Nenhum item em estoque para conferência.</TableCell>
+                                        <TableCell colSpan={isBlindCount ? 6 : 7} className="text-center py-12 text-slate-400 italic">Nenhum item em estoque para conferência.</TableCell>
                                     </TableRow>
                                 )}
                             </TableBody>

@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Mensal de Dispensação Diária - Zorion Saúde</title>
+    <style>
+        :root {
+            --primary: #1e40af;
+            --primary-light: #3b82f6;
+            --secondary: #64748b;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --border: #cbd5e1;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --badge-psi: #7c3aed;
+            --badge-psi-bg: #f5f3ff;
+            --badge-mav: #dc2626;
+            --badge-mav-bg: #fef2f2;
+            --badge-cli: #0284c7;
+            --badge-cli-bg: #f0f9ff;
+            --cell-active: #eff6ff;
+            --cell-highlight: #dbeafe;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 24px;
+            font-size: 13px;
+        }
+
+        /* Controles e Topo */
+        .header-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .title-area h1 {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .title-area p {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .badge-system {
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 6px;
+        }
+
+        .actions-area {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            cursor: pointer;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 12px;
+            padding: 9px 14px;
+            border: 1px solid var(--border);
+            background: white;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+
+        .btn-print {
+            background: #047857;
+            color: white;
+            border-color: #047857;
+        }
+
+        .btn-print:hover {
+            background: #065f46;
+            border-color: #065f46;
+        }
+
+        /* Filtros e Abas de Visualização */
+        .filter-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .group-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-right: 4px;
+        }
+
+        .pill {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .pill:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .pill.active {
+            background: #1e40af;
+            color: white;
+        }
+
+        .pill.active-psi {
+            background: var(--badge-psi);
+            color: white;
+        }
+
+        .pill.active-cli {
+            background: var(--badge-cli);
+            color: white;
+        }
+
+        .pill.active-mav {
+            background: var(--badge-mav);
+            color: white;
+        }
+
+        .pill-period {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+        }
+
+        .pill-period.active {
+            background: #0f172a;
+            color: white;
+            border-color: #0f172a;
+        }
+
+        /* Banner de Instrução A4 */
+        .a4-notice {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 12px;
+            color: #1e40af;
+        }
+
+        .a4-notice strong {
+            color: #1e3a8a;
+        }
+
+        /* KPIs */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .kpi-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 18px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+
+        .kpi-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-value {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text);
+            margin-top: 4px;
+        }
+
+        .kpi-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Blocos Quinzenais (Folhas A4) */
+        .quinzena-section {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            margin-bottom: 24px;
+            overflow: hidden;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+
+        .quinzena-header {
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            padding: 12px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .quinzena-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .quinzena-badge {
+            background: #e2e8f0;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        th, td {
+            padding: 7px 5px;
+            text-align: center;
+            border-bottom: 1px solid #e2e8f0;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f1f5f9;
+            color: #334155;
+            font-weight: 700;
+            font-size: 11px;
+            border-bottom: 2px solid #cbd5e1;
+        }
+
+        /* Coluna Fixa do Medicamento */
+        th.sticky-col, td.sticky-col {
+            text-align: left;
+            padding-left: 12px;
+            padding-right: 10px;
+            width: 250px;
+            min-width: 220px;
+            max-width: 270px;
+            white-space: normal;
+        }
+
+        td.sticky-col {
+            background: #ffffff;
+            font-weight: 600;
+        }
+
+        .med-name {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 11.5px;
+            line-height: 1.25;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .med-detail {
+            font-size: 9.5px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .tag {
+            font-size: 9px;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .tag-psi {
+            background: var(--badge-psi-bg);
+            color: var(--badge-psi);
+            border: 1px solid #ddd6fe;
+        }
+
+        .tag-mav {
+            background: var(--badge-mav-bg);
+            color: var(--badge-mav);
+            border: 1px solid #fecaca;
+        }
+
+        .tag-cli {
+            background: var(--badge-cli-bg);
+            color: var(--badge-cli);
+            border: 1px solid #bae6fd;
+        }
+
+        /* Coluna de Totais */
+        th.col-total, td.col-total {
+            background: #f8fafc;
+            font-weight: 800;
+            min-width: 65px;
+            color: #0f172a;
+            border-left: 2px solid #cbd5e1;
+        }
+
+        th.col-month-total, td.col-month-total {
+            background: #eff6ff;
+            font-weight: 800;
+            min-width: 75px;
+            color: #1e40af;
+            border-left: 2px solid #93c5fd;
+        }
+
+        .cell-val {
+            font-weight: 600;
+            color: #1e3a8a;
+        }
+
+        .cell-zero {
+            color: #cbd5e1;
+            font-size: 10px;
+        }
+
+        .cell-high {
+            font-weight: 800;
+            color: #991b1b;
+            background: #fee2e2;
+            border-radius: 3px;
+            padding: 1px 3px;
+        }
+
+        .weekend {
+            background: #f8fafc;
+            color: #94a3b8;
+        }
+
+        /* Rodapé de Totais Diários */
+        tr.total-row td {
+            background: #f1f5f9;
+            font-weight: 800;
+            color: #0f172a;
+            border-top: 2px solid #cbd5e1;
+            border-bottom: none;
+            font-size: 11px;
+        }
+
+        tr.total-row td.sticky-col {
+            background: #f1f5f9;
+            text-align: right;
+            padding-right: 12px;
+            font-weight: 800;
+        }
+
+        /* Assinaturas no Rodapé */
+        .print-signatures {
+            display: none;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px dashed #cbd5e1;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            text-align: center;
+            font-size: 10px;
+            color: #475569;
+        }
+
+        .sig-line {
+            border-top: 1px solid #000;
+            margin: 30px 10px 4px 10px;
+            padding-top: 4px;
+            font-weight: 700;
+            color: #000;
+        }
+
+        /* ==========================================================================
+           REGRAS DE IMPRESSÃO A4 PAISAGEM (QUEBRA PRECISA POR FOLHA)
+           ========================================================================== */
+        @page {
+            size: A4 landscape;
+            margin: 8mm 8mm 8mm 8mm;
+        }
+
+        @media print {
+            body {
+                background: white;
+                color: black;
+                padding: 0;
+                margin: 0;
+                font-size: 10px;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .header-card, .actions-area, .filter-bar, .a4-notice, .kpi-grid {
+                display: none !important;
+            }
+
+            /* Cabeçalho Oficial no topo de cada folha */
+            .print-page-header {
+                display: flex !important;
+                justify-content: space-between;
+                align-items: flex-end;
+                border-bottom: 2px solid #0f172a;
+                padding-bottom: 6px;
+                margin-bottom: 8px;
+            }
+
+            .print-page-header h2 {
+                font-size: 14px;
+                font-weight: 800;
+                color: #000;
+                text-transform: uppercase;
+            }
+
+            .print-page-header p {
+                font-size: 9px;
+                color: #333;
+                margin-top: 2px;
+            }
+
+            .print-meta {
+                text-align: right;
+                font-size: 9px;
+                color: #333;
+                line-height: 1.3;
+            }
+
+            .quinzena-section {
+                border: 1px solid #94a3b8;
+                border-radius: 0;
+                margin-bottom: 0;
+                box-shadow: none;
+                page-break-inside: avoid;
+            }
+
+            /* QUEBRA DE PÁGINA OBRIGATÓRIA ENTRE QUINZENA 1 E 2 */
+            .quinzena-1 {
+                page-break-after: always !important;
+                break-after: page !important;
+            }
+
+            .quinzena-2 {
+                page-break-before: always !important;
+                break-before: page !important;
+            }
+
+            .quinzena-header {
+                background: #f1f5f9 !important;
+                border-bottom: 1px solid #94a3b8;
+                padding: 6px 10px;
+            }
+
+            .quinzena-title {
+                font-size: 11px;
+                font-weight: 800;
+                color: #000;
+            }
+
+            table {
+                font-size: 9.5px;
+            }
+
+            th, td {
+                padding: 4px 3px !important;
+                border-color: #cbd5e1 !important;
+            }
+
+            th {
+                background: #f8fafc !important;
+                color: #000 !important;
+                font-weight: 700;
+            }
+
+            th.sticky-col, td.sticky-col {
+                width: 220px !important;
+                min-width: 200px !important;
+                max-width: 230px !important;
+            }
+
+            .med-name {
+                font-size: 10px !important;
+            }
+
+            .med-detail {
+                font-size: 8px !important;
+            }
+
+            .tag {
+                font-size: 7.5px;
+                padding: 0 3px;
+                border: 1px solid #94a3b8;
+            }
+
+            .cell-val {
+                color: #000;
+                font-weight: 700;
+            }
+
+            .cell-high {
+                background: #fee2e2 !important;
+                color: #991b1b !important;
+            }
+
+            tr.total-row td {
+                background: #f1f5f9 !important;
+                color: #000 !important;
+                font-weight: 800;
+            }
+
+            .print-signatures {
+                display: grid !important;
+                margin-top: 15px;
+                page-break-inside: avoid;
+            }
+        }
+
+        .print-page-header {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Principal Interativo -->
+    <div class="header-card">
+        <div class="header-top">
+            <div class="title-area">
+                <h1>
+                    <span>📊 Mapa Mensal de Dispensação Diária por Medicamento</span>
+                    <span class="badge-system">ZORION SAÚDE</span>
+                </h1>
+                <p>Consolidação unificada: <strong>Prescrições Clínicas de Pacientes (Baixas em Lote)</strong> + <strong>Dispensações da Farmácia Satélite</strong></p>
+            </div>
+            <div class="actions-area">
+                <button class="btn-print" onclick="window.print()">
+                    🖨️ Imprimir Mapa em A4 (2 Folhas Perfeitas)
+                </button>
+                <button class="btn-primary" onclick="alert('Exportando mapa consolidado para planilha Excel (.xlsx)...')">
+                    📥 Exportar Excel (.XLSX)
+                </button>
+            </div>
+        </div>
+
+        <!-- Filtros Rápidos de Categoria e Período -->
+        <div class="filter-bar">
+            <!-- Categoria Farmacológica -->
+            <div class="filter-group">
+                <span class="group-label">Filtrar Categoria:</span>
+                <span class="pill active" id="btn-cat-todos" onclick="filtrarCategoria('todos')">Todos os Medicamentos (12)</span>
+                <span class="pill" id="btn-cat-psi" onclick="filtrarCategoria('psicotropicos')">🟣 Psicotrópicos / P344 (4)</span>
+                <span class="pill" id="btn-cat-cli" onclick="filtrarCategoria('clinica')">🔵 Clínica Geral (6)</span>
+                <span class="pill" id="btn-cat-mav" onclick="filtrarCategoria('mav')">🔴 Alta Vigilância - MAV (2)</span>
+            </div>
+
+            <!-- Alternar Visualização Quinzenal na Tela -->
+            <div class="filter-group">
+                <span class="group-label">Visualização na Tela:</span>
+                <span class="pill pill-period active" id="btn-view-ambas" onclick="alternarQuinzena('ambas')">📋 Ambas as Folhas</span>
+                <span class="pill pill-period" id="btn-view-q1" onclick="alternarQuinzena('q1')">📄 1ª Folha (Dias 01 a 15)</span>
+                <span class="pill pill-period" id="btn-view-q2" onclick="alternarQuinzena('q2')">📄 2ª Folha (Dias 16 a 31)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aviso Explicativo da Quebra A4 -->
+    <div class="a4-notice">
+        <div>
+            💡 <strong>Diagramação Otimizada para Impressora A4 (Paisagem):</strong> 
+            Como 31 dias não cabem com legibilidade em uma única folha A4, o relatório foi dividido em <strong>Folha 1 (Dias 01 a 15)</strong> e <strong>Folha 2 (Dias 16 a 31)</strong>. Ao mandar imprimir, a quebra de página ocorre <strong>automaticamente</strong> mantendo os nomes dos medicamentos perfeitamente alinhados em ambas as folhas!
+        </div>
+        <div>
+            <button onclick="window.print()" style="white-space: nowrap; padding: 5px 10px; font-size: 11px;">
+                Visualizar Impressão
+            </button>
+        </div>
+    </div>
+
+    <!-- Indicadores Rápidos do Mês -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-title">Total Geral Dispensado</div>
+            <div class="kpi-value" id="kpi-total">3.482 <span style="font-size: 13px; font-weight: 500;">un</span></div>
+            <div class="kpi-sub">Soma de todos os 31 dias do mês</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Total 1ª Quinzena (Dias 01-15)</div>
+            <div class="kpi-value" style="color: #1e40af;">1.724 <span style="font-size: 13px; font-weight: 500;">un</span></div>
+            <div class="kpi-sub">Folha 1 da impressão</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Total 2ª Quinzena (Dias 16-31)</div>
+            <div class="kpi-value" style="color: #047857;">1.758 <span style="font-size: 13px; font-weight: 500;">un</span></div>
+            <div class="kpi-sub">Folha 2 da impressão</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Medicamentos com Saída</div>
+            <div class="kpi-value" id="kpi-meds">12 <span style="font-size: 13px; font-weight: 500;">itens</span></div>
+            <div class="kpi-sub">Movimentados em Outubro/2026</div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         FOLHA 1 / PÁGINA 1: PRIMEIRA QUINZENA (DIAS 01 A 15)
+         ========================================================================= -->
+    <div class="quinzena-section quinzena-1" id="section-q1">
+        <!-- Cabeçalho A4 impresso -->
+        <div class="print-page-header">
+            <div>
+                <h2>Zorion Saúde • Mapa Mensal de Dispensação Diária</h2>
+                <p>Consolidação de Saídas para Pacientes: Prescrições (Baixas em Lote) + Dispensação Satélite</p>
+            </div>
+            <div class="print-meta">
+                <strong>FOLHA 1 DE 2 • 1ª QUINZENA (DIAS 01 A 15)</strong><br>
+                Mês de Referência: <strong>Outubro / 2026</strong><br>
+                Impresso em: 11/10/2026 10:40
+            </div>
+        </div>
+
+        <div class="quinzena-header">
+            <div class="quinzena-title">
+                <span>📄 FOLHA 1: 1ª Quinzena (Dias 01 a 15 de Outubro / 2026)</span>
+                <span class="quinzena-badge">A4 Paisagem</span>
+            </div>
+            <div style="font-size: 11px; color: #64748b; font-weight: 600;">
+                Subtotal da 1ª Quinzena: <strong>1.724 un</strong>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="sticky-col">Medicamento / Apresentação</th>
+                        <th style="width: 45px;">Cat.</th>
+                        <!-- Dias 01 a 15 -->
+                        <th style="width: 32px;">01</th>
+                        <th style="width: 32px;">02</th>
+                        <th style="width: 32px;">03</th>
+                        <th style="width: 32px;" class="weekend">04*</th>
+                        <th style="width: 32px;" class="weekend">05*</th>
+                        <th style="width: 32px;">06</th>
+                        <th style="width: 32px;">07</th>
+                        <th style="width: 32px;">08</th>
+                        <th style="width: 32px;">09</th>
+                        <th style="width: 32px;">10</th>
+                        <th style="width: 32px;" class="weekend">11*</th>
+                        <th style="width: 32px;" class="weekend">12*</th>
+                        <th style="width: 32px;">13</th>
+                        <th style="width: 32px;">14</th>
+                        <th style="width: 32px;">15</th>
+                        <th class="col-total">TOTAL 1ª Q.</th>
+                    </tr>
+                </thead>
+                <tbody class="med-body">
+                    <!-- Med 1: Clonazepam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Clonazepam 2,5mg/ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-001 • Gotas 20ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td class="col-total" style="color: #7c3aed;">53 un</td>
+                    </tr>
+
+                    <!-- Med 2: Morfina -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Morfina 10mg/ml</span> <span class="tag tag-psi">P344</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-002 • Ampola 1ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">A1</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td class="weekend"><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td><span class="cell-high">25</span></td>
+                        <td><span class="cell-val">16</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td class="weekend"><span class="cell-val">10</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td class="col-total" style="color: #7c3aed;">198 un</td>
+                    </tr>
+
+                    <!-- Med 3: Midazolam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Midazolam 5mg/ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-003 • Ampola 3ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">24</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td class="weekend"><span class="cell-val">15</span></td>
+                        <td class="weekend"><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">28</span></td>
+                        <td><span class="cell-high">35</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td class="weekend"><span class="cell-val">14</span></td>
+                        <td class="weekend"><span class="cell-val">16</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">25</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td class="col-total" style="color: #7c3aed;">308 un</td>
+                    </tr>
+
+                    <!-- Med 4: Diazepam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Diazepam 10mg/2ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-004 • Ampola 2ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td class="col-total" style="color: #7c3aed;">82 un</td>
+                    </tr>
+
+                    <!-- Med 5: Dipirona -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Dipirona Sódica 500mg/ml</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-005 • Ampola 2ml</div>
+                        </td>
+                        <td><span class="tag tag-cli">Geral</span></td>
+                        <td><span class="cell-high">45</span></td>
+                        <td><span class="cell-high">52</span></td>
+                        <td><span class="cell-high">40</span></td>
+                        <td class="weekend"><span class="cell-high">35</span></td>
+                        <td class="weekend"><span class="cell-high">38</span></td>
+                        <td><span class="cell-high">48</span></td>
+                        <td><span class="cell-high">55</span></td>
+                        <td><span class="cell-high">62</span></td>
+                        <td><span class="cell-high">44</span></td>
+                        <td><span class="cell-high">42</span></td>
+                        <td class="weekend"><span class="cell-high">36</span></td>
+                        <td class="weekend"><span class="cell-high">30</span></td>
+                        <td><span class="cell-high">49</span></td>
+                        <td><span class="cell-high">51</span></td>
+                        <td><span class="cell-high">46</span></td>
+                        <td class="col-total" style="color: #0284c7;">673 un</td>
+                    </tr>
+
+                    <!-- Med 6: Omeprazol -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Omeprazol 40mg Pó Liof.</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-006 • Frasco-ampola</div>
+                        </td>
+                        <td><span class="tag tag-cli">Geral</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td class="weekend"><span class="cell-val">16</span></td>
+                        <td class="weekend"><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">25</span></td>
+                        <td><span class="cell-val">24</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td><span class="cell-val">17</span></td>
+                        <td class="weekend"><span class="cell-val">14</span></td>
+                        <td class="weekend"><span class="cell-val">13</span></td>
+                        <td><span class="cell-val">21</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td class="col-total" style="color: #0284c7;">283 un</td>
+                    </tr>
+
+                    <!-- Med 7: Ceftriaxona -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Ceftriaxona 1g IV</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-007 • Frasco-ampola</div>
+                        </td>
+                        <td><span class="tag tag-cli">Antimic.</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td class="weekend"><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td class="weekend"><span class="cell-val">7</span></td>
+                        <td class="weekend"><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td class="col-total" style="color: #0284c7;">139 un</td>
+                    </tr>
+
+                    <!-- Med 8: KCl 19,1% -->
+                    <tr data-cat="mav">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Cloreto de Potássio 19,1%</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-008 • Ampola 10ml</div>
+                        </td>
+                        <td><span class="tag tag-mav">Eletrólito</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td class="col-total" style="color: #dc2626;">91 un</td>
+                    </tr>
+
+                    <!-- Med 9: Insulina -->
+                    <tr data-cat="mav">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Insulina Regular 100 UI/ml</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-009 • Frasco 10ml</div>
+                        </td>
+                        <td><span class="tag tag-mav">Insulina</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td class="col-total" style="color: #dc2626;">40 un</td>
+                    </tr>
+                </tbody>
+
+                <!-- Rodapé Total 1ª Quinzena -->
+                <tfoot>
+                    <tr class="total-row">
+                        <td class="sticky-col">TOTAL DISPENSADO NO DIA:</td>
+                        <td>-</td>
+                        <td>121</td><td>142</td><td>114</td><td class="weekend">91</td><td class="weekend">89</td>
+                        <td>141</td><td>163</td><td>189</td><td>123</td><td>114</td><td class="weekend">95</td><td class="weekend">81</td>
+                        <td>138</td><td>150</td><td>127</td>
+                        <td class="col-total">1.724 un</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Assinaturas da Folha 1 -->
+        <div class="print-signatures">
+            <div>
+                <div class="sig-line">Farmacêutico(a) Responsável Técnico</div>
+                CRF: ______________ • Visto / Data
+            </div>
+            <div>
+                <div class="sig-line">Supervisão de Enfermagem</div>
+                COREN: ______________ • Conferência
+            </div>
+            <div>
+                <div class="sig-line">Coordenação da Farmácia Central / Satélite</div>
+                Zorion Saúde • Gestão Hospitalar
+            </div>
+        </div>
+    </div>
+
+
+    <!-- =========================================================================
+         FOLHA 2 / PÁGINA 2: SEGUNDA QUINZENA (DIAS 16 A 31)
+         ========================================================================= -->
+    <div class="quinzena-section quinzena-2" id="section-q2">
+        <!-- Cabeçalho A4 impresso -->
+        <div class="print-page-header">
+            <div>
+                <h2>Zorion Saúde • Mapa Mensal de Dispensação Diária</h2>
+                <p>Consolidação de Saídas para Pacientes: Prescrições (Baixas em Lote) + Dispensação Satélite</p>
+            </div>
+            <div class="print-meta">
+                <strong>FOLHA 2 DE 2 • 2ª QUINZENA (DIAS 16 A 31)</strong><br>
+                Mês de Referência: <strong>Outubro / 2026</strong><br>
+                Impresso em: 11/10/2026 10:40
+            </div>
+        </div>
+
+        <div class="quinzena-header">
+            <div class="quinzena-title">
+                <span>📄 FOLHA 2: 2ª Quinzena (Dias 16 a 31 de Outubro / 2026)</span>
+                <span class="quinzena-badge">A4 Paisagem</span>
+            </div>
+            <div style="font-size: 11px; color: #64748b; font-weight: 600;">
+                Subtotal 2ª Q.: <strong>1.758 un</strong> &nbsp;|&nbsp; 
+                Total Geral do Mês: <strong style="color: #1e40af;">3.482 un</strong>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="sticky-col">Medicamento / Apresentação</th>
+                        <th style="width: 45px;">Cat.</th>
+                        <!-- Dias 16 a 31 -->
+                        <th style="width: 30px;">16</th>
+                        <th style="width: 30px;">17</th>
+                        <th style="width: 30px;" class="weekend">18*</th>
+                        <th style="width: 30px;" class="weekend">19*</th>
+                        <th style="width: 30px;">20</th>
+                        <th style="width: 30px;">21</th>
+                        <th style="width: 30px;">22</th>
+                        <th style="width: 30px;">23</th>
+                        <th style="width: 30px;">24</th>
+                        <th style="width: 30px;" class="weekend">25*</th>
+                        <th style="width: 30px;" class="weekend">26*</th>
+                        <th style="width: 30px;">27</th>
+                        <th style="width: 30px;">28</th>
+                        <th style="width: 30px;">29</th>
+                        <th style="width: 30px;">30</th>
+                        <th style="width: 30px;">31</th>
+                        <th class="col-total">TOTAL 2ª Q.</th>
+                        <th class="col-month-total">TOTAL MÊS</th>
+                    </tr>
+                </thead>
+                <tbody class="med-body">
+                    <!-- Med 1: Clonazepam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Clonazepam 2,5mg/ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-001 • Gotas 20ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="col-total" style="color: #7c3aed;">48 un</td>
+                        <td class="col-month-total">101 un</td>
+                    </tr>
+
+                    <!-- Med 2: Morfina -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Morfina 10mg/ml</span> <span class="tag tag-psi">P344</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-002 • Ampola 1ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">A1</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">13</span></td>
+                        <td class="weekend"><span class="cell-val">9</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">16</span></td>
+                        <td><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td class="weekend"><span class="cell-val">7</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">13</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td class="col-total" style="color: #7c3aed;">180 un</td>
+                        <td class="col-month-total">378 un</td>
+                    </tr>
+
+                    <!-- Med 3: Midazolam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Midazolam 5mg/ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-003 • Ampola 3ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">21</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td class="weekend"><span class="cell-val">15</span></td>
+                        <td class="weekend"><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">24</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td><span class="cell-val">17</span></td>
+                        <td class="weekend"><span class="cell-val">14</span></td>
+                        <td class="weekend"><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">21</span></td>
+                        <td><span class="cell-val">23</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">16</span></td>
+                        <td class="col-total" style="color: #7c3aed;">299 un</td>
+                        <td class="col-month-total">607 un</td>
+                    </tr>
+
+                    <!-- Med 4: Diazepam -->
+                    <tr data-cat="psicotropicos">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Diazepam 10mg/2ml</span> <span class="tag tag-psi">P344</span></div>
+                            <div class="med-detail">Cód: MED-004 • Ampola 2ml</div>
+                        </td>
+                        <td><span class="tag tag-psi">B1</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td class="col-total" style="color: #7c3aed;">71 un</td>
+                        <td class="col-month-total">153 un</td>
+                    </tr>
+
+                    <!-- Med 5: Dipirona -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Dipirona Sódica 500mg/ml</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-005 • Ampola 2ml</div>
+                        </td>
+                        <td><span class="tag tag-cli">Geral</span></td>
+                        <td><span class="cell-high">48</span></td>
+                        <td><span class="cell-high">40</span></td>
+                        <td class="weekend"><span class="cell-high">32</span></td>
+                        <td class="weekend"><span class="cell-high">35</span></td>
+                        <td><span class="cell-high">47</span></td>
+                        <td><span class="cell-high">53</span></td>
+                        <td><span class="cell-high">50</span></td>
+                        <td><span class="cell-high">45</span></td>
+                        <td><span class="cell-high">41</span></td>
+                        <td class="weekend"><span class="cell-high">33</span></td>
+                        <td class="weekend"><span class="cell-high">34</span></td>
+                        <td><span class="cell-high">46</span></td>
+                        <td><span class="cell-high">50</span></td>
+                        <td><span class="cell-high">42</span></td>
+                        <td><span class="cell-high">44</span></td>
+                        <td><span class="cell-high">38</span></td>
+                        <td class="col-total" style="color: #0284c7;">668 un</td>
+                        <td class="col-month-total">1.341 un</td>
+                    </tr>
+
+                    <!-- Med 6: Omeprazol -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Omeprazol 40mg Pó Liof.</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-006 • Frasco-ampola</div>
+                        </td>
+                        <td><span class="tag tag-cli">Geral</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td class="weekend"><span class="cell-val">14</span></td>
+                        <td class="weekend"><span class="cell-val">15</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td><span class="cell-val">23</span></td>
+                        <td><span class="cell-val">21</span></td>
+                        <td><span class="cell-val">18</span></td>
+                        <td><span class="cell-val">16</span></td>
+                        <td class="weekend"><span class="cell-val">13</span></td>
+                        <td class="weekend"><span class="cell-val">14</span></td>
+                        <td><span class="cell-val">20</span></td>
+                        <td><span class="cell-val">22</span></td>
+                        <td><span class="cell-val">17</span></td>
+                        <td><span class="cell-val">19</span></td>
+                        <td><span class="cell-val">15</span></td>
+                        <td class="col-total" style="color: #0284c7;">277 un</td>
+                        <td class="col-month-total">560 un</td>
+                    </tr>
+
+                    <!-- Med 7: Ceftriaxona -->
+                    <tr data-cat="clinica">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Ceftriaxona 1g IV</span> <span class="tag tag-cli">Clínico</span></div>
+                            <div class="med-detail">Cód: MED-007 • Frasco-ampola</div>
+                        </td>
+                        <td><span class="tag tag-cli">Antimic.</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td class="weekend"><span class="cell-val">7</span></td>
+                        <td class="weekend"><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">12</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td class="weekend"><span class="cell-val">6</span></td>
+                        <td class="weekend"><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">9</span></td>
+                        <td><span class="cell-val">11</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">10</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td class="col-total" style="color: #0284c7;">140 un</td>
+                        <td class="col-month-total">279 un</td>
+                    </tr>
+
+                    <!-- Med 8: KCl 19,1% -->
+                    <tr data-cat="mav">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Cloreto de Potássio 19,1%</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-008 • Ampola 10ml</div>
+                        </td>
+                        <td><span class="tag tag-mav">Eletrólito</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">8</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="weekend"><span class="cell-val">3</span></td>
+                        <td class="weekend"><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">7</span></td>
+                        <td><span class="cell-val">5</span></td>
+                        <td><span class="cell-val">6</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td class="col-total" style="color: #dc2626;">86 un</td>
+                        <td class="col-month-total">177 un</td>
+                    </tr>
+
+                    <!-- Med 9: Insulina -->
+                    <tr data-cat="mav">
+                        <td class="sticky-col">
+                            <div class="med-name"><span>Insulina Regular 100 UI/ml</span> <span class="tag tag-mav">MAV</span></div>
+                            <div class="med-detail">Cód: MED-009 • Frasco 10ml</div>
+                        </td>
+                        <td><span class="tag tag-mav">Insulina</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">4</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="weekend"><span class="cell-val">1</span></td>
+                        <td class="weekend"><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td><span class="cell-val">3</span></td>
+                        <td><span class="cell-val">2</span></td>
+                        <td class="col-total" style="color: #dc2626;">41 un</td>
+                        <td class="col-month-total">81 un</td>
+                    </tr>
+                </tbody>
+
+                <!-- Rodapé Total 2ª Quinzena -->
+                <tfoot>
+                    <tr class="total-row">
+                        <td class="sticky-col">TOTAL DISPENSADO NO DIA:</td>
+                        <td>-</td>
+                        <td>129</td><td>107</td><td class="weekend">83</td><td class="weekend">89</td>
+                        <td>129</td><td>148</td><td>138</td><td>120</td><td>104</td><td class="weekend">80</td><td class="weekend">86</td>
+                        <td>122</td><td>137</td><td>110</td><td>121</td><td>96</td>
+                        <td class="col-total">1.758 un</td>
+                        <td class="col-month-total">3.482 un</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Assinaturas da Folha 2 -->
+        <div class="print-signatures">
+            <div>
+                <div class="sig-line">Farmacêutico(a) Responsável Técnico</div>
+                CRF: ______________ • Visto / Data
+            </div>
+            <div>
+                <div class="sig-line">Supervisão de Enfermagem</div>
+                COREN: ______________ • Conferência
+            </div>
+            <div>
+                <div class="sig-line">Coordenação da Farmácia Central / Satélite</div>
+                Zorion Saúde • Fechamento Mensal
+            </div>
+        </div>
+    </div>
+
+
+    <!-- =========================================================================
+         SCRIPTS INTERATIVOS
+         ========================================================================= -->
+    <script>
+        // Filtragem por Categoria Farmacológica
+        function filtrarCategoria(cat) {
+            // Atualizar botões
+            document.querySelectorAll('.filter-group:first-child .pill').forEach(p => {
+                p.classList.remove('active', 'active-psi', 'active-cli', 'active-mav');
+            });
+            
+            const btn = document.getElementById(
+                cat === 'psicotropicos' ? 'btn-cat-psi' :
+                cat === 'clinica' ? 'btn-cat-cli' :
+                cat === 'mav' ? 'btn-cat-mav' : 'btn-cat-todos'
+            );
+
+            if (cat === 'psicotropicos') btn.classList.add('active-psi');
+            else if (cat === 'clinica') btn.classList.add('active-cli');
+            else if (cat === 'mav') btn.classList.add('active-mav');
+            else btn.classList.add('active');
+
+            // Filtrar linhas em AMBAS as tabelas (Folha 1 e Folha 2)
+            const rowsQ1 = document.querySelectorAll('#section-q1 tbody tr');
+            const rowsQ2 = document.querySelectorAll('#section-q2 tbody tr');
+            
+            let visiveis = 0;
+            const applyFilter = (row) => {
+                const rowCat = row.getAttribute('data-cat');
+                if (cat === 'todos' || rowCat === cat) {
+                    row.style.display = '';
+                    return true;
+                } else {
+                    row.style.display = 'none';
+                    return false;
+                }
+            };
+
+            rowsQ1.forEach(r => { if(applyFilter(r)) visiveis++; });
+            rowsQ2.forEach(r => applyFilter(r));
+
+            document.getElementById('kpi-meds').innerHTML = visiveis + ' <span style="font-size: 13px; font-weight: 500;">itens</span>';
+        }
+
+        // Alternar visualização quinzenal na tela
+        function alternarQuinzena(modo) {
+            document.querySelectorAll('.pill-period').forEach(p => p.classList.remove('active'));
+
+            const secQ1 = document.getElementById('section-q1');
+            const secQ2 = document.getElementById('section-q2');
+
+            if (modo === 'q1') {
+                document.getElementById('btn-view-q1').classList.add('active');
+                secQ1.style.display = 'block';
+                secQ2.style.display = 'none';
+            } else if (modo === 'q2') {
+                document.getElementById('btn-view-q2').classList.add('active');
+                secQ1.style.display = 'none';
+                secQ2.style.display = 'block';
+            } else {
+                document.getElementById('btn-view-ambas').classList.add('active');
+                secQ1.style.display = 'block';
+                secQ2.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
