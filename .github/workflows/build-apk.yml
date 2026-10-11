@@ -1,0 +1,201 @@
+name: Compilar Aplicativo Android (.apk)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publicar / Atualizar Release no GitHub?'
+        required: true
+        type: boolean
+        default: true
+      is_draft:
+        description: 'Criar como Release de Rascunho (Draft)?'
+        required: false
+        type: boolean
+        default: false
+      custom_tag:
+        description: 'Tag customizada (deixe vazio para usar a versao do package.json)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Compilar Tauri Android (.apk)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK e NDK
+        run: |
+          # Identifica automaticamente a versão do NDK instalada no runner
+          NDK_PATH=$(find $ANDROID_HOME/ndk -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          if [ -z "$NDK_PATH" ]; then
+            echo "Instalando NDK via sdkmanager..."
+            ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+            NDK_PATH="${ANDROID_HOME}/ndk/26.1.10909125"
+          fi
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "Android NDK configurado em: $NDK_PATH"
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar Rust Stable com targets Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Cache de compilação Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+
+      - name: Instalar Dependências do Frontend
+        run: npm install
+
+      - name: Identificar e Sincronizar Versões
+        id: app_info
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          
+          if [ -n "${{ github.event.inputs.custom_tag }}" ]; then
+            TAG_NAME="${{ github.event.inputs.custom_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME="v$VERSION"
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Compilando versao: $VERSION (Tag: $TAG_NAME)"
+
+          # Garante que tauri.conf.json e Cargo.toml fiquem na mesma versão antes do build
+          node -e "
+            const fs = require('fs');
+            try {
+              const tauriConfPath = 'src-tauri/tauri.conf.json';
+              const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
+              tauriConf.version = '$VERSION';
+              fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
+            } catch (e) { console.warn('Aviso tauri.conf:', e.message); }
+            
+            try {
+              const cargoPath = 'src-tauri/Cargo.toml';
+              let cargo = fs.readFileSync(cargoPath, 'utf8');
+              cargo = cargo.replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"$VERSION\"');
+              fs.writeFileSync(cargoPath, cargo);
+            } catch (e) { console.warn('Aviso Cargo.toml:', e.message); }
+          "
+
+      - name: Garantir permissão de execução no Gradle Wrapper
+        run: |
+          if [ -f "src-tauri/gen/android/gradlew" ]; then
+            chmod +x src-tauri/gen/android/gradlew
+          fi
+
+      - name: Compilar APK Android
+        run: |
+          npm run tauri android build -- --apk
+
+      - name: Organizar e Validar APKs Gerados
+        shell: bash
+        run: |
+          mkdir -p release-apk
+          VERSION="${{ steps.app_info.outputs.VERSION }}"
+          
+          echo "=== Buscando APKs gerados ==="
+          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | while read -r apk_file; do
+            echo "Encontrado: $apk_file"
+            bname=$(basename "$apk_file")
+            if [[ "$bname" == *"universal"* ]]; then
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}-Universal.apk"
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}.apk"
+            elif [[ "$bname" == *"arm64"* ]]; then
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}-arm64-v8a.apk"
+              if [ ! -f "release-apk/Zorion-Saude-v${VERSION}.apk" ]; then
+                cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}.apk"
+              fi
+            elif [[ "$bname" == *"armeabi"* ]]; then
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}-armeabi-v7a.apk"
+            elif [[ "$bname" == *"x86_64"* ]]; then
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}-x86_64.apk"
+            else
+              cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}-${bname}"
+              if [ ! -f "release-apk/Zorion-Saude-v${VERSION}.apk" ]; then
+                cp "$apk_file" "release-apk/Zorion-Saude-v${VERSION}.apk"
+              fi
+            fi
+          done
+
+          cd release-apk
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum *.apk > SHA256SUMS-ANDROID.txt || true
+          fi
+          cd ..
+
+          echo "=== Arquivos prontos em release-apk/ ==="
+          ls -lh release-apk/
+
+          echo "### 📱 APKs Android Gerados (v$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "| Arquivo | Tamanho |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          for item in release-apk/*; do
+            if [ -f "$item" ]; then
+              fsize=$(ls -lh "$item" | awk '{print $5}')
+              echo "| \`$(basename "$item")\` | $fsize |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Salvar Artefatos do APK no GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Android
+          path: release-apk/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+      - name: Publicar / Anexar APK na Release do GitHub
+        uses: softprops/action-gh-release@v2
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'false') ||
+          startsWith(github.ref, 'refs/tags/') ||
+          github.ref == 'refs/heads/main'
+        with:
+          tag_name: ${{ steps.app_info.outputs.TAG_NAME }}
+          name: 'Zorion Saúde ${{ steps.app_info.outputs.TAG_NAME }}'
+          files: release-apk/*
+          draft: ${{ github.event.inputs.is_draft == 'true' }}
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

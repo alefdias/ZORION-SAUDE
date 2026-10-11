@@ -8,8 +8,9 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_shell::init())
-    .setup(|app| {
-      if let Some(window) = app.get_webview_window("main") {
+    .setup(|_app| {
+      #[cfg(desktop)]
+      if let Some(window) = _app.get_webview_window("main") {
           let _ = window.maximize();
       }
       Ok(())
