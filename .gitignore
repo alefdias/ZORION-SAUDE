@@ -17,6 +17,7 @@ dist-ssr
 *.local
 src-tauri/target/
 src-tauri/gen/schemas/
+relatorio-axion/
 
 
 # Editor directories and files
