@@ -371,7 +371,8 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dias_ultima_dispensacao" INTEGER;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_fim_dispensacao" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose_diaria_dispensada" NUMERIC;
-    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "quantidade_ultimo_lote" INTEGER;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "lote_id" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,

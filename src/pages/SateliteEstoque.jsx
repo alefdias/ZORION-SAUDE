@@ -65,11 +65,29 @@ export default function SateliteEstoque() {
     queryFn: () => db.entities.Lote.list(),
   });
 
+  const { data: transferencias = [] } = useQuery({
+    queryKey: ['transferencias_pendentes'],
+    queryFn: () => (db.entities.TransferenciaPendente ? db.entities.TransferenciaPendente.list() : []),
+  });
+
+  const { data: pedidosSatelite = [] } = useQuery({
+    queryKey: ['pedidos_satelite'],
+    queryFn: () => (db.entities.PedidoSatelite ? db.entities.PedidoSatelite.list() : []),
+  });
+
+  const { data: saidas = [] } = useQuery({
+    queryKey: ['saidas'],
+    queryFn: () => (db.entities.Saida ? db.entities.Saida.list() : []),
+  });
+
   const isLoading = loadingMeds || loadingLotes;
 
   const handleRefresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
     await queryClient.invalidateQueries({ queryKey: ['lotes'] });
+    await queryClient.invalidateQueries({ queryKey: ['transferencias_pendentes'] });
+    await queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
+    await queryClient.invalidateQueries({ queryKey: ['saidas'] });
     toast.success("Dados do estoque satélite atualizados!");
   };
 
@@ -82,22 +100,177 @@ export default function SateliteEstoque() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  // Filtrar e agrupar medicamentos da satélite
+  // Normalização fonética e de caracteres para matching infalível de nomes de medicamentos
+  const normalize = (str) =>
+    (str || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .trim();
+
+  const namesMatch = (nameA, nameB) => {
+    const a = normalize(nameA);
+    const b = normalize(nameB);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+    const wordsA = a.split(/\s+/).filter((w) => w.length >= 3);
+    const wordsB = b.split(/\s+/).filter((w) => w.length >= 3);
+    if (wordsA.length > 0 && wordsB.length > 0 && wordsA[0] === wordsB[0]) {
+      return true;
+    }
+    return false;
+  };
+
+  // Filtrar e agrupar medicamentos calculando EXCLUSIVAMENTE os lotes com saldo na Satélite
   const estoqueSatelite = useMemo(() => {
     return medicamentos
       .filter(m => m.ativo !== false && !m.deleted_at)
       .map(med => {
-        const lotesDoMed = lotes
-          .filter(l => l.medicamento_id === med.id)
+        const saldoSat = Number(med.estoque_satelite) || 0;
+        const estoqueMin = Number(med.estoque_minimo) || 0;
+        const temAlerta = saldoSat > 0 && estoqueMin > 0 && saldoSat <= estoqueMin;
+        const zerado = saldoSat <= 0;
+
+        // Lotes candidatos deste medicamento
+        const lotesDoMed = lotes.filter(l => 
+          String(l.medicamento_id || l.medicamentoId || "") === String(med.id) ||
+          (l.medicamento_nome && namesMatch(l.medicamento_nome, med.nome)) ||
+          (med.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo)
+        );
+
+        let lotesSatelite = [];
+        if (saldoSat > 0 && lotesDoMed.length > 0) {
+          const mapaSaldoLote = {};
+          lotesDoMed.forEach((l) => {
+            mapaSaldoLote[l.id] = 0;
+          });
+
+          // 1. Entradas por transferências aceitas para a satélite
+          transferencias.forEach((t) => {
+            if (t.direcao === "para_satelite" && (t.status === "Aceito" || t.status === "aceito")) {
+              const mId = String(t.medicamento_id || t.medicamentoId || "");
+              if (mId === String(med.id) || (med.nome && t.medicamento_nome && namesMatch(t.medicamento_nome, med.nome))) {
+                const lId = String(t.lote_id || t.loteId || "");
+                const matchLote = lotesDoMed.find(
+                  (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === t.numero_lote)
+                );
+                if (matchLote) {
+                  mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(t.quantidade) || 0);
+                }
+              }
+            }
+          });
+
+          // 2. Entradas por pedidos da satélite concluídos
+          pedidosSatelite.forEach((p) => {
+            if (p.status === "Concluido" || p.status === "Entregue") {
+              try {
+                const itens = Array.isArray(p.itens_json) ? p.itens_json : JSON.parse(p.itens_json || "[]");
+                itens.forEach((it) => {
+                  const mId = String(it.medicamento_id || it.medicamentoId || "");
+                  if (mId === String(med.id) || (med.nome && it.medicamento_nome && namesMatch(it.medicamento_nome, med.nome))) {
+                    const lId = String(it.lote_id || it.loteId || "");
+                    const matchLote = lotesDoMed.find(
+                      (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === it.numero_lote)
+                    );
+                    if (matchLote) {
+                      mapaSaldoLote[matchLote.id] =
+                        (mapaSaldoLote[matchLote.id] || 0) + (Number(it.quantidade_atendida || it.quantidade) || 0);
+                    }
+                  }
+                });
+              } catch (e) {}
+            }
+          });
+
+          // 3. Entradas por saídas registradas para a satélite
+          saidas.forEach((s) => {
+            const isTransfParaSat =
+              (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
+            const mId = String(s.medicamento_id || s.medicamentoId || "");
+            if (isTransfParaSat && (mId === String(med.id) || (med.nome && s.medicamento_nome && namesMatch(s.medicamento_nome, med.nome)))) {
+              const lId = String(s.lote_id || s.loteId || "");
+              const matchLote = lotesDoMed.find(
+                (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
+              );
+              if (matchLote) {
+                mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(s.quantidade) || 0);
+              }
+            }
+          });
+
+          // 4. Subtrair dispensações da satélite a pacientes
+          saidas.forEach((s) => {
+            const isTransfParaSat =
+              (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
+            if (!isTransfParaSat) {
+              const mId = String(s.medicamento_id || s.medicamentoId || "");
+              if (mId === String(med.id) || (med.nome && s.medicamento_nome && namesMatch(s.medicamento_nome, med.nome))) {
+                const lId = String(s.lote_id || s.loteId || "");
+                const matchLote = lotesDoMed.find(
+                  (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
+                );
+                if (matchLote) {
+                  mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) - (Number(s.quantidade) || 0);
+                }
+              }
+            }
+          });
+
+          const lotesComCalculo = lotesDoMed
+            .map((l) => ({
+              ...l,
+              saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
+            }))
+            .filter((l) => l.saldoSatelite > 0);
+
+          if (lotesComCalculo.length > 0) {
+            lotesSatelite = lotesComCalculo;
+          } else {
+            // Distribuição FEFO do saldo físico existente na Satélite
+            const ordenadosFefo = [...lotesDoMed].sort((a, b) => {
+              const da = safeParseISO(a.data_validade);
+              const db = safeParseISO(b.data_validade);
+              if (!da) return 1;
+              if (!db) return -1;
+              return da - db;
+            });
+
+            let restanteSat = saldoSat;
+            for (const l of ordenadosFefo) {
+              if (restanteSat <= 0) break;
+              const qtdAtribuida = Math.min(restanteSat, Number(l.quantidade_atual) || restanteSat);
+              if (qtdAtribuida > 0) {
+                lotesSatelite.push({
+                  ...l,
+                  saldoSatelite: qtdAtribuida,
+                });
+                restanteSat -= qtdAtribuida;
+              }
+            }
+
+            if (lotesSatelite.length === 0 && ordenadosFefo.length > 0) {
+              lotesSatelite.push({
+                ...ordenadosFefo[0],
+                saldoSatelite: saldoSat,
+              });
+            }
+          }
+        }
+
+        // Enriquecer os lotes da Satélite com status e datas
+        const lotesSateliteEnriquecidos = lotesSatelite
           .map(l => {
             const parsedValidade = safeParseISO(l.data_validade);
             const vencido = parsedValidade ? parsedValidade < hoje : false;
             const diasParaVencer = parsedValidade ? differenceInDays(parsedValidade, hoje) : 999;
             const vencendo = !vencido && diasParaVencer <= 30;
-            
+
             let statusCalculado = "disponivel";
             if (vencido) statusCalculado = "vencido";
-            else if (l.quantidade_atual <= 0) statusCalculado = "esgotado";
+            else if (l.saldoSatelite <= 0) statusCalculado = "esgotado";
             else if (vencendo) statusCalculado = "vencendo";
 
             return {
@@ -116,16 +289,12 @@ export default function SateliteEstoque() {
             return da - db;
           });
 
-        const saldoSat = Number(med.estoque_satelite) || 0;
-        const estoqueMin = Number(med.estoque_minimo) || 0;
-        const temAlerta = saldoSat > 0 && estoqueMin > 0 && saldoSat <= estoqueMin;
-        const zerado = saldoSat <= 0;
-        const temVencido = lotesDoMed.some(l => l.vencido && l.quantidade_atual > 0);
-        const temVencendo = lotesDoMed.some(l => l.vencendo && l.quantidade_atual > 0);
+        const temVencido = lotesSateliteEnriquecidos.some(l => l.vencido && l.saldoSatelite > 0);
+        const temVencendo = lotesSateliteEnriquecidos.some(l => l.vencendo && l.saldoSatelite > 0);
 
         return {
           ...med,
-          lotes: lotesDoMed,
+          lotes: lotesSateliteEnriquecidos,
           saldoSat,
           estoqueMin,
           temAlerta,
@@ -134,7 +303,7 @@ export default function SateliteEstoque() {
           temVencendo,
         };
       });
-  }, [medicamentos, lotes, hoje]);
+  }, [medicamentos, lotes, transferencias, pedidosSatelite, saidas, hoje]);
 
   // Estatísticas Gerais (KPIs)
   const stats = useMemo(() => {
@@ -493,10 +662,10 @@ export default function SateliteEstoque() {
                         </div>
                         <div>
                           <h5 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                            Rastreamento de Lotes & Validades FEFO
+                            Rastreamento de Lotes & Validades FEFO na Satélite
                           </h5>
                           <p className="text-[11px] text-slate-400">
-                            Dispensação prioritária pelo lote com menor prazo de validade
+                            Lotes físicos presentes na Satélite com prioridade pelo menor prazo de validade (FEFO)
                           </p>
                         </div>
                       </div>
@@ -514,10 +683,10 @@ export default function SateliteEstoque() {
                       <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-4">
                         <Boxes className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
                         <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                          Nenhum lote físico vinculado no momento
+                          Nenhum lote físico com saldo na Farmácia Satélite
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          As movimentações anteriores podem ter operado em lote padrão ou o item aguarda abastecimento com entrada de lote.
+                          Saldo Satélite: <strong>{med.saldoSat} un</strong> • Estoque na Central: <strong>{med.estoque_atual || 0} un</strong>
                         </p>
                       </div>
                     ) : (
@@ -528,17 +697,17 @@ export default function SateliteEstoque() {
                               <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5">Número do Lote</TableHead>
                               <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5">Data de Validade</TableHead>
                               <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5">Tempo Restante</TableHead>
-                              <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5 text-center">Qtd Atual no Lote</TableHead>
+                              <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5 text-center">Qtd na Satélite</TableHead>
                               <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-300 py-2.5 text-right">Status do Lote</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {med.lotes.map((lote, lIdx) => {
-                              const isFefoFirst = lIdx === 0 && lote.quantidade_atual > 0 && !lote.vencido;
+                              const isFefoFirst = lIdx === 0 && (lote.saldoSatelite || 0) > 0 && !lote.vencido;
 
                               return (
                                 <TableRow 
-                                  key={lote.id}
+                                  key={lote.id || lIdx}
                                   className={cn(
                                     "transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40",
                                     isFefoFirst && "bg-emerald-50/40 dark:bg-emerald-950/20"
@@ -585,9 +754,9 @@ export default function SateliteEstoque() {
                                     )}
                                   </TableCell>
 
-                                  {/* Qtd Atual */}
-                                  <TableCell className="py-2.5 text-center font-mono font-bold text-xs text-slate-800 dark:text-slate-100">
-                                    {lote.quantidade_atual || 0} un
+                                  {/* Qtd Atual na Satélite */}
+                                  <TableCell className="py-2.5 text-center font-mono font-black text-xs text-indigo-700 dark:text-indigo-400">
+                                    {lote.saldoSatelite || 0} un
                                   </TableCell>
 
                                   {/* Status */}

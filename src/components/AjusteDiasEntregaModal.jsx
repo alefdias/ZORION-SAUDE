@@ -170,6 +170,56 @@ export function AjusteDiasEntregaModal({
     return false;
   };
 
+  // Função para extrair a dose diária mesmo se totalDiario for ausente, somando slots de horários ou analisando esquema
+  const extrairDoseDiaria = (pr) => {
+    if (!pr) return 1;
+
+    // 1. Campo explícito totalDiario ou dose_diaria
+    const tot = parseFloat(pr.totalDiario || pr.total_diario || pr.dose_diaria);
+    if (tot && tot > 0) return tot;
+
+    // 2. Soma de doses por horários (slots padrão hospitalares)
+    const hDoses = [
+      pr.dose08, pr.dose14, pr.dose22, pr.dose06,
+      pr.dose07, pr.dose13, pr.dose19, pr.dose01,
+      pr.doseManha, pr.doseTarde, pr.doseNoite, pr.doseMadrugada
+    ];
+    const somaSlots = hDoses.reduce((acc, d) => {
+      const val = parseFloat(d);
+      return acc + (val > 0 ? val : 0);
+    }, 0);
+    if (somaSlots > 0) return somaSlots;
+
+    // 3. Esquema posológico com traço (ex: "1-0-1-0", "1 - 0 - 1", "1/0/1/0")
+    const esquema = String(pr.esquemaPosologico || pr.esquema_posologico || pr.posologia || "");
+    const partesTraco = esquema.split(/[-/]/);
+    if (partesTraco.length >= 2) {
+      const somaPartes = partesTraco.reduce((acc, p) => {
+        const v = parseFloat(p.trim());
+        return acc + (v > 0 ? v : 0);
+      }, 0);
+      if (somaPartes > 0) return somaPartes;
+    }
+
+    // 4. Frequência descritiva (12/12h, 8/8h, etc.)
+    const doseUnit = parseFloat(pr.dose || pr.quantidade || pr.dose_unitaria) || 1;
+    const freq = (pr.frequencia || pr.esquemaPosologico || "").toLowerCase();
+    if (freq.includes("12/12") || freq.includes("12 em 12") || freq.includes("2x") || freq.includes("2 vezes")) {
+      return doseUnit * 2;
+    }
+    if (freq.includes("8/8") || freq.includes("8 em 8") || freq.includes("3x") || freq.includes("3 vezes")) {
+      return doseUnit * 3;
+    }
+    if (freq.includes("6/6") || freq.includes("6 em 6") || freq.includes("4x") || freq.includes("4 vezes")) {
+      return doseUnit * 4;
+    }
+    if (freq.includes("24/24") || freq.includes("1x") || freq.includes("1 vez") || freq.includes("diario")) {
+      return doseUnit * 1;
+    }
+
+    return doseUnit > 0 ? doseUnit : 1;
+  };
+
   // Função para calcular estritamente os lotes existentes na Farmácia Satélite
   const calcularLotesSatelite = (medId, medNome, saldoTotalSat, lotesCandidatos) => {
     if (saldoTotalSat <= 0 || !lotesCandidatos || lotesCandidatos.length === 0) {
@@ -394,8 +444,8 @@ export function AjusteDiasEntregaModal({
         const medId = med?.id || prMedId;
         const medNome = med?.nome || prMedNome;
 
-        // Dose diária atual da prescrição
-        const doseAtual = parseFloat(pr.totalDiario) || 0;
+        // Dose diária atual da prescrição (analisando totalDiario, horários e esquemas como 1-0-1-0)
+        const doseAtual = extrairDoseDiaria(pr);
 
         // Dose dispensada no último lote
         const doseAnterior =
@@ -455,13 +505,9 @@ export function AjusteDiasEntregaModal({
             ? Math.max(1, parseInt(customDias[pr.id]) || 1)
             : diasSugeridos;
 
-        // Quantidade sugerida calculada estritamente pelos dias efetivos
-        let qtdSugerida = 0;
-        if (diferencaDose > 0) {
-          qtdSugerida = Math.ceil(diferencaDose * diasFinais);
-        } else if (doseAtual > 0) {
-          qtdSugerida = Math.ceil(doseAtual * diasFinais);
-        }
+        // Quantidade sugerida calculada pelos dias efetivos (soma exata da dose diária pelos dias a dispensar)
+        const doseEfetiva = doseAtual > 0 ? doseAtual : (diferencaDose > 0 ? diferencaDose : 1);
+        const qtdSugerida = Math.max(1, Math.ceil(doseEfetiva * diasFinais));
 
         const saldoTotalSat = Number(med?.estoque_satelite) || 0;
 
@@ -592,9 +638,9 @@ export function AjusteDiasEntregaModal({
   const handleDiasChange = (prId, diasVal, item) => {
     const d = Math.max(1, parseInt(diasVal) || 1);
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
-    // Recalcula quantidade sugerida proporcional aos novos dias
-    const doseRef = item.diferencaDose > 0 ? item.diferencaDose : item.doseAtual;
-    const novaQtd = Math.ceil(doseRef * d);
+    // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
+    const doseRef = item.doseAtual > 0 ? item.doseAtual : (item.diferencaDose > 0 ? item.diferencaDose : 1);
+    const novaQtd = Math.max(1, Math.ceil(doseRef * d));
     setCustomQtds((prev) => ({ ...prev, [prId]: novaQtd }));
   };
 
@@ -627,8 +673,14 @@ export function AjusteDiasEntregaModal({
           );
         }
 
-        const loteId = selectedLotes[prescId] || item.medLotes[0]?.id || (item.medLotes.length === 0 ? "SEM_LOTE" : null);
+        const loteId = selectedLotes[prescId] || item.medLotes[0]?.id;
         const loteObj = lotesEnriquecidos.find((l) => l.id === loteId) || item.medLotes.find((l) => l.id === loteId) || item.medLotes[0];
+
+        if (!loteObj) {
+          throw new Error(
+            `Nenhum lote físico disponível na Farmácia Satélite para "${item.med?.nome || "Medicamento"}". A dispensação requer um lote físico existente.`
+          );
+        }
 
         const diasEfetivos =
           customDias[prescId] !== undefined
@@ -727,7 +779,7 @@ export function AjusteDiasEntregaModal({
           is_baixa_lote_paciente: true,
         });
 
-        // 3. Atualizar a prescrição com a nova cobertura calculada e lote
+        // 3. Atualizar a prescrição com a nova cobertura calculada
         if (pr?.id) {
           await db.entities.PrescricaoPaciente.update(pr.id, {
             coberto_ate: dataFimCoberturaMed,
@@ -735,8 +787,6 @@ export function AjusteDiasEntregaModal({
             data_ultima_dispensacao: hojeStr,
             quantidade_ultimo_lote: qtd,
             ultimo_lote_dias: diasEfetivos,
-            lote_id: loteId,
-            numero_lote: numeroLote,
           });
         }
       }
@@ -775,8 +825,8 @@ export function AjusteDiasEntregaModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6">
-        <DialogHeader className="border-b pb-4">
+      <DialogContent className="max-w-5xl w-[96vw] max-h-[92vh] flex flex-col p-5 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden">
+        <DialogHeader className="border-b pb-3 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
               <Sparkles className="w-5 h-5" />
@@ -792,7 +842,7 @@ export function AjusteDiasEntregaModal({
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 pt-2">
+        <div className="flex-1 overflow-y-auto pr-1 space-y-4 pt-2">
           {/* Barra de Filtro de Data da Receita e Fechamento do Ciclo */}
           <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -913,9 +963,9 @@ export function AjusteDiasEntregaModal({
                 )}
               </div>
             ) : (
-              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto max-h-[48vh] overflow-y-auto shadow-xs">
                 <Table>
-                  <TableHeader className="bg-slate-100/90 dark:bg-slate-800 border-b border-slate-200">
+                  <TableHeader className="bg-slate-100/90 dark:bg-slate-800 border-b border-slate-200 sticky top-0 z-10">
                     <TableRow>
                       <TableHead className="w-12 text-center">
                         <button
@@ -1083,8 +1133,6 @@ export function AjusteDiasEntregaModal({
                                         </span>
                                       )}
                                     </span>
-                                  ) : selectedLoteId === "SEM_LOTE" ? (
-                                    <span className="text-slate-400 italic text-[11px]">⚪ S/ Lote Físico</span>
                                   ) : (
                                     <span className="text-slate-400 text-[11px]">Selecione o Lote...</span>
                                   )}
@@ -1116,16 +1164,10 @@ export function AjusteDiasEntregaModal({
                                     ))}
                                   </SelectGroup>
                                 ) : (
-                                  <div className="p-2 text-xs text-slate-500 italic text-center">
-                                    {estoqueSatelite <= 0
-                                      ? "⚠️ Sem estoque na Farmácia Satélite"
-                                      : "Nenhum lote físico individual na Satélite"}
+                                  <div className="p-3 text-xs text-red-500 font-bold text-center">
+                                    ⚠️ Nenhum lote físico disponível na Farmácia Satélite
                                   </div>
                                 )}
-
-                                <SelectItem value="SEM_LOTE" className="text-xs font-mono text-slate-500 py-1.5">
-                                  ⚪ Dispensar Sem Lote Físico (Saldo Satélite: {estoqueSatelite} un)
-                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </TableCell>
