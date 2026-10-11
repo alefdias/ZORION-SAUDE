@@ -2,18 +2,18 @@
 
 | **HOSPITAL / SERVIÇO DE SAÚDE** | **FARMÁCIA SATÉLITE** | **ZORION SAÚDE** |
 | :--- | :--- | :--- |
-| **Código:** POP-SAT-003 | **Versão:** 01/2026 | **Data de Emissão:** 11/10/2026 |
+| **Código:** POP-SAT-003 | **Versão:** 02/2026 | **Data de Emissão:** 11/10/2026 |
 | **Título:** Conferência, Lacração e Reposição do Carrinho de Parada (PCR) | **Próxima Revisão:** 11/10/2027 | **Página:** 1 de 3 |
 
 ---
 
 ### 1. OBJETIVO
-Padronizar a rotina de conferência mensal, reposição pós-atendimento de Parada Cardiorrespiratória (PCR) e controle de lacres numerados nos Carrinhos de Emergência da área assistencial através do módulo **"Carrinho de Parada"** do sistema **ZORION SAÚDE**.
+Padronizar a rotina de conferência mensal, reposição pós-atendimento de Parada Cardiorrespiratória (PCR) e controle de lacres numerados nos Carrinhos de Emergência da área assistencial através do módulo **"Carrinho de Parada"** do sistema **ZORION SAÚDE**, com débito restrito ao estoque da Farmácia Satélite.
 
 ---
 
 ### 2. CAMPO DE APLICAÇÃO
-Aplica-se aos Carrinhos de Emergência localizados nas alas e setores atendidos pela Farmácia Satélite.
+Aplica-se aos Carrinhos de Emergência localizados nas alas e setores clínicos atendidos pela Farmácia Satélite.
 
 ---
 
@@ -26,8 +26,8 @@ Aplica-se aos Carrinhos de Emergência localizados nas alas e setores atendidos 
    - Registre a abertura do carrinho por atendimento clínico.
 2. No formulário do sistema, insira os medicamentos consumidos:
    - Epinefrina, Amiodarona, Atropina, Bicarbonato, seringas, agulhas e tubos;
-   - O Zorion Saúde abate esses itens do estoque da Satélite e atualiza a dotação.
-3. Colete os novos medicamentos nas gavetas da Satélite e coloque nas gavetas correspondentes do carrinho.
+   - O Zorion Saúde abate esses itens exclusivamente do estoque local da Satélite (`estoque_satelite`), mantendo a integridade do estoque da Central.
+3. Colete os novos medicamentos nas prateleiras da Satélite e reponha nas gavetas correspondentes do carrinho.
 
 #### 3.2. Lacração e Emissão de Etiqueta:
 1. Feche fisicamente as gavetas do carrinho e aplique a presilha plástica numerada (lacre inviolável).
@@ -43,3 +43,4 @@ Aplica-se aos Carrinhos de Emergência localizados nas alas e setores atendidos 
 | Versão | Data | Descrição da Alteração | Responsável |
 | :---: | :---: | :--- | :--- |
 | **01** | 11/10/2026 | Emissão de procedimento de carrinhos de parada na Satélite. | Farmácia Satélite |
+| **02** | 11/10/2026 | **Atualização Geral (v3.2.10):** Reforço do débito exclusivo no estoque local da Satélite e alinhamento normativo. | Farmácia Satélite / RT |

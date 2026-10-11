@@ -2,7 +2,7 @@
 
 | **HOSPITAL / SERVIÇO DE SAÚDE** | **FARMÁCIA CENTRAL** | **ZORION SAÚDE** |
 | :--- | :--- | :--- |
-| **Código:** POP-CENT-001 | **Versão:** 01/2026 | **Data de Emissão:** 11/10/2026 |
+| **Código:** POP-CENT-001 | **Versão:** 02/2026 | **Data de Emissão:** 11/10/2026 |
 | **Título:** Recebimento Físico, Inspeção de NFs e Armazenamento Central | **Próxima Revisão:** 11/10/2027 | **Página:** 1 de 3 |
 
 ---
@@ -56,4 +56,5 @@ Aplica-se ao Almoxarifado Central e Doca de Cargas da Farmácia Central do Hospi
 ### 6. HISTÓRICO DE REVISÕES
 | Versão | Data | Descrição da Alteração | Responsável |
 | :---: | :---: | :--- | :--- |
-| **01** | 11/10/2026 | Emissão de procedimento de recebimento da Farmácia Central. | Almoxarifado Central |
+| **01** | 11/10/2026 | Emissão inicial do procedimento de recebimento da Farmácia Central. | Almoxarifado Central |
+| **02** | 11/10/2026 | **Atualização Geral (v3.2.10):** Alinhamento geral do manual integrado de boas práticas e rastreabilidade da cadeia de suprimentos. | Almoxarifado Central / RT |

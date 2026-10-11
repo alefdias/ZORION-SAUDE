@@ -2,13 +2,13 @@
 
 | **HOSPITAL / SERVIÇO DE SAÚDE** | **FARMÁCIA CENTRAL** | **ZORION SAÚDE** |
 | :--- | :--- | :--- |
-| **Código:** POP-CENT-004 | **Versão:** 01/2026 | **Data de Emissão:** 11/10/2026 |
+| **Código:** POP-CENT-004 | **Versão:** 02/2026 | **Data de Emissão:** 11/10/2026 |
 | **Título:** Gestão de Empréstimos entre Hospitais (Concessão e Devolução) | **Próxima Revisão:** 11/10/2027 | **Página:** 1 de 3 |
 
 ---
 
 ### 1. OBJETIVO
-Padronizar as rotinas de concessão (saída por empréstimo) e recebimento (entrada por empréstimo ou devolução) de medicamentos entre hospitais parceiros e redes de saúde no módulo **"Empréstimos"** do sistema **ZORION SAÚDE**, assegurando o controle contábil e a rastreabilidade dos lotes cedidos ou recebidos.
+Padronizar as rotinas de concessão (saída por empréstimo) e recebimento (entrada por empréstimo ou devolução) de medicamentos entre hospitais parceiros e redes de saúde no módulo **"Empréstimos"** do sistema **ZORION SAÚDE**, assegurando o controle contábil, isolamento de saldos da Central e a rastreabilidade dos lotes cedidos ou recebidos.
 
 ---
 
@@ -50,4 +50,5 @@ Aplica-se à Farmácia Central em suas relações de cooperação inter-hospital
 ### 5. HISTÓRICO DE REVISÕES
 | Versão | Data | Descrição da Alteração | Responsável |
 | :---: | :---: | :--- | :--- |
-| **01** | 11/10/2026 | Emissão de procedimento de empréstimos hospitalares no Zorion Saúde. | Farmácia Central |
+| **01** | 11/10/2026 | Emissão inicial do procedimento de empréstimos hospitalares no Zorion Saúde. | Farmácia Central |
+| **02** | 11/10/2026 | **Atualização Geral (v3.2.10):** Rastreabilidade de lotes emprestados e garantia de não-contaminação do mapa de dispensação assistencial de leitos. | Farmácia Central / RT |
