@@ -256,6 +256,10 @@ ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativo';
 ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "observacoes" TEXT;
 ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "dataAlta" TEXT;
 ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "foto" TEXT;
+ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ciclo_coberto_ate" TEXT;
+ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ultimo_ciclo_dias" INTEGER;
+ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "data_ultimo_ciclo" TEXT;
+ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "data_ultimo_ajuste_ciclo" TEXT;
 ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
 ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
 

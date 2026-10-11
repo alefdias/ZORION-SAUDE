@@ -394,17 +394,36 @@ export function AjusteDiasEntregaModal({
       } catch (e) {}
 
       // Executar as saídas e atualizações EXCLUSIVAMENTE na Farmácia Satélite
+      const pacNome = patient?.nome || "Paciente";
+      const pacLeito = patient?.leito || "S/L";
+      const pacAlaId = patient?.alaId || patient?.ala_id || null;
+      const pacAlaNome = patient?.alaNome || patient?.ala_nome || "Geral";
+
       for (const { item, qtd, diasEfetivos, dataFimCoberturaMed, loteObj } of itensParaBaixar) {
         const { pr, med, doseAtual } = item;
         const medId = med?.id || pr.medicamentoId;
         const loteId = loteObj?.id || null;
         const numeroLote = loteObj?.numero_lote || "S/ Lote";
+        const doseAtualNum = Number.isFinite(doseAtual) ? doseAtual : 0;
+        const doseDiariaNum =
+          Number.isFinite(item.diferencaDose) && item.diferencaDose > 0
+            ? item.diferencaDose
+            : doseAtualNum;
+
+        let dataFimFmt = dataFimCoberturaMed;
+        try {
+          dataFimFmt = format(parseISO(dataFimCoberturaMed), "dd/MM/yyyy");
+        } catch (e) {}
 
         // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
-        if (med) {
-          await db.entities.Medicamento.update(medId, {
-            estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd),
-          });
+        if (med && medId) {
+          try {
+            await db.entities.Medicamento.update(medId, {
+              estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd),
+            });
+          } catch (medErr) {
+            console.warn("Aviso ao atualizar estoque satélite do medicamento:", medErr);
+          }
         }
 
         // 2. Gravar registro em Saida com cobertura e lote rastreável
@@ -414,14 +433,14 @@ export function AjusteDiasEntregaModal({
           lote_id: loteId,
           numero_lote: numeroLote,
           quantidade: qtd,
-          destino: `Paciente ${patient.nome} (Leito: ${patient.leito || "S/L"})`,
-          paciente_nome: patient.nome,
-          paciente_id: patient.id,
+          destino: `Paciente ${pacNome} (Leito: ${pacLeito})`,
+          paciente_nome: pacNome,
+          paciente_id: patient?.id || null,
           prescricao_id: pr.id,
-          ala_id: patient.alaId || patient.ala_id || null,
-          ala_nome: patient.alaNome || patient.ala_nome || "Geral",
+          ala_id: pacAlaId,
+          ala_nome: pacAlaNome,
           motivo: "Ajuste de Dias de Entrega (Complemento de Ciclo)",
-          observacao: `Ajuste de ${qtd} un para cobertura de ${diasEfetivos} dias (até ${format(parseISO(dataFimCoberturaMed), "dd/MM/yyyy")}) | Dose: ${doseAtual} un/dia | Lote: ${numeroLote}`,
+          observacao: `Ajuste de ${qtd} un para cobertura de ${diasEfetivos} dias (até ${dataFimFmt}) | Dose: ${doseAtualNum} un/dia | Lote: ${numeroLote}`,
           data_saida: hojeStr,
           created_at: nowStr,
           responsavel: responsavel,
@@ -430,25 +449,35 @@ export function AjusteDiasEntregaModal({
           dias_cobertura: diasEfetivos,
           data_inicio_cobertura: hojeStr,
           data_fim_cobertura: dataFimCoberturaMed,
-          dose_diaria: item.diferencaDose > 0 ? item.diferencaDose : doseAtual,
+          dose_diaria: doseDiariaNum,
           is_baixa_lote_paciente: true,
         });
 
         // 3. Atualizar a prescrição com a nova cobertura calculada
-        await db.entities.PrescricaoPaciente.update(pr.id, {
-          coberto_ate: dataFimCoberturaMed,
-          dose_diaria_dispensada: doseAtual,
-          data_ultima_dispensacao: hojeStr,
-          quantidade_ultimo_lote: qtd,
-          ultimo_lote_dias: diasEfetivos,
-        });
+        if (pr?.id) {
+          await db.entities.PrescricaoPaciente.update(pr.id, {
+            coberto_ate: dataFimCoberturaMed,
+            dose_diaria_dispensada: doseAtualNum,
+            data_ultima_dispensacao: hojeStr,
+            quantidade_ultimo_lote: qtd,
+            ultimo_lote_dias: diasEfetivos,
+          });
+        }
       }
 
-      // 4. Atualizar o ciclo geral no paciente se todas as medicações fecharam
-      await db.entities.Paciente.update(patient.id, {
-        ciclo_coberto_ate: dataFimCiclo,
-        data_ultimo_ajuste_ciclo: hojeStr,
-      });
+      // 4. Atualizar o ciclo geral no paciente de forma segura
+      if (patient?.id) {
+        try {
+          await db.entities.Paciente.update(patient.id, {
+            ciclo_coberto_ate: dataFimCiclo || hojeStr,
+            data_ultimo_ciclo: hojeStr,
+            ultimo_ciclo_dias: diasRestantesCiclo || 1,
+            data_ultimo_ajuste_ciclo: hojeStr,
+          });
+        } catch (pacErr) {
+          console.warn("Aviso ao atualizar ciclo do paciente:", pacErr);
+        }
+      }
 
       toast.success(
         `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`
