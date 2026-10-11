@@ -73,17 +73,27 @@ export function AjusteDiasEntregaModal({
   const [internalLotes, setInternalLotes] = useState([]);
   const [internalMedicamentos, setInternalMedicamentos] = useState([]);
 
-  // Busca lotes e medicamentos frescos diretamente do banco ao abrir o modal
+  const [internalTransferencias, setInternalTransferencias] = useState([]);
+  const [internalPedidosSatelite, setInternalPedidosSatelite] = useState([]);
+  const [internalSaidas, setInternalSaidas] = useState([]);
+
+  // Busca lotes, medicamentos e movimentações da satélite frescos diretamente do banco ao abrir o modal
   useEffect(() => {
     if (!open) return;
     let isMounted = true;
     Promise.all([
       db.entities.Lote.list().catch(() => []),
       db.entities.Medicamento.list().catch(() => []),
-    ]).then(([lotesData, medsData]) => {
+      db.entities.TransferenciaPendente ? db.entities.TransferenciaPendente.list().catch(() => []) : Promise.resolve([]),
+      db.entities.PedidoSatelite ? db.entities.PedidoSatelite.list().catch(() => []) : Promise.resolve([]),
+      db.entities.Saida ? db.entities.Saida.list().catch(() => []) : Promise.resolve([]),
+    ]).then(([lotesData, medsData, transfData, pedidosData, saidasData]) => {
       if (isMounted) {
         if (Array.isArray(lotesData)) setInternalLotes(lotesData);
         if (Array.isArray(medsData)) setInternalMedicamentos(medsData);
+        if (Array.isArray(transfData)) setInternalTransferencias(transfData);
+        if (Array.isArray(pedidosData)) setInternalPedidosSatelite(pedidosData);
+        if (Array.isArray(saidasData)) setInternalSaidas(saidasData);
       }
     });
     return () => {
@@ -158,6 +168,137 @@ export function AjusteDiasEntregaModal({
       return true;
     }
     return false;
+  };
+
+  // Função para calcular estritamente os lotes existentes na Farmácia Satélite
+  const calcularLotesSatelite = (medId, medNome, saldoTotalSat, lotesCandidatos) => {
+    if (saldoTotalSat <= 0 || !lotesCandidatos || lotesCandidatos.length === 0) {
+      return [];
+    }
+
+    const mapaSaldoLote = {};
+    lotesCandidatos.forEach((l) => {
+      mapaSaldoLote[l.id] = 0;
+    });
+
+    // 1. Entradas por transferências aceitas para a satélite
+    internalTransferencias.forEach((t) => {
+      if (t.direcao === "para_satelite" && (t.status === "Aceito" || t.status === "aceito")) {
+        const mId = String(t.medicamento_id || t.medicamentoId || "");
+        if (mId === String(medId) || (medNome && t.medicamento_nome && namesMatch(t.medicamento_nome, medNome))) {
+          const lId = String(t.lote_id || t.loteId || "");
+          const matchLote = lotesCandidatos.find(
+            (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === t.numero_lote)
+          );
+          if (matchLote) {
+            mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(t.quantidade) || 0);
+          }
+        }
+      }
+    });
+
+    // 2. Entradas por pedidos da satélite concluídos
+    internalPedidosSatelite.forEach((p) => {
+      if (p.status === "Concluido" || p.status === "Entregue") {
+        try {
+          const itens = Array.isArray(p.itens_json) ? p.itens_json : JSON.parse(p.itens_json || "[]");
+          itens.forEach((it) => {
+            const mId = String(it.medicamento_id || it.medicamentoId || "");
+            if (mId === String(medId) || (medNome && it.medicamento_nome && namesMatch(it.medicamento_nome, medNome))) {
+              const lId = String(it.lote_id || it.loteId || "");
+              const matchLote = lotesCandidatos.find(
+                (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === it.numero_lote)
+              );
+              if (matchLote) {
+                mapaSaldoLote[matchLote.id] =
+                  (mapaSaldoLote[matchLote.id] || 0) + (Number(it.quantidade_atendida || it.quantidade) || 0);
+              }
+            }
+          });
+        } catch (e) {}
+      }
+    });
+
+    // 3. Entradas por transferências registradas diretamente em Saidas (destino Farmácia Satélite)
+    internalSaidas.forEach((s) => {
+      const isTransfParaSat =
+        (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
+      const mId = String(s.medicamento_id || s.medicamentoId || "");
+      if (isTransfParaSat && (mId === String(medId) || (medNome && s.medicamento_nome && namesMatch(s.medicamento_nome, medNome)))) {
+        const lId = String(s.lote_id || s.loteId || "");
+        const matchLote = lotesCandidatos.find(
+          (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
+        );
+        if (matchLote) {
+          mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(s.quantidade) || 0);
+        }
+      }
+    });
+
+    // 4. Subtrair saídas já realizadas pela Farmácia Satélite (dispensações a pacientes)
+    internalSaidas.forEach((s) => {
+      const isTransfParaSat =
+        (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
+      if (!isTransfParaSat) {
+        const mId = String(s.medicamento_id || s.medicamentoId || "");
+        if (mId === String(medId) || (medNome && s.medicamento_nome && namesMatch(s.medicamento_nome, medNome))) {
+          const lId = String(s.lote_id || s.loteId || "");
+          const matchLote = lotesCandidatos.find(
+            (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
+          );
+          if (matchLote) {
+            mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) - (Number(s.quantidade) || 0);
+          }
+        }
+      }
+    });
+
+    // Filtra estritamente lotes que possuem saldo na Farmácia Satélite
+    const lotesComCalculo = lotesCandidatos
+      .map((l) => ({
+        ...l,
+        saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
+      }))
+      .filter((l) => l.saldoSatelite > 0);
+
+    if (lotesComCalculo.length > 0) {
+      return lotesComCalculo.sort((a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31"));
+    }
+
+    // Se não houver histórico detalhado de transferências por lote, distribui o saldo da satélite por FEFO
+    // limitando estritamente ao total disponível na satélite (NUNCA exibindo lotes centrais a mais)
+    const lotesOrdenados = [...lotesCandidatos].sort(
+      (a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31")
+    );
+    let saldoRestanteSat = saldoTotalSat;
+    const lotesFallback = [];
+
+    for (const l of lotesOrdenados) {
+      if (saldoRestanteSat <= 0) break;
+      const saldoAtribuido = Math.min(saldoRestanteSat, Number(l.quantidade_atual) || saldoRestanteSat);
+      if (saldoAtribuido > 0) {
+        lotesFallback.push({
+          ...l,
+          saldoSatelite: saldoAtribuido,
+        });
+        saldoRestanteSat -= saldoAtribuido;
+      }
+    }
+
+    if (lotesFallback.length > 0) {
+      return lotesFallback;
+    }
+
+    if (lotesOrdenados.length > 0) {
+      return [
+        {
+          ...lotesOrdenados[0],
+          saldoSatelite: saldoTotalSat,
+        },
+      ];
+    }
+
+    return [];
   };
 
   // Filtra as prescrições ativas do paciente
@@ -322,30 +463,31 @@ export function AjusteDiasEntregaModal({
           qtdSugerida = Math.ceil(doseAtual * diasFinais);
         }
 
-        // Lotes disponíveis vinculados a este medicamento, ordenados por validade (FEFO)
-        const medLotes = lotesEnriquecidos
-          .filter((l) => {
-            const lMedId = String(l.medicamento_id || l.medicamentoId || "");
-            if (lMedId && (lMedId === String(medId) || lMedId === prMedId || (med?.id && lMedId === String(med.id)))) {
-              return true;
-            }
-            if (l.medicamento_nome && (namesMatch(l.medicamento_nome, medNome) || namesMatch(l.medicamento_nome, prMedNome))) {
-              return true;
-            }
-            if (med?.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo) {
-              return true;
-            }
-            if (pr.lote_id && String(l.id) === String(pr.lote_id)) {
-              return true;
-            }
-            if (pr.numero_lote && l.numero_lote && l.numero_lote.trim().toUpperCase() === pr.numero_lote.trim().toUpperCase()) {
-              return true;
-            }
-            return false;
-          })
-          .sort((a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31"));
+        const saldoTotalSat = Number(med?.estoque_satelite) || 0;
 
-        const outrosLotes = lotesEnriquecidos.filter((l) => !medLotes.some((ml) => ml.id === l.id));
+        // Candidatos de lotes para este medicamento
+        const lotesCandidatos = lotesEnriquecidos.filter((l) => {
+          const lMedId = String(l.medicamento_id || l.medicamentoId || "");
+          if (lMedId && (lMedId === String(medId) || lMedId === prMedId || (med?.id && lMedId === String(med.id)))) {
+            return true;
+          }
+          if (l.medicamento_nome && (namesMatch(l.medicamento_nome, medNome) || namesMatch(l.medicamento_nome, prMedNome))) {
+            return true;
+          }
+          if (med?.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo) {
+            return true;
+          }
+          if (pr.lote_id && String(l.id) === String(pr.lote_id)) {
+            return true;
+          }
+          if (pr.numero_lote && l.numero_lote && l.numero_lote.trim().toUpperCase() === pr.numero_lote.trim().toUpperCase()) {
+            return true;
+          }
+          return false;
+        });
+
+        // FILTRO ESTRITO DA SATÉLITE: Pega EXCLUSIVAMENTE lotes que existem na Farmácia Satélite
+        const medLotes = calcularLotesSatelite(medId, medNome, saldoTotalSat, lotesCandidatos);
 
         return {
           pr,
@@ -360,11 +502,22 @@ export function AjusteDiasEntregaModal({
           diasFinais,
           qtdSugerida,
           medLotes,
-          outrosLotes,
-          estoqueSatelite: Number(med?.estoque_satelite) || 0,
+          estoqueSatelite: saldoTotalSat,
         };
       });
-  }, [activePrescs, todosMedicamentos, lotesEnriquecidos, diasRestantesCiclo, dataFiltroReceita, apenasDataReferencia, customDias, hoje]);
+  }, [
+    activePrescs,
+    todosMedicamentos,
+    lotesEnriquecidos,
+    internalTransferencias,
+    internalPedidosSatelite,
+    internalSaidas,
+    diasRestantesCiclo,
+    dataFiltroReceita,
+    apenasDataReferencia,
+    customDias,
+    hoje,
+  ]);
 
   // Inicializa a seleção automaticamente apenas quando o modal for aberto ou quando a lista de itens mudar
   useEffect(() => {
@@ -800,7 +953,6 @@ export function AjusteDiasEntregaModal({
                         diasFinais,
                         qtdSugerida,
                         medLotes,
-                        outrosLotes,
                         estoqueSatelite,
                       } = item;
 
@@ -811,7 +963,7 @@ export function AjusteDiasEntregaModal({
                       const temEstoque = estoqueSatelite >= valorFinal;
                       const selectedLoteId =
                         selectedLotes[pr.id] || medLotes[0]?.id || (medLotes.length === 0 ? "SEM_LOTE" : "");
-                      const selectedLoteObj = lotesEnriquecidos.find((l) => l.id === selectedLoteId);
+                      const selectedLoteObj = medLotes.find((l) => l.id === selectedLoteId);
 
                       return (
                         <TableRow
@@ -900,7 +1052,7 @@ export function AjusteDiasEntregaModal({
                             </div>
                           </TableCell>
 
-                          {/* Seletor de Lote com Escolha Manual e FEFO */}
+                          {/* Seletor de Lote com Escolha Manual e FEFO (Estritamente Farmácia Satélite) */}
                           <TableCell className="min-w-[210px]" onClick={(e) => e.stopPropagation()}>
                             <Select
                               value={selectedLoteId}
@@ -922,6 +1074,9 @@ export function AjusteDiasEntregaModal({
                                       <span className="text-[10px] text-slate-500">
                                         (Val: {selectedLoteObj.data_validade || "N/I"})
                                       </span>
+                                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1 rounded shrink-0">
+                                        Sat: {selectedLoteObj.saldoSatelite} un
+                                      </span>
                                       {medLotes[0]?.id === selectedLoteObj.id && (
                                         <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1 rounded shrink-0">
                                           🌟 FEFO
@@ -929,17 +1084,17 @@ export function AjusteDiasEntregaModal({
                                       )}
                                     </span>
                                   ) : selectedLoteId === "SEM_LOTE" ? (
-                                    <span className="text-slate-400 italic text-[11px]">⚪ S/ Lote Específico</span>
+                                    <span className="text-slate-400 italic text-[11px]">⚪ S/ Lote Físico</span>
                                   ) : (
                                     <span className="text-slate-400 text-[11px]">Selecione o Lote...</span>
                                   )}
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent className="max-h-72">
-                                {medLotes.length > 0 && (
+                                {medLotes.length > 0 ? (
                                   <SelectGroup>
-                                    <SelectLabel className="text-[10px] text-indigo-700 dark:text-indigo-300 font-bold uppercase tracking-wider">
-                                      Lotes deste Medicamento (FEFO):
+                                    <SelectLabel className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold uppercase tracking-wider">
+                                      Lotes na Farmácia Satélite (FEFO):
                                     </SelectLabel>
                                     {medLotes.map((l, idx) => (
                                       <SelectItem
@@ -949,7 +1104,7 @@ export function AjusteDiasEntregaModal({
                                       >
                                         <div className="flex items-center justify-between gap-2 w-full">
                                           <span>
-                                            <strong>{l.numero_lote}</strong> (Val: {l.data_validade || "N/I"}) [Saldo: {l.quantidade_atual ?? l.quantidade ?? 0}]
+                                            <strong>{l.numero_lote}</strong> (Val: {l.data_validade || "N/I"}) [Saldo Satélite: <strong>{l.saldoSatelite} un</strong>]
                                           </span>
                                           {idx === 0 && (
                                             <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded ml-1 shrink-0">
@@ -960,36 +1115,17 @@ export function AjusteDiasEntregaModal({
                                       </SelectItem>
                                     ))}
                                   </SelectGroup>
+                                ) : (
+                                  <div className="p-2 text-xs text-slate-500 italic text-center">
+                                    {estoqueSatelite <= 0
+                                      ? "⚠️ Sem estoque na Farmácia Satélite"
+                                      : "Nenhum lote físico individual na Satélite"}
+                                  </div>
                                 )}
 
                                 <SelectItem value="SEM_LOTE" className="text-xs font-mono text-slate-500 py-1.5">
-                                  ⚪ Dispensar Sem Lote Específico
+                                  ⚪ Dispensar Sem Lote Físico (Saldo Satélite: {estoqueSatelite} un)
                                 </SelectItem>
-
-                                {outrosLotes && outrosLotes.length > 0 && (
-                                  <>
-                                    <SelectSeparator />
-                                    <SelectGroup>
-                                      <SelectLabel className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                                        Outros Lotes do Sistema:
-                                      </SelectLabel>
-                                      {outrosLotes.slice(0, 30).map((ol) => (
-                                        <SelectItem
-                                          key={ol.id}
-                                          value={ol.id}
-                                          className="text-xs font-mono py-1.5 cursor-pointer"
-                                        >
-                                          <div className="flex items-center justify-between gap-2 w-full truncate">
-                                            <span className="truncate">
-                                              {ol.medicamento_nome ? `${ol.medicamento_nome} - ` : ""}
-                                              <strong>{ol.numero_lote}</strong> (Val: {ol.data_validade || "N/I"}) [Saldo: {ol.quantidade_atual ?? ol.quantidade ?? 0}]
-                                            </span>
-                                          </div>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </>
-                                )}
                               </SelectContent>
                             </Select>
                           </TableCell>
