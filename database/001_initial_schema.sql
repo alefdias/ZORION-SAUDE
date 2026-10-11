@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS "Saida" (
     "created_at" TEXT,
     "deleted_at" TEXT
 );
+ALTER TABLE "Saida" ALTER COLUMN "lote_id" DROP NOT NULL;
 
 -- 5. FORNECEDOR
 CREATE TABLE IF NOT EXISTS "Fornecedor" (

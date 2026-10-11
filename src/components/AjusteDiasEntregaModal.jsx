@@ -402,8 +402,8 @@ export function AjusteDiasEntregaModal({
       for (const { item, qtd, diasEfetivos, dataFimCoberturaMed, loteObj } of itensParaBaixar) {
         const { pr, med, doseAtual } = item;
         const medId = med?.id || pr.medicamentoId;
-        const loteId = loteObj?.id || null;
-        const numeroLote = loteObj?.numero_lote || "S/ Lote";
+        const loteId = loteObj?.id || selectedLotes[pr.id] || pr.lote_id || "SEM_LOTE";
+        const numeroLote = loteObj?.numero_lote || pr.numero_lote || "S/ Lote";
         const doseAtualNum = Number.isFinite(doseAtual) ? doseAtual : 0;
         const doseDiariaNum =
           Number.isFinite(item.diferencaDose) && item.diferencaDose > 0

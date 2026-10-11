@@ -134,6 +134,7 @@ const ensureTableQuery = {
         "created_at" TEXT,
         "deleted_at" TEXT
     );
+    ALTER TABLE "Saida" ALTER COLUMN "lote_id" DROP NOT NULL;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "tipo" TEXT;
