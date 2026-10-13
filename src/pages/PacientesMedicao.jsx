@@ -444,7 +444,8 @@ export default function PacientesMedicao() {
           
           await db.entities.PrescricaoPaciente.update(pr.id, {
             status: "Suspensa",
-            observacoes: novaObs
+            observacoes: novaObs,
+            data_suspensao: new Date().toISOString()
           });
           
           await db.logAction(
@@ -667,6 +668,7 @@ export default function PacientesMedicao() {
         await db.entities.PrescricaoPaciente.update(editingPresc.id, {
           status: "Suspensa",
           dataFim: today,
+          data_suspensao: new Date().toISOString(),
           observacoes: editingPresc.observacoes
             ? `${editingPresc.observacoes} | ${motivo}`
             : motivo
@@ -719,7 +721,15 @@ export default function PacientesMedicao() {
   const togglePrescStatusMutation = useMutation({
     mutationFn: async ({ id, status }) => {
       const newStatus = status === "Ativa" ? "Suspensa" : "Ativa";
-      const res = await db.entities.PrescricaoPaciente.update(id, { status: newStatus });
+      const todayStr = getLocalDateString();
+      const updateData = { status: newStatus };
+      if (newStatus === "Suspensa") {
+        updateData.data_suspensao = new Date().toISOString();
+        updateData.dataFim = todayStr;
+      } else {
+        updateData.data_suspensao = null;
+      }
+      const res = await db.entities.PrescricaoPaciente.update(id, updateData);
       await db.logAction(
         newStatus === "Suspensa" ? "SUSPENSAO_PRESCRICAO" : "REATIVACAO_PRESCRICAO",
         "PrescricaoPaciente",
@@ -861,9 +871,12 @@ export default function PacientesMedicao() {
         const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
 
         const qtdSugerida = calculatePrescQtdParaDias(pr, dias);
+        const cobAte = pr.coberto_ate ? pr.coberto_ate.split("T")[0] : null;
+        const jaCoberto = Boolean(cobAte && cobAte >= dataFimStr);
+
         const qtdSaida = (customQtds && customQtds[pr.id] !== undefined && customQtds[pr.id] !== "")
           ? Math.max(0, parseInt(customQtds[pr.id]) || 0)
-          : qtdSugerida;
+          : (jaCoberto ? 0 : qtdSugerida);
 
         if (qtdSaida <= 0) continue;
 
@@ -1165,6 +1178,8 @@ export default function PacientesMedicao() {
 
         await db.entities.PrescricaoPaciente.update(pr.id, {
           status: devInfo && parseInt(devInfo.qtd, 10) > 0 ? "Devolvida" : "Suspensa",
+          data_suspensao: nowStr,
+          dataFim: todayDateStr,
           observacoes: (pr.observacoes || "") + ` [Suspensa por ${tipo.toUpperCase()}]${extraObs}`
         });
       }
@@ -2961,7 +2976,11 @@ export default function PacientesMedicao() {
                         {activePrescs.map((pr) => {
                           const pac = selectedPacs.find(p => p.id === pr.pacienteId);
                           const med = medicamentos.find(m => m.id === pr.medicamentoId);
-                          const qtdSaida = calculatePrescQtdParaDias(pr, batchBaixaDias);
+                          const targetEndStr = format(addDays(new Date(), batchBaixaDias - 1), "yyyy-MM-dd");
+                          const cobAte = pr.coberto_ate ? pr.coberto_ate.split("T")[0] : null;
+                          const jaCoberto = Boolean(cobAte && cobAte >= targetEndStr);
+                          const qtdCalculada = calculatePrescQtdParaDias(pr, batchBaixaDias);
+                          const qtdSaida = jaCoberto ? 0 : qtdCalculada;
                           const estoqueDisponivel = med?.estoque_satelite || 0;
                           const temEstoqueSuficiente = estoqueDisponivel >= qtdSaida;
 
@@ -2974,20 +2993,27 @@ export default function PacientesMedicao() {
                           const selectedLoteId = selectedLotesBaixa[pr.id] || fefoLote?.id || "";
 
                           return (
-                            <TableRow key={pr.id} className="hover:bg-slate-50/50">
+                            <TableRow key={pr.id} className={cn("hover:bg-slate-50/50", jaCoberto && "opacity-65 bg-slate-50/60")}>
                               <TableCell className="max-w-[180px] min-w-[120px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
                                 <p className="font-bold text-xs text-slate-900 dark:text-slate-100 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">{pac?.nome || "Paciente"}</p>
                                 <p className="text-[10px] text-slate-500 font-mono break-words">Pront: {pac?.prontuario || "N/A"} • {pac?.leito || "S/L"}</p>
                               </TableCell>
                               <TableCell className="max-w-[240px] min-w-[140px] break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word]">
-                                <p className="font-bold text-xs text-blue-900 dark:text-blue-200 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
-                                  {pr.medicamentoNome}
-                                  {(() => {
-                                    const rawC = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
-                                    const hasC = rawC && pr.medicamentoNome?.toLowerCase().includes(rawC.toLowerCase());
-                                    return rawC && !hasC ? ` (${rawC})` : "";
-                                  })()}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <p className="font-bold text-xs text-blue-900 dark:text-blue-200 break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] leading-snug">
+                                    {pr.medicamentoNome}
+                                    {(() => {
+                                      const rawC = (pr.concentracao || med?.concentracao || (med?.unidade_medida && !["un", "unidade", "unid", "-", ""].includes(med?.unidade_medida?.toLowerCase()) ? med?.unidade_medida : "") || "").trim();
+                                      const hasC = rawC && pr.medicamentoNome?.toLowerCase().includes(rawC.toLowerCase());
+                                      return rawC && !hasC ? ` (${rawC})` : "";
+                                    })()}
+                                  </p>
+                                  {jaCoberto && (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[9px] font-bold py-0 px-1">
+                                      ✅ Já coberto (até {cobAte})
+                                    </Badge>
+                                  )}
+                                </div>
                                 <p className="text-[10px] text-slate-500">Cód: {pr.medicamentoCodigo || "N/A"}</p>
                               </TableCell>
 

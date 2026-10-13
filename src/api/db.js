@@ -373,6 +373,8 @@ const ensureTableQuery = {
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose_diaria_dispensada" NUMERIC;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "lote_id" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_suspensao" TEXT;
+    ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "quantidade_ultimo_lote" NUMERIC;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
   `,
@@ -481,16 +483,22 @@ async function autoEnsureTable(entityName) {
   const { ip, dbName, password } = getPgConfig();
   if (ip && dbName) {
     try {
-      const statements = query.split(';').map(s => s.trim()).filter(s => s.length > 0);
-      for (const stmt of statements) {
-        try {
-          await invoke("execute_postgres", { ip, dbName, password, query: stmt });
-        } catch (e) {
-          console.warn(`[db.js] stmt falhou para ${entityName}: ${stmt}`, e);
+      // 1. Tenta executar o lote inteiro de uma única vez (rápido e sem abrir dezenas de conexões TCP)
+      await invoke("execute_postgres", { ip, dbName, password, query });
+    } catch(batchErr) {
+      // 2. Se falhar em lote, executa individualmente com proteção
+      try {
+        const statements = query.split(';').map(s => s.trim()).filter(s => s.length > 0);
+        for (const stmt of statements) {
+          try {
+            await invoke("execute_postgres", { ip, dbName, password, query: stmt });
+          } catch (e) {
+            // Ignora silenciosamente se a coluna/tabela já existir
+          }
         }
+      } catch(e) {
+        console.warn(`[db.js] autoEnsureTable falhou para ${entityName}:`, e);
       }
-    } catch(e) {
-      console.warn(`[db.js] autoEnsureTable falhou para ${entityName}:`, e);
     }
   }
 }
@@ -872,7 +880,16 @@ export const AlaService = {
 };
 
 export const PrescricaoService = {
-  suspend: (id, motivo) => db.entities.PrescricaoPaciente.update(id, { status: "Suspensa", observacoes: motivo }),
+  suspend: (id, motivo) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const nowIso = new Date().toISOString();
+    return db.entities.PrescricaoPaciente.update(id, {
+      status: "Suspensa",
+      observacoes: motivo,
+      data_suspensao: nowIso,
+      dataFim: todayStr,
+    });
+  },
   update: (id, data) => db.entities.PrescricaoPaciente.update(id, data),
   list: (opts) => db.entities.PrescricaoPaciente.list(opts)
 };

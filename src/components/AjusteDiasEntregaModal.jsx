@@ -402,9 +402,11 @@ export function AjusteDiasEntregaModal({
     const dIni = (pr.dataInicio || pr.data_inicio)?.split("T")[0];
     const dCrea = pr.created_at?.split("T")[0];
     const dUpd = pr.updated_at?.split("T")[0];
-    const dDisp = pr.data_ultima_dispensacao?.split("T")[0];
 
-    if (dAlt === alvoISO || dIni === alvoISO || dCrea === alvoISO || dUpd === alvoISO || dDisp === alvoISO) {
+    // ATENÇÃO: data_ultima_dispensacao indica quando a farmácia realizou a ENTREGA física,
+    // NÃO representa uma nova alteração de receita médica pelo doutor.
+    // Portanto, NÃO incluir dDisp === alvoISO para não fazer itens já entregues continuarem aparecendo como novas alterações.
+    if (dAlt === alvoISO || dIni === alvoISO || dCrea === alvoISO || dUpd === alvoISO) {
       return true;
     }
 
@@ -495,19 +497,71 @@ export function AjusteDiasEntregaModal({
           }
         }
 
+        // Data limite alvo desta medicação (menor entre fim do tratamento e o ciclo do paciente)
+        const dataAlvoFimStr = (dataFimTratamentoStr && dataFimCiclo)
+          ? (dataFimTratamentoStr < dataFimCiclo ? dataFimTratamentoStr : dataFimCiclo)
+          : (dataFimTratamentoStr || dataFimCiclo || format(addDays(hoje, 6), "yyyy-MM-dd"));
+
         // O teto de dias para este medicamento é o menor entre o fim do tratamento e o ciclo do paciente
         const diasSugeridos = diasTratamento
           ? Math.min(diasRestantesCiclo, diasTratamento)
           : diasRestantesCiclo;
 
-        const diasFinais =
-          customDias[pr.id] !== undefined
-            ? Math.max(1, parseInt(customDias[pr.id]) || 1)
-            : diasSugeridos;
+        // ── REGRA DE COBERTURA / JÁ DISPENSADO ──────────────────────────────────
+        let cobertoAteStr = null;
+        if (pr.coberto_ate) {
+          try {
+            const cobP = parseISO(pr.coberto_ate.split("T")[0]);
+            if (isValid(cobP)) {
+              cobertoAteStr = format(cobP, "yyyy-MM-dd");
+            }
+          } catch (e) {}
+        }
 
-        // Quantidade sugerida calculada pelos dias efetivos (soma exata da dose diária pelos dias a dispensar)
-        const doseEfetiva = doseAtual > 0 ? doseAtual : (diferencaDose > 0 ? diferencaDose : 1);
-        const qtdSugerida = Math.max(1, Math.ceil(doseEfetiva * diasFinais));
+        const dataUltimaDispStr = pr.data_ultima_dispensacao
+          ? pr.data_ultima_dispensacao.split("T")[0]
+          : null;
+        const dispensadoHoje = dataUltimaDispStr === hojeStr;
+
+        // Já está 100% coberto se coberto_ate cobre até ou além da data alvo
+        const estaTotalmenteCoberto = Boolean(cobertoAteStr && cobertoAteStr >= dataAlvoFimStr);
+
+        // Se foi dispensado hoje e já cobre a partir de hoje (sem aumento de dose)
+        const dispensadoHojeValido = Boolean(
+          dispensadoHoje &&
+          cobertoAteStr &&
+          cobertoAteStr >= hojeStr &&
+          (!diferencaDose || diferencaDose <= 0)
+        );
+
+        let jaDispensado = estaTotalmenteCoberto || dispensadoHojeValido;
+
+        // Dias restantes reais
+        let diasRestantes = diasSugeridos;
+        if (jaDispensado) {
+          diasRestantes = 0;
+        } else if (cobertoAteStr && cobertoAteStr >= hojeStr) {
+          const diffRestante = differenceInCalendarDays(parseISO(dataAlvoFimStr), parseISO(cobertoAteStr));
+          diasRestantes = Math.max(0, diffRestante);
+          if (diasRestantes === 0) {
+            jaDispensado = true;
+          }
+        }
+
+        const diasFinais = jaDispensado
+          ? 0
+          : (customDias[pr.id] !== undefined
+              ? Math.max(1, parseInt(customDias[pr.id]) || 1)
+              : Math.max(1, diasRestantes));
+
+        // Dose efetiva a dispensar (diferença se aumento, ou dose cheia se nova medicação)
+        const doseEfetiva = jaDispensado
+          ? 0
+          : (diferencaDose > 0 && doseAnterior !== null
+              ? diferencaDose
+              : (doseAtual > 0 ? doseAtual : 1));
+
+        const qtdSugerida = jaDispensado ? 0 : Math.max(1, Math.ceil(doseEfetiva * diasFinais));
 
         const saldoTotalSat = Number(med?.estoque_satelite) || 0;
 
@@ -544,7 +598,12 @@ export function AjusteDiasEntregaModal({
           diferencaDose,
           diasTratamento,
           dataFimTratamentoStr,
+          dataAlvoFimStr,
+          cobertoAteStr,
+          dispensadoHoje,
+          jaDispensado,
           diasSugeridos,
+          diasRestantes,
           diasFinais,
           qtdSugerida,
           medLotes,
@@ -563,6 +622,7 @@ export function AjusteDiasEntregaModal({
     apenasDataReferencia,
     customDias,
     hoje,
+    hojeStr,
   ]);
 
   // Inicializa a seleção automaticamente apenas quando o modal for aberto ou quando a lista de itens mudar
@@ -573,8 +633,8 @@ export function AjusteDiasEntregaModal({
     const initialDias = {};
 
     prescAnalise.forEach((item) => {
-      // Auto-seleciona se tiver dose maior que 0
-      if (item.qtdSugerida > 0) {
+      // Auto-seleciona APENAS se NÃO estiver já dispensado e tiver quantidade maior que 0
+      if (!item.jaDispensado && item.qtdSugerida > 0) {
         initialSelected.add(item.pr.id);
         initialQtds[item.pr.id] = item.qtdSugerida;
         initialDias[item.pr.id] = item.diasFinais;
@@ -589,6 +649,10 @@ export function AjusteDiasEntregaModal({
 
   // Toggle de seleção individual por medicamento
   const toggleSelect = (prId, item) => {
+    if (item.jaDispensado) {
+      toast.info(`"${item.pr.medicamentoNome}" já foi dispensado e está coberto até ${item.cobertoAteStr ? format(parseISO(item.cobertoAteStr), "dd/MM/yyyy") : "o final do ciclo"}. Não pode ser dispensado novamente.`);
+      return;
+    }
     setSelectedPrescIds((prev) => {
       const next = new Set(prev);
       if (next.has(prId)) {
@@ -614,14 +678,19 @@ export function AjusteDiasEntregaModal({
 
   // Selecionar ou desmarcar todos os itens visíveis
   const toggleSelectAll = () => {
-    if (selectedPrescIds.size === prescAnalise.length && prescAnalise.length > 0) {
+    const dispensaveis = prescAnalise.filter((p) => !p.jaDispensado && p.qtdSugerida > 0);
+    const dispensaveisIds = new Set(dispensaveis.map((p) => p.pr.id));
+
+    const todosDispensaveisEstaoSelecionados =
+      dispensaveis.length > 0 && dispensaveis.every((p) => selectedPrescIds.has(p.pr.id));
+
+    if (todosDispensaveisEstaoSelecionados) {
       setSelectedPrescIds(new Set());
     } else {
-      const allIds = new Set(prescAnalise.map((p) => p.pr.id));
-      setSelectedPrescIds(allIds);
+      setSelectedPrescIds(dispensaveisIds);
       const newQtds = { ...customQtds };
       const newDias = { ...customDias };
-      prescAnalise.forEach((item) => {
+      dispensaveis.forEach((item) => {
         if (newQtds[item.pr.id] === undefined) {
           newQtds[item.pr.id] = item.qtdSugerida || 1;
         }
@@ -636,6 +705,7 @@ export function AjusteDiasEntregaModal({
 
   // Alterar dias de uma prescrição específica
   const handleDiasChange = (prId, diasVal, item) => {
+    if (item.jaDispensado) return;
     const d = Math.max(1, parseInt(diasVal) || 1);
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
     // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
@@ -659,6 +729,12 @@ export function AjusteDiasEntregaModal({
       for (const prescId of selectedPrescIds) {
         const item = prescAnalise.find((x) => x.pr.id === prescId);
         if (!item) continue;
+
+        if (item.jaDispensado) {
+          throw new Error(
+            `"${item.pr.medicamentoNome}" já foi dispensado anteriormente e sua cobertura está ativa até ${item.cobertoAteStr ? format(parseISO(item.cobertoAteStr), "dd/MM/yyyy") : "o final do ciclo"}. Não é permitido dispensar novamente.`
+          );
+        }
 
         const qtd =
           customQtds[prescId] !== undefined
@@ -742,6 +818,7 @@ export function AjusteDiasEntregaModal({
         } catch (e) {}
 
         // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
+        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
         if (med && medId) {
           try {
             await db.entities.Medicamento.update(medId, {
@@ -753,12 +830,19 @@ export function AjusteDiasEntregaModal({
         }
 
         // 2. Gravar registro em Saida com cobertura e lote rastreável
+        const loteIdVal = (loteObj?.id && loteObj.id !== "SEM_LOTE")
+          ? loteObj.id
+          : (selectedLotes[pr.id] && selectedLotes[pr.id] !== "SEM_LOTE"
+            ? selectedLotes[pr.id]
+            : (pr.lote_id && pr.lote_id !== "SEM_LOTE" ? pr.lote_id : null));
+
         await db.entities.Saida.create({
           medicamento_id: medId,
           medicamento_nome: pr.medicamentoNome || (med ? med.nome : "Medicamento"),
-          lote_id: loteId,
+          lote_id: loteIdVal,
           numero_lote: numeroLote,
           quantidade: qtd,
+          tipo: "Dispensação Paciente",
           destino: `Paciente ${pacNome} (Leito: ${pacLeito})`,
           paciente_nome: pacNome,
           paciente_id: patient?.id || null,
@@ -781,13 +865,17 @@ export function AjusteDiasEntregaModal({
 
         // 3. Atualizar a prescrição com a nova cobertura calculada
         if (pr?.id) {
-          await db.entities.PrescricaoPaciente.update(pr.id, {
-            coberto_ate: dataFimCoberturaMed,
-            dose_diaria_dispensada: doseAtualNum,
-            data_ultima_dispensacao: hojeStr,
-            quantidade_ultimo_lote: qtd,
-            ultimo_lote_dias: diasEfetivos,
-          });
+          try {
+            await db.entities.PrescricaoPaciente.update(pr.id, {
+              coberto_ate: dataFimCoberturaMed,
+              dose_diaria_dispensada: doseAtualNum,
+              data_ultima_dispensacao: hojeStr,
+              quantidade_ultimo_lote: qtd,
+              ultimo_lote_dias: diasEfetivos,
+            });
+          } catch (prErr) {
+            console.warn("Aviso ao atualizar cobertura da prescrição:", prErr);
+          }
         }
       }
 
@@ -809,7 +897,13 @@ export function AjusteDiasEntregaModal({
         `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`
       );
 
-      if (onSuccess) onSuccess();
+      if (onSuccess) {
+        try {
+          onSuccess();
+        } catch (succErr) {
+          console.warn("Aviso no onSuccess:", succErr);
+        }
+      }
       onOpenChange(false);
     } catch (err) {
       console.error(err);
@@ -985,7 +1079,14 @@ export function AjusteDiasEntregaModal({
                       <TableHead className="text-center font-bold text-xs text-slate-700">Status / Motivo</TableHead>
                       <TableHead className="text-center font-bold text-xs text-slate-700 w-28">Dias a Entregar</TableHead>
                       <TableHead className="text-center font-bold text-xs text-slate-700">Lote</TableHead>
-                      <TableHead className="text-center font-bold text-xs text-slate-700 w-28">Quantidade</TableHead>
+                      <TableHead className="text-center font-bold text-xs text-slate-700 w-28">
+                        <span className="flex items-center justify-center gap-1">
+                          Quantidade
+                          <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1 py-0.2 rounded border border-indigo-200">
+                            Auto 🔒
+                          </span>
+                        </span>
+                      </TableHead>
                       <TableHead className="text-right font-bold text-xs text-slate-700">Saldo Satélite</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1018,12 +1119,14 @@ export function AjusteDiasEntregaModal({
                       return (
                         <TableRow
                           key={pr.id}
-                          onClick={() => toggleSelect(pr.id, item)}
+                          onClick={() => !item.jaDispensado && toggleSelect(pr.id, item)}
                           className={cn(
-                            "cursor-pointer transition-colors select-none",
-                            isSelected
-                              ? "bg-indigo-50/70 dark:bg-indigo-950/40 font-medium"
-                              : "hover:bg-slate-50/60"
+                            "transition-colors select-none",
+                            item.jaDispensado
+                              ? "opacity-60 bg-slate-50/70 dark:bg-slate-900/40 cursor-not-allowed"
+                              : isSelected
+                              ? "cursor-pointer bg-indigo-50/70 dark:bg-indigo-950/40 font-medium"
+                              : "cursor-pointer hover:bg-slate-50/60"
                           )}
                         >
                           {/* Checkbox de Seleção */}
@@ -1031,8 +1134,13 @@ export function AjusteDiasEntregaModal({
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              disabled={item.jaDispensado}
                               onChange={() => toggleSelect(pr.id, item)}
-                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                              className={cn(
+                                "w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300",
+                                item.jaDispensado ? "cursor-not-allowed opacity-40" : "cursor-pointer"
+                              )}
+                              title={item.jaDispensado ? "Medicamento já entregue e coberto" : "Selecionar para entrega"}
                             />
                           </TableCell>
 
@@ -1053,7 +1161,11 @@ export function AjusteDiasEntregaModal({
 
                           {/* Status / Motivo do Ajuste */}
                           <TableCell className="text-center">
-                            {isNova ? (
+                            {item.jaDispensado ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold shadow-xs">
+                                ✅ Já Dispensado ({item.cobertoAteStr ? `até ${format(parseISO(item.cobertoAteStr), "dd/MM/yyyy")}` : "Coberto"})
+                              </Badge>
+                            ) : isNova ? (
                               <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-bold">
                                 🆕 Receita Nova (+{doseAtual} un/dia)
                               </Badge>
@@ -1078,28 +1190,36 @@ export function AjusteDiasEntregaModal({
 
                           {/* Dias a Entregar (com trava automática de fim do tratamento) */}
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex flex-col items-center gap-1">
-                              <div className="flex items-center justify-center gap-1">
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max={diasTratamento || diasRestantesCiclo}
-                                  value={diasFinais}
-                                  disabled={!isSelected}
-                                  onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
-                                  className="w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300"
-                                />
-                                <span className="text-xs text-slate-600 font-bold">dias</span>
-                              </div>
-                              {diasTratamento && (
-                                <span
-                                  className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"
-                                  title={`Tratamento prescrito com duração máxima de ${diasTratamento} dias até ${format(parseISO(dataFimTratamentoStr), "dd/MM/yyyy")}`}
-                                >
-                                  ⏳ Tratamento: {diasTratamento}d
+                            {item.jaDispensado ? (
+                              <div className="text-center">
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  0 dias (Coberto)
                                 </span>
-                              )}
-                            </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    max={diasTratamento || diasRestantesCiclo}
+                                    value={diasFinais}
+                                    disabled={!isSelected}
+                                    onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
+                                    className="w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300"
+                                  />
+                                  <span className="text-xs text-slate-600 font-bold">dias</span>
+                                </div>
+                                {diasTratamento && (
+                                  <span
+                                    className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"
+                                    title={`Tratamento prescrito com duração máxima de ${diasTratamento} dias até ${format(parseISO(dataFimTratamentoStr), "dd/MM/yyyy")}`}
+                                  >
+                                    ⏳ Tratamento: {diasTratamento}d
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </TableCell>
 
                           {/* Seletor de Lote com Escolha Manual e FEFO (Estritamente Farmácia Satélite) */}
@@ -1112,7 +1232,7 @@ export function AjusteDiasEntregaModal({
                                   [pr.id]: val,
                                 }))
                               }
-                              disabled={!isSelected}
+                              disabled={!isSelected || item.jaDispensado}
                             >
                               <SelectTrigger className="h-8 text-xs font-mono bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 shadow-xs">
                                 <SelectValue placeholder="Selecione o Lote">
@@ -1172,40 +1292,38 @@ export function AjusteDiasEntregaModal({
                             </Select>
                           </TableCell>
 
-                          {/* Quantidade Editável */}
+                          {/* Quantidade Bloqueada / Automática (Dias x Dose/dia) */}
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-center gap-1">
-                              <Input
-                                type="number"
-                                min="0"
-                                disabled={!isSelected}
-                                value={valorFinal}
-                                onChange={(e) => {
-                                  const v =
-                                    e.target.value === ""
-                                      ? ""
-                                      : Math.max(0, parseInt(e.target.value) || 0);
-                                  setCustomQtds((prev) => ({
-                                    ...prev,
-                                    [pr.id]: v,
-                                  }));
-                                }}
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <div className="flex items-center justify-center gap-1">
+                                <Input
+                                  type="number"
+                                  readOnly
+                                  tabIndex={-1}
+                                  value={item.jaDispensado ? 0 : valorFinal}
+                                  title={item.jaDispensado ? "Medicamento já entregue e coberto." : "Quantidade calculada automaticamente pelo sistema com base nos dias e posologia diária. O campo fica bloqueado para digitação manual."}
+                                  className={cn(
+                                    "w-16 h-7 text-center font-mono font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 cursor-not-allowed select-none shadow-none focus-visible:ring-0",
+                                    item.jaDispensado && "text-slate-400 bg-slate-100/50",
+                                    !temEstoque && isSelected && !item.jaDispensado && "border-red-500 bg-red-100 dark:bg-red-950/50 text-red-900 dark:text-red-300"
+                                  )}
+                                />
+                                <span className="text-xs text-slate-500 font-medium">
+                                  un
+                                </span>
+                              </div>
+                              <span
                                 className={cn(
-                                  "w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300",
-                                  !temEstoque && isSelected && "border-red-500 bg-red-50"
+                                  "inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded border",
+                                  item.jaDispensado
+                                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                    : "text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800"
                                 )}
-                              />
-                              <span className="text-xs text-slate-500 font-medium">
-                                un
+                                title={item.jaDispensado ? "Medicamento coberto" : "Cálculo automático: Dias × Dose diária"}
+                              >
+                                {item.jaDispensado ? "🔒 Entregue" : "🔒 Auto"}
                               </span>
                             </div>
-                            {isSelected &&
-                              customVal !== undefined &&
-                              Number(customVal) !== qtdSugerida && (
-                                <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded block mt-0.5">
-                                  Sugerido: {qtdSugerida} un
-                                </span>
-                              )}
                           </TableCell>
 
                           {/* Saldo Satélite */}

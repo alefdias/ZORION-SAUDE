@@ -88,6 +88,24 @@ CREATE TABLE IF NOT EXISTS "Saida" (
     "deleted_at" TEXT
 );
 ALTER TABLE "Saida" ALTER COLUMN "lote_id" DROP NOT NULL;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "numero_lote" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "observacao" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "tipo" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_id" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_nome" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_id" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_nome" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "prescricao_id" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dias_cobertura" INTEGER;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_inicio_cobertura" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_fim_cobertura" TEXT;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dose_diaria" NUMERIC;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "is_baixa_lote_paciente" BOOLEAN DEFAULT false;
+ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
 
 -- 5. FORNECEDOR
 CREATE TABLE IF NOT EXISTS "Fornecedor" (
@@ -359,6 +377,8 @@ ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "motivo_alteracao" TEX
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "medico_alterou" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_alteracao" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "historico_alteracoes" TEXT;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_suspensao" TEXT;
+ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "quantidade_ultimo_lote" NUMERIC;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
 ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
 

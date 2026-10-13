@@ -84,7 +84,6 @@ const moduleSections = [
       { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
       { name: "Adiantamento", icon: CreditCard, page: "SateliteAdiantamento" },
       { name: "Movimentações", icon: ArrowLeftRight, page: "SateliteMovimentacoes" },
-      { name: "Passagem de Plantão", icon: ClipboardList, page: "PassagemPlantao" },
       { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Estoque", icon: Package, page: "SateliteEstoque" },
       { name: "Balanço", icon: ClipboardCheck, page: "SateliteInventario" },

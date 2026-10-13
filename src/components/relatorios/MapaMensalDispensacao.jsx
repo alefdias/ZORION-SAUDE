@@ -172,6 +172,11 @@ export function MapaMensalDispensacao() {
     queryFn: () => db.entities.Saida.list(),
   });
 
+  const { data: prescricoes = [] } = useQuery({
+    queryKey: ["prescricoes_paciente"],
+    queryFn: () => db.entities.PrescricaoPaciente.list(),
+  });
+
   // 2. Cálculo dos Dias do Mês Selecionado
   const dataReferencia = useMemo(() => new Date(ano, mes, 1), [ano, mes]);
   const totalDiasMes = useMemo(() => getDaysInMonth(dataReferencia), [dataReferencia]);
@@ -267,6 +272,24 @@ export function MapaMensalDispensacao() {
       const qtd = Number(saida.quantidade) || 0;
       if (qtd <= 0) return;
 
+      // Identifica prescrição correspondente para verificar se foi suspensa
+      const prId = saida.prescricao_id;
+      const pr = prId
+        ? prescricoes.find((p) => String(p.id) === String(prId))
+        : prescricoes.find(
+            (p) =>
+              (String(p.pacienteId || p.paciente_id) === String(idPac) ||
+                (p.pacienteNome && nomePac && p.pacienteNome.trim().toLowerCase() === nomePac.toLowerCase())) &&
+              (String(p.medicamentoId || p.medicamento_id) === String(medId) ||
+                (p.medicamentoNome && saida.medicamento_nome && p.medicamentoNome.trim().toLowerCase() === saida.medicamento_nome.trim().toLowerCase()))
+          );
+
+      const statusPr = (pr?.status || "").toLowerCase();
+      const isSuspensa = statusPr === "suspensa" || statusPr === "devolvida" || Boolean(pr?.data_suspensao);
+      const dataSuspensaoStr = pr?.data_suspensao
+        ? pr.data_suspensao.slice(0, 10)
+        : (pr?.dataFim ? pr.dataFim.slice(0, 10) : null);
+
       // Caso A: Saída com cobertura de lote/ciclo (distribui nos dias do ciclo em números inteiros)
       if (
         (saida.is_baixa_lote_paciente || (saida.dias_cobertura && saida.dias_cobertura > 1)) &&
@@ -301,6 +324,16 @@ export function MapaMensalDispensacao() {
             const currAno = dt.getFullYear();
             const currMes = dt.getMonth();
             const currDia = dt.getDate();
+            const dtStr = format(dt, "yyyy-MM-dd");
+
+            // REGRA DE SUSPENSÃO: Se a medicação foi suspensa, retira os dias a partir da suspensão da contagem do mapa
+            if (isSuspensa) {
+              if (dataSuspensaoStr && dtStr >= dataSuspensaoStr) {
+                return; // Não contabiliza do dia da suspensão em diante no mapa!
+              } else if (!dataSuspensaoStr && saida.data_saida && dtStr >= saida.data_saida.slice(0, 10)) {
+                return;
+              }
+            }
 
             // Unidades físicas discretas deste dia (nunca fração decimal como 1.3)
             const doseDesteDia = doseBase + (idx < resto ? 1 : 0);
@@ -316,6 +349,14 @@ export function MapaMensalDispensacao() {
       // Caso B: Saída avulsa comum (aloca no dia exato de data_saida)
       const dataSaidaStr = saida.data_saida || saida.created_at;
       if (!dataSaidaStr) return;
+
+      const sDateOnly = dataSaidaStr.slice(0, 10);
+      // Se suspenso e a saída for na data de suspensão ou posterior, não entra no mapa
+      if (isSuspensa) {
+        if (dataSuspensaoStr && sDateOnly >= dataSuspensaoStr) {
+          return;
+        }
+      }
 
       const [sAno, sMes, sDia] = dataSaidaStr.slice(0, 10).split("-");
       if (sAno === anoStr && sMes === mesStr) {
@@ -402,7 +443,7 @@ export function MapaMensalDispensacao() {
       totalQ2: Math.round(totalQ2Geral),
       diaPico,
     };
-  }, [medicamentos, saidas, ano, mes, totalDiasMes]);
+  }, [medicamentos, saidas, prescricoes, ano, mes, totalDiasMes]);
 
   // 4. Filtragem por Categoria
   const linhasFiltradas = useMemo(() => {
