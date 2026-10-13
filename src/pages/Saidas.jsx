@@ -21,6 +21,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
+import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import SaidaForm from "@/components/forms/SaidaForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -92,6 +93,16 @@ export default function Saidas({ isTab = false }) {
   const { data: lotes = [] } = useQuery({
     queryKey: ['lotes'],
     queryFn: () => db.entities.Lote.list(),
+  });
+
+  const { data: transferencias = [] } = useQuery({
+    queryKey: ['transferencias_pendentes'],
+    queryFn: () => db.entities.TransferenciaPendente.list(),
+  });
+
+  const { data: pedidosSatelite = [] } = useQuery({
+    queryKey: ['pedidos_satelite'],
+    queryFn: () => db.entities.PedidoSatelite.list(),
   });
 
   const createSaidaMutation = useMutation({
@@ -371,14 +382,23 @@ export default function Saidas({ isTab = false }) {
     });
   }, [medicamentosSatelite, search]);
 
-  const lotesByMedId = useMemo(() => {
+  // Lotes que comprovadamente possuem saldo na Farmácia Satélite
+  const lotesSateliteByMedId = useMemo(() => {
     const map = {};
-    (lotes || []).forEach(l => {
-      if (!map[l.medicamento_id]) map[l.medicamento_id] = [];
-      map[l.medicamento_id].push(l);
+    (medicamentosSatelite || []).forEach(med => {
+      map[med.id] = calcularLotesSatelite({
+        medId: med.id,
+        medCodigo: med.codigo,
+        medNome: med.nome,
+        saldoTotalSat: med.estoque_satelite,
+        lotes,
+        transferencias,
+        pedidosSatelite,
+        saidas,
+      });
     });
     return map;
-  }, [lotes]);
+  }, [medicamentosSatelite, lotes, transferencias, pedidosSatelite, saidas]);
 
   const counts = useMemo(() => {
     let todos = 0, pacientes = 0, geral = 0, perdas = 0, totalUnidades = 0;
@@ -1026,7 +1046,7 @@ export default function Saidas({ isTab = false }) {
                     const isLastElement = index === Math.min(filteredMedicamentosSatelite.length, displayCount) - 1;
                     const mav = isMav(med.nome);
                     const p344 = isPsicotropico(med.grupo_terapeutico);
-                    const medLotes = (lotesByMedId[med.id] || []).sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+                    const medLotes = lotesSateliteByMedId[med.id] || [];
                     const loteFefo = medLotes[0];
 
                     return (
@@ -1082,8 +1102,11 @@ export default function Saidas({ isTab = false }) {
                         <TableCell>
                           {loteFefo ? (
                             <div className="text-xs flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded border text-[11px] font-medium text-slate-700">
+                              <span className="font-mono bg-emerald-50 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded text-[11px] font-bold">
                                 {loteFefo.numero_lote}
+                              </span>
+                              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/60 px-1 rounded">
+                                ({loteFefo.saldoSatelite} un)
                               </span>
                               {loteFefo.data_validade && (
                                 <span className="text-[10px] text-slate-500">
@@ -1097,7 +1120,7 @@ export default function Saidas({ isTab = false }) {
                               )}
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400 italic">Sem lote específico</span>
+                            <span className="text-xs text-slate-400 italic">Sem lote específico na Satélite</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center">

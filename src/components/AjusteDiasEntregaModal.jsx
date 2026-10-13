@@ -47,6 +47,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 
 export function AjusteDiasEntregaModal({
   open,
@@ -221,134 +222,16 @@ export function AjusteDiasEntregaModal({
   };
 
   // Função para calcular estritamente os lotes existentes na Farmácia Satélite
-  const calcularLotesSatelite = (medId, medNome, saldoTotalSat, lotesCandidatos) => {
-    if (saldoTotalSat <= 0 || !lotesCandidatos || lotesCandidatos.length === 0) {
-      return [];
-    }
-
-    const mapaSaldoLote = {};
-    lotesCandidatos.forEach((l) => {
-      mapaSaldoLote[l.id] = 0;
+  const calcularLotesSateliteLocal = (medId, medNome, saldoTotalSat, lotesCandidatos) => {
+    return calcularLotesSatelite({
+      medId,
+      medNome,
+      saldoTotalSat,
+      lotes: lotesCandidatos,
+      transferencias: internalTransferencias,
+      pedidosSatelite: internalPedidosSatelite,
+      saidas: internalSaidas,
     });
-
-    // 1. Entradas por transferências aceitas para a satélite
-    internalTransferencias.forEach((t) => {
-      if (t.direcao === "para_satelite" && (t.status === "Aceito" || t.status === "aceito")) {
-        const mId = String(t.medicamento_id || t.medicamentoId || "");
-        if (mId === String(medId) || (medNome && t.medicamento_nome && namesMatch(t.medicamento_nome, medNome))) {
-          const lId = String(t.lote_id || t.loteId || "");
-          const matchLote = lotesCandidatos.find(
-            (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === t.numero_lote)
-          );
-          if (matchLote) {
-            mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(t.quantidade) || 0);
-          }
-        }
-      }
-    });
-
-    // 2. Entradas por pedidos da satélite concluídos
-    internalPedidosSatelite.forEach((p) => {
-      if (p.status === "Concluido" || p.status === "Entregue") {
-        try {
-          const itens = Array.isArray(p.itens_json) ? p.itens_json : JSON.parse(p.itens_json || "[]");
-          itens.forEach((it) => {
-            const mId = String(it.medicamento_id || it.medicamentoId || "");
-            if (mId === String(medId) || (medNome && it.medicamento_nome && namesMatch(it.medicamento_nome, medNome))) {
-              const lId = String(it.lote_id || it.loteId || "");
-              const matchLote = lotesCandidatos.find(
-                (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === it.numero_lote)
-              );
-              if (matchLote) {
-                mapaSaldoLote[matchLote.id] =
-                  (mapaSaldoLote[matchLote.id] || 0) + (Number(it.quantidade_atendida || it.quantidade) || 0);
-              }
-            }
-          });
-        } catch (e) {}
-      }
-    });
-
-    // 3. Entradas por transferências registradas diretamente em Saidas (destino Farmácia Satélite)
-    internalSaidas.forEach((s) => {
-      const isTransfParaSat =
-        (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
-      const mId = String(s.medicamento_id || s.medicamentoId || "");
-      if (isTransfParaSat && (mId === String(medId) || (medNome && s.medicamento_nome && namesMatch(s.medicamento_nome, medNome)))) {
-        const lId = String(s.lote_id || s.loteId || "");
-        const matchLote = lotesCandidatos.find(
-          (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
-        );
-        if (matchLote) {
-          mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(s.quantidade) || 0);
-        }
-      }
-    });
-
-    // 4. Subtrair saídas já realizadas pela Farmácia Satélite (dispensações a pacientes)
-    internalSaidas.forEach((s) => {
-      const isTransfParaSat =
-        (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
-      if (!isTransfParaSat) {
-        const mId = String(s.medicamento_id || s.medicamentoId || "");
-        if (mId === String(medId) || (medNome && s.medicamento_nome && namesMatch(s.medicamento_nome, medNome))) {
-          const lId = String(s.lote_id || s.loteId || "");
-          const matchLote = lotesCandidatos.find(
-            (l) => String(l.id) === lId || (l.numero_lote && l.numero_lote === s.numero_lote)
-          );
-          if (matchLote) {
-            mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) - (Number(s.quantidade) || 0);
-          }
-        }
-      }
-    });
-
-    // Filtra estritamente lotes que possuem saldo na Farmácia Satélite
-    const lotesComCalculo = lotesCandidatos
-      .map((l) => ({
-        ...l,
-        saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
-      }))
-      .filter((l) => l.saldoSatelite > 0);
-
-    if (lotesComCalculo.length > 0) {
-      return lotesComCalculo.sort((a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31"));
-    }
-
-    // Se não houver histórico detalhado de transferências por lote, distribui o saldo da satélite por FEFO
-    // limitando estritamente ao total disponível na satélite (NUNCA exibindo lotes centrais a mais)
-    const lotesOrdenados = [...lotesCandidatos].sort(
-      (a, b) => new Date(a.data_validade || "9999-12-31") - new Date(b.data_validade || "9999-12-31")
-    );
-    let saldoRestanteSat = saldoTotalSat;
-    const lotesFallback = [];
-
-    for (const l of lotesOrdenados) {
-      if (saldoRestanteSat <= 0) break;
-      const saldoAtribuido = Math.min(saldoRestanteSat, Number(l.quantidade_atual) || saldoRestanteSat);
-      if (saldoAtribuido > 0) {
-        lotesFallback.push({
-          ...l,
-          saldoSatelite: saldoAtribuido,
-        });
-        saldoRestanteSat -= saldoAtribuido;
-      }
-    }
-
-    if (lotesFallback.length > 0) {
-      return lotesFallback;
-    }
-
-    if (lotesOrdenados.length > 0) {
-      return [
-        {
-          ...lotesOrdenados[0],
-          saldoSatelite: saldoTotalSat,
-        },
-      ];
-    }
-
-    return [];
   };
 
   // Filtra as prescrições ativas do paciente
@@ -587,7 +470,7 @@ export function AjusteDiasEntregaModal({
         });
 
         // FILTRO ESTRITO DA SATÉLITE: Pega EXCLUSIVAMENTE lotes que existem na Farmácia Satélite
-        const medLotes = calcularLotesSatelite(medId, medNome, saldoTotalSat, lotesCandidatos);
+        const medLotes = calcularLotesSateliteLocal(medId, medNome, saldoTotalSat, lotesCandidatos);
 
         return {
           pr,

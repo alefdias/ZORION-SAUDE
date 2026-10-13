@@ -4,23 +4,22 @@ import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { PackagePlus, ShoppingCart, ArrowLeftRight, Calendar } from "lucide-react";
+import { PackagePlus, ShoppingCart, ArrowLeftRight } from "lucide-react";
 import Entradas from "./Entradas";
 import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
 import TransferenciaEstoque from "@/components/movimentacoes/TransferenciaEstoque";
-import { MapaMensalDispensacao } from "@/components/relatorios/MapaMensalDispensacao";
 
 export default function Movimentacoes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState(
-    tabFromUrl && ["entradas", "pedidos_satelite", "transferencia", "mapa_mensal"].includes(tabFromUrl) 
+    tabFromUrl && ["entradas", "pedidos_satelite", "transferencia"].includes(tabFromUrl) 
       ? tabFromUrl 
       : "entradas"
   );
 
   useEffect(() => {
-    if (tabFromUrl && ["entradas", "pedidos_satelite", "transferencia", "mapa_mensal"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["entradas", "pedidos_satelite", "transferencia"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -85,14 +84,6 @@ export default function Movimentacoes() {
             <ArrowLeftRight className="w-4 h-4 text-amber-600" />
             Transferência
           </TabsTrigger>
-
-          <TabsTrigger
-            value="mapa_mensal"
-            className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm flex items-center gap-2 font-medium text-blue-700 dark:text-blue-300"
-          >
-            <Calendar className="w-4 h-4 text-blue-600" />
-            Mapa Mensal de Dispensação
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="entradas" className="mt-0">
@@ -105,10 +96,6 @@ export default function Movimentacoes() {
 
         <TabsContent value="transferencia" className="mt-0">
           <TransferenciaEstoque />
-        </TabsContent>
-
-        <TabsContent value="mapa_mensal" className="mt-0">
-          <MapaMensalDispensacao />
         </TabsContent>
       </Tabs>
     </div>

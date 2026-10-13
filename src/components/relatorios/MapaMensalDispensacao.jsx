@@ -33,7 +33,10 @@ import {
   Sparkles,
   Info,
   TrendingUp,
+  Search,
+  X,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { isMav, isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -148,6 +151,7 @@ export function MapaMensalDispensacao() {
   const [mes, setMes] = useState(hoje.getMonth()); // 0 a 11
   const [categoriaFiltro, setCategoriaFiltro] = useState("todos"); // "todos" | "psicotropicos" | "clinica" | "mav"
   const [modoVisualizacao, setModoVisualizacao] = useState("ambas"); // "ambas" | "q1" | "q2"
+  const [termoBusca, setTermoBusca] = useState("");
 
   // Lista dinâmica de anos (de 2023 até o ano atual + 10 ou mais, adaptável dinamicamente)
   const anosDisponiveis = useMemo(() => {
@@ -416,14 +420,12 @@ export function MapaMensalDispensacao() {
       item.isClinica = !ehPsi && !ehMav;
       item.apresentacaoFormatada = formatarApresentacaoMed(med);
 
-      // Inclui apenas itens que tiveram movimentação no mês ou todos com estoque ativo
-      if (item.totalMes > 0 || (med.estoque_satelite && med.estoque_satelite > 0)) {
-        linhas.push(item);
-      }
+      // Inclui todos os medicamentos cadastrados e ativos no catálogo (mais de 200 medicamentos)
+      linhas.push(item);
     });
 
-    // Ordenar: primeiro os com maior saída no mês
-    linhas.sort((a, b) => b.totalMes - a.totalMes || a.medicamento.nome.localeCompare(b.medicamento.nome));
+    // Ordenar: primeiro os com maior saída no mês, seguidos por ordem alfabética
+    linhas.sort((a, b) => b.totalMes - a.totalMes || (a.medicamento.nome || "").localeCompare(b.medicamento.nome || ""));
 
     // Identificar dia de pico
     let diaPico = null;
@@ -445,15 +447,23 @@ export function MapaMensalDispensacao() {
     };
   }, [medicamentos, saidas, prescricoes, ano, mes, totalDiasMes]);
 
-  // 4. Filtragem por Categoria
+  // 4. Filtragem por Categoria e Busca
   const linhasFiltradas = useMemo(() => {
     return matrizDispensacao.linhas.filter((item) => {
-      if (categoriaFiltro === "psicotropicos") return item.isPsicotropico;
-      if (categoriaFiltro === "clinica") return item.isClinica;
-      if (categoriaFiltro === "mav") return item.isMav;
+      if (categoriaFiltro === "psicotropicos" && !item.isPsicotropico) return false;
+      if (categoriaFiltro === "clinica" && !item.isClinica) return false;
+      if (categoriaFiltro === "mav" && !item.isMav) return false;
+
+      if (termoBusca && termoBusca.trim()) {
+        const termo = termoBusca.toLowerCase().trim();
+        const nome = (item.medicamento.nome || "").toLowerCase();
+        const cod = (item.medicamento.codigo || "").toLowerCase();
+        return nome.includes(termo) || cod.includes(termo);
+      }
+
       return true;
     });
-  }, [matrizDispensacao.linhas, categoriaFiltro]);
+  }, [matrizDispensacao.linhas, categoriaFiltro, termoBusca]);
 
   // Exportação CSV formatado para Excel
   const exportarExcel = () => {
@@ -631,8 +641,28 @@ export function MapaMensalDispensacao() {
               </button>
             </div>
 
-            {/* Alternar Folhas na Tela */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            {/* Busca Rápida por Medicamento e Alternar Folhas na Tela */}
+            <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={termoBusca}
+                  onChange={(e) => setTermoBusca(e.target.value)}
+                  placeholder="Buscar medicamento ou código..."
+                  className="h-8 pl-8 pr-7 text-xs bg-white dark:bg-slate-900 border-slate-200 rounded-lg"
+                />
+                {termoBusca && (
+                  <button
+                    onClick={() => setTermoBusca("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Alternar Folhas na Tela */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
               <button
                 type="button"
                 onClick={() => setModoVisualizacao("ambas")}
@@ -666,6 +696,7 @@ export function MapaMensalDispensacao() {
             </div>
           </div>
         </div>
+      </div>
 
         {/* Cards de Resumo / KPIs Rápidos */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

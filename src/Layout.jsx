@@ -87,7 +87,7 @@ const moduleSections = [
       { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Estoque", icon: Package, page: "SateliteEstoque" },
       { name: "Balanço", icon: ClipboardCheck, page: "SateliteInventario" },
-      { name: "Mapa de Dispensação", icon: Calendar, page: "Relatorios" },
+      { name: "Mapa de Dispensação", icon: Calendar, page: "MapaDispensacao" },
     ]
   },
   {
@@ -138,7 +138,7 @@ function getCurrentSection(pageName) {
   }
 
   // Páginas exclusivas da Farmácia Satélite
-  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "PassagemPlantao" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria" || pageName === "SateliteInventario") {
+  if (pageName === "Satelite" || pageName === "SateliteEvolucao" || pageName === "PacientesMedicao" || pageName === "SateliteAdiantamento" || pageName === "SateliteMovimentacoes" || pageName === "PassagemPlantao" || pageName === "SateliteEstoque" || pageName === "SatelitePortaria" || pageName === "SateliteInventario" || pageName === "MapaDispensacao") {
     try { sessionStorage.setItem("zorion_active_section", "satelite"); } catch (e) {}
     return moduleSections.find(sec => sec.id === "satelite");
   }

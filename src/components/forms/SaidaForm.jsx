@@ -20,6 +20,7 @@ const getLocalDateString = () => {
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 
 const emptyForm = {
     itens: [], // { medicamento_id, medicamento_nome, lote_id, numero_lote, quantidade }
@@ -65,7 +66,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
         });
     }, [medicamentos, initialData, currentItem.medicamento_id]);
 
-    // Calcula de forma precisa o saldo de cada lote que de fato foi transferido e recebido na Farmácia Satélite
+    // Calcula de forma estrita e precisa APENAS lotes que de fato foram transferidos e recebidos na Farmácia Satélite
     const filteredLotes = useMemo(() => {
         if (!currentItem.medicamento_id) return [];
 
@@ -73,117 +74,32 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
         const saldoTotalSatelite = Number(med?.estoque_satelite) || 0;
         if (saldoTotalSatelite <= 0) return [];
 
-        const lotesDoMed = lotes.filter(l => l.medicamento_id === currentItem.medicamento_id);
-        if (lotesDoMed.length === 0) return [];
-
-        const mapaSaldoLote = {};
-        lotesDoMed.forEach(l => {
-            mapaSaldoLote[l.id] = 0;
+        return calcularLotesSatelite({
+            medId: med.id,
+            medCodigo: med.codigo,
+            medNome: med.nome,
+            saldoTotalSat: saldoTotalSatelite,
+            lotes,
+            transferencias,
+            pedidosSatelite,
+            saidas: todasSaidas
         });
-
-        // 1. Entradas por transferências aceitas para a satélite
-        transferencias.forEach(t => {
-            if (t.direcao === "para_satelite" && (t.status === "Aceito" || t.status === "aceito")) {
-                const mId = t.medicamento_id || t.medicamentoId;
-                if (mId === currentItem.medicamento_id) {
-                    const lId = t.lote_id || t.loteId;
-                    const matchLote = lotesDoMed.find(l => l.id === lId || l.numero_lote === t.numero_lote);
-                    if (matchLote) {
-                        mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(t.quantidade) || 0);
-                    }
-                }
-            }
-        });
-
-        // 2. Entradas por pedidos da satélite concluídos
-        pedidosSatelite.forEach(p => {
-            if (p.status === "Concluido" || p.status === "Entregue") {
-                try {
-                    const itens = Array.isArray(p.itens_json) ? p.itens_json : JSON.parse(p.itens_json || "[]");
-                    itens.forEach(it => {
-                        const mId = it.medicamento_id || it.medicamentoId;
-                        if (mId === currentItem.medicamento_id) {
-                            const matchLote = lotesDoMed.find(l => l.id === it.lote_id || l.numero_lote === it.numero_lote);
-                            if (matchLote) {
-                                mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(it.quantidade_atendida || it.quantidade) || 0);
-                            }
-                        }
-                    });
-                } catch (e) {}
-            }
-        });
-
-        // 3. Entradas por transferências registradas diretamente em Saidas (destino Farmácia Satélite)
-        todasSaidas.forEach(s => {
-            const isTransfParaSat = (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
-            const mId = s.medicamento_id || s.medicamentoId;
-            if (isTransfParaSat && mId === currentItem.medicamento_id) {
-                const matchLote = lotesDoMed.find(l => l.id === s.lote_id || l.numero_lote === s.numero_lote);
-                if (matchLote) {
-                    mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + (Number(s.quantidade) || 0);
-                }
-            }
-        });
-
-        // 4. Subtrair saídas já realizadas pela Farmácia Satélite (dispensações a pacientes)
-        todasSaidas.forEach(s => {
-            const isTransfParaSat = (s.destino && s.destino.toLowerCase().includes("satélite")) || s.motivo === "Transferência de Estoque";
-            if (!isTransfParaSat) {
-                const mId = s.medicamento_id || s.medicamentoId;
-                if (mId === currentItem.medicamento_id) {
-                    const matchLote = lotesDoMed.find(l => l.id === s.lote_id || l.numero_lote === s.numero_lote);
-                    if (matchLote) {
-                        mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) - (Number(s.quantidade) || 0);
-                    }
-                }
-            }
-        });
-
-        // Filtra estritamente lotes que possuem saldo na Farmácia Satélite
-        const lotesComCalculo = lotesDoMed.map(l => ({
-            ...l,
-            saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0)
-        })).filter(l => l.saldoSatelite > 0);
-
-        if (lotesComCalculo.length > 0) {
-            return lotesComCalculo.sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
-        }
-
-        // Se não houver histórico de movimentações detalhadas por lote, distribui o saldo da satélite por FEFO
-        // limitando estritamente ao total disponível na satélite (nunca exibindo lotes centrais a mais)
-        const lotesOrdenados = [...lotesDoMed].sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
-        let saldoRestanteSat = saldoTotalSatelite;
-        const lotesFallback = [];
-
-        for (const l of lotesOrdenados) {
-            if (saldoRestanteSat <= 0) break;
-            const saldoAtribuido = Math.min(saldoRestanteSat, Number(l.quantidade_atual) || saldoRestanteSat);
-            if (saldoAtribuido > 0) {
-                lotesFallback.push({
-                    ...l,
-                    saldoSatelite: saldoAtribuido
-                });
-                saldoRestanteSat -= saldoAtribuido;
-            }
-        }
-
-        if (lotesFallback.length > 0) {
-            return lotesFallback;
-        }
-
-        if (lotesOrdenados.length > 0) {
-            return [{
-                ...lotesOrdenados[0],
-                saldoSatelite: saldoTotalSatelite
-            }];
-        }
-
-        return [];
     }, [currentItem.medicamento_id, medicamentos, lotes, transferencias, pedidosSatelite, todasSaidas]);
 
     const selectLoteFEFO = (medId) => {
-        const lotesDoMed = filteredLotes.filter(l => l.medicamento_id === medId);
-        return lotesDoMed.length > 0 ? lotesDoMed[0] : null;
+        const med = medicamentos.find(m => m.id === medId);
+        if (!med) return null;
+        const lotesSat = calcularLotesSatelite({
+            medId: med.id,
+            medCodigo: med.codigo,
+            medNome: med.nome,
+            saldoTotalSat: med.estoque_satelite,
+            lotes,
+            transferencias,
+            pedidosSatelite,
+            saidas: todasSaidas
+        });
+        return lotesSat.length > 0 ? lotesSat[0] : null;
     };
 
     useEffect(() => {
@@ -243,7 +159,15 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
     };
 
     const handleLote = (id) => {
-        const lote = lotes.find((l) => l.id === id);
+        if (id === "__sem_lote__") {
+            setCurrentItem((prev) => ({
+                ...prev,
+                lote_id: "",
+                numero_lote: "SEM LOTE"
+            }));
+            return;
+        }
+        const lote = filteredLotes.find((l) => l.id === id);
         setCurrentItem((prev) => ({
             ...prev,
             lote_id: id,
@@ -447,29 +371,37 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                         )}
                                     </div>
                                     <Select
-                                        value={currentItem.lote_id}
+                                        value={currentItem.lote_id || (currentItem.numero_lote === "SEM LOTE" ? "__sem_lote__" : "")}
                                         onValueChange={handleLote}
-                                        disabled={!currentItem.medicamento_id || filteredLotes.length === 0}
+                                        disabled={!currentItem.medicamento_id || (!selectedMed?.estoque_satelite && filteredLotes.length === 0)}
                                     >
                                         <SelectTrigger className="text-xs bg-white h-9">
                                             <SelectValue placeholder={
                                                 !currentItem.medicamento_id ? "Selecione o medicamento..." :
-                                                    filteredLotes.length === 0 ? "Sem lotes cadastrados" : "Selecione o lote"
+                                                    filteredLotes.length === 0 ? "Saldo sem lote específico" : "Selecione o lote"
                                             } />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {filteredLotes.map((l, index) => {
-                                                return (
-                                                    <SelectItem key={l.id} value={l.id} className={index === 0 ? "font-bold text-amber-800 bg-amber-50/60" : ""}>
-                                                        <div className="flex items-center justify-between w-full gap-2">
-                                                            <span>{index === 0 ? "⭐ " : ""}{l.numero_lote} (Val: {l.data_validade || "N/I"})</span>
-                                                            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 ml-2">
-                                                                Disp: {l.saldoSatelite} un
-                                                            </span>
-                                                        </div>
-                                                    </SelectItem>
-                                                );
-                                            })}
+                                            {filteredLotes.length === 0 ? (
+                                                <SelectItem value="__sem_lote__">
+                                                    <span className="text-slate-700">
+                                                        Sem lote específico (Saldo Satélite: <strong>{selectedMed?.estoque_satelite || 0} un</strong>)
+                                                    </span>
+                                                </SelectItem>
+                                            ) : (
+                                                filteredLotes.map((l, index) => {
+                                                    return (
+                                                        <SelectItem key={l.id} value={l.id} className={index === 0 ? "font-bold text-amber-800 bg-amber-50/60" : ""}>
+                                                            <div className="flex items-center justify-between w-full gap-2">
+                                                                <span>{index === 0 ? "⭐ " : ""}{l.numero_lote} (Val: {l.data_validade || "N/I"})</span>
+                                                                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 ml-2">
+                                                                    Disp: {l.saldoSatelite} un
+                                                                </span>
+                                                            </div>
+                                                        </SelectItem>
+                                                    );
+                                                })
+                                            )}
                                         </SelectContent>
                                     </Select>
                                     {selectedLote && (

@@ -73,6 +73,7 @@ import SateliteAdiantamento from './pages/SateliteAdiantamento';
 import Compras from './pages/Compras';
 import PassagemPlantao from './pages/PassagemPlantao';
 import SateliteInventario from './pages/SateliteInventario';
+import MapaDispensacao from './pages/MapaDispensacao';
 import __Layout from './Layout.jsx';
 
 
@@ -102,6 +103,7 @@ export const PAGES = {
   "SateliteEvolucao": SateliteEvolucao,
   "SateliteAdiantamento": SateliteAdiantamento,
   "PassagemPlantao": PassagemPlantao,
+  "MapaDispensacao": MapaDispensacao,
 }
 
 export const pagesConfig = {

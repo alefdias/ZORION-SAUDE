@@ -38,11 +38,9 @@ import html2canvas from "html2canvas";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { MapaMensalDispensacao } from "@/components/relatorios/MapaMensalDispensacao";
 
 export default function Relatorios() {
   const printRef = useRef();
-  const [abaAtiva, setAbaAtiva] = useState("mapa_diario"); // "mapa_diario" | "gerencial"
   const [periodo, setPeriodo] = useState("mensal"); // diario, semanal, quinzenal, mensal, personalizado
   const [customInicio, setCustomInicio] = useState(
     format(startOfMonth(new Date()), "yyyy-MM-dd")
@@ -448,45 +446,8 @@ export default function Relatorios() {
 
   return (
     <div className="p-4 sm:p-8 space-y-6 bg-slate-50/50 dark:bg-slate-950 min-h-full print:bg-white print:p-0">
-      {/* ─── NAVEGAÇÃO DE RELATÓRIOS (NO-PRINT) ─── */}
-      <div className="no-print flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAbaAtiva("mapa_diario")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs",
-              abaAtiva === "mapa_diario"
-                ? "bg-blue-600 text-white shadow-blue-500/20"
-                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800"
-            )}
-          >
-            <Calendar className="w-4 h-4" />
-            Mapa Diário de Dispensação (Mensal / A4)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setAbaAtiva("gerencial")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs",
-              abaAtiva === "gerencial"
-                ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-slate-500/20"
-                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800"
-            )}
-          >
-            <Layers className="w-4 h-4" />
-            Relatório Gerencial de Estoque & Setores
-          </button>
-        </div>
-      </div>
-
-      {abaAtiva === "mapa_diario" ? (
-        <MapaMensalDispensacao />
-      ) : (
-        <>
-          {/* ─── PAINEL DE CONTROLE SUPERIOR (No-Print) ─── */}
-          <div className="no-print space-y-5">
+      {/* ─── PAINEL DE CONTROLE SUPERIOR (No-Print) ─── */}
+      <div className="no-print space-y-5">
         {/* Barra de Título e Ações */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1331,8 +1292,6 @@ export default function Relatorios() {
           </p>
         </div>
       </div>
-        </>
-      )}
     </div>
   );
 }
