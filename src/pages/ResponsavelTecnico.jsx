@@ -1,3 +1,4 @@
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Users, UserPlus, ShieldCheck, Key, KeyRound, Edit, Trash, History, AlertTriangle, FileCheck, Search, Download, Printer, Filter, CheckCircle2, RefreshCw, FileText, Building2, Pill, Stethoscope, BadgeCheck, Eye, EyeOff, Lock, Sparkles, HeartHandshake, Boxes } from "lucide-react";
 import { toast } from "sonner";
 import { getLogs } from "../lib/logger";

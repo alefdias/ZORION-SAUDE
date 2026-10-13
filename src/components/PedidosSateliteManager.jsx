@@ -41,7 +41,10 @@ import {
   X,
   Droplet,
   MessagesSquare,
-  Trash2
+  Trash2,
+  Plus,
+  Wand2,
+  Boxes
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -766,45 +769,156 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           const med = freshMeds.find(m => m.id === item.medicamento_id);
           if (!med) continue;
 
-          // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
-          let medLotes = freshLotes
-            .filter(l => l.medicamento_id === med.id && (Number(l.quantidade_atual) || 0) > 0)
-            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+          // Se o operador definiu alocações multi-lote na separação
+          if (Array.isArray(item.alocacoes_lote) && item.alocacoes_lote.length > 0) {
+            for (const aloc of item.alocacoes_lote) {
+              const qtdConsumir = Number(aloc.quantidade) || 0;
+              if (qtdConsumir <= 0) continue;
 
-          // Se o operador selecionou um lote específico na separação, prioriza-o
-          if (item.lote_id) {
-            const chosenLote = medLotes.find(l => l.id === item.lote_id);
-            if (chosenLote) {
-              medLotes = [chosenLote, ...medLotes.filter(l => l.id !== item.lote_id)];
+              const lote = aloc.lote_id ? freshLotes.find(l => l.id === aloc.lote_id) : null;
+              if (lote) {
+                const novaQtd = Math.max(0, (Number(lote.quantidade_atual) || 0) - qtdConsumir);
+                await db.entities.Lote.update(lote.id, {
+                  quantidade_atual: novaQtd,
+                  status: novaQtd <= 0 ? "esgotado" : lote.status
+                });
+                lote.quantidade_atual = novaQtd;
+
+                await db.entities.Saida.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: lote.id,
+                  numero_lote: lote.numero_lote || "S/ Lote",
+                  quantidade: qtdConsumir,
+                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  destino: "Farmácia Satélite",
+                  motivo: "Transferência de Estoque",
+                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
+                  tipo: "Transferência Central -> Satélite"
+                });
+
+                await db.entities.TransferenciaPendente.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: lote.id,
+                  numero_lote: lote.numero_lote || "S/ Lote",
+                  quantidade: qtdConsumir,
+                  direcao: "para_satelite",
+                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
+                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
+                  origem: "pedido_satelite",
+                  pedido_id: pedido.id,
+                  pedido_codigo: pedido.codigo,
+                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
+                });
+              } else {
+                await db.entities.Saida.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: "",
+                  numero_lote: aloc.numero_lote || "S/ LOTE",
+                  quantidade: qtdConsumir,
+                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  destino: "Farmácia Satélite",
+                  motivo: "Transferência de Estoque",
+                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
+                  tipo: "Transferência Central -> Satélite"
+                });
+
+                await db.entities.TransferenciaPendente.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: "",
+                  numero_lote: aloc.numero_lote || "S/ LOTE",
+                  quantidade: qtdConsumir,
+                  direcao: "para_satelite",
+                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
+                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
+                  origem: "pedido_satelite",
+                  pedido_id: pedido.id,
+                  pedido_codigo: pedido.codigo,
+                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
+                });
+              }
             }
-          }
+          } else {
+            // Lotes disponíveis deste medicamento ordenados por vencimento (FEFO)
+            let medLotes = freshLotes
+              .filter(l => l.medicamento_id === med.id && (Number(l.quantidade_atual) || 0) > 0)
+              .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
 
-          if (medLotes.length > 0) {
-            item.lote_id = medLotes[0].id;
-            item.numero_lote = medLotes[0].numero_lote || item.numero_lote;
-            item.data_validade = medLotes[0].data_validade || item.data_validade;
-          }
+            // Se o operador selecionou um lote específico na separação, prioriza-o
+            if (item.lote_id) {
+              const chosenLote = medLotes.find(l => l.id === item.lote_id);
+              if (chosenLote) {
+                medLotes = [chosenLote, ...medLotes.filter(l => l.id !== item.lote_id)];
+              }
+            }
 
-          let pendenteAlocar = qtdAtendida;
+            if (medLotes.length > 0) {
+              item.lote_id = medLotes[0].id;
+              item.numero_lote = medLotes[0].numero_lote || item.numero_lote;
+              item.data_validade = medLotes[0].data_validade || item.data_validade;
+            }
 
-          for (const lote of medLotes) {
-            if (pendenteAlocar <= 0) break;
-            const qtdConsumir = Math.min(Number(lote.quantidade_atual) || 0, pendenteAlocar);
-            if (qtdConsumir > 0) {
-              const novaQtd = (Number(lote.quantidade_atual) || 0) - qtdConsumir;
-              await db.entities.Lote.update(lote.id, {
-                quantidade_atual: novaQtd,
-                status: novaQtd <= 0 ? "esgotado" : lote.status
-              });
-              lote.quantidade_atual = novaQtd;
+            let pendenteAlocar = qtdAtendida;
 
-              // 1. Registra a Saída no Estoque Central com motivo 'Transferência de Estoque'
+            for (const lote of medLotes) {
+              if (pendenteAlocar <= 0) break;
+              const qtdConsumir = Math.min(Number(lote.quantidade_atual) || 0, pendenteAlocar);
+              if (qtdConsumir > 0) {
+                const novaQtd = (Number(lote.quantidade_atual) || 0) - qtdConsumir;
+                await db.entities.Lote.update(lote.id, {
+                  quantidade_atual: novaQtd,
+                  status: novaQtd <= 0 ? "esgotado" : lote.status
+                });
+                lote.quantidade_atual = novaQtd;
+
+                // 1. Registra a Saída no Estoque Central com motivo 'Transferência de Estoque'
+                await db.entities.Saida.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: lote.id,
+                  numero_lote: lote.numero_lote || "S/ Lote",
+                  quantidade: qtdConsumir,
+                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  destino: "Farmácia Satélite",
+                  motivo: "Transferência de Estoque",
+                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
+                  tipo: "Transferência Central -> Satélite"
+                });
+
+                // 2. Registra na Transferência de Estoque (TransferenciaPendente)
+                await db.entities.TransferenciaPendente.create({
+                  medicamento_id: med.id,
+                  medicamento_nome: med.nome,
+                  lote_id: lote.id,
+                  numero_lote: lote.numero_lote || "S/ Lote",
+                  quantidade: qtdConsumir,
+                  direcao: "para_satelite",
+                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
+                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
+                  origem: "pedido_satelite",
+                  pedido_id: pedido.id,
+                  pedido_codigo: pedido.codigo,
+                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
+                });
+
+                pendenteAlocar -= qtdConsumir;
+              }
+            }
+
+            // Se faltar saldo em lotes cadastrados, registra saída e transferência sem lote específico
+            if (pendenteAlocar > 0) {
               await db.entities.Saida.create({
                 medicamento_id: med.id,
                 medicamento_nome: med.nome,
-                lote_id: lote.id,
-                numero_lote: lote.numero_lote || "S/ Lote",
-                quantidade: qtdConsumir,
+                lote_id: "",
+                numero_lote: "S/ LOTE",
+                quantidade: pendenteAlocar,
                 data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
                 destino: "Farmácia Satélite",
                 motivo: "Transferência de Estoque",
@@ -812,13 +926,12 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                 tipo: "Transferência Central -> Satélite"
               });
 
-              // 2. Registra na Transferência de Estoque (TransferenciaPendente)
               await db.entities.TransferenciaPendente.create({
                 medicamento_id: med.id,
                 medicamento_nome: med.nome,
-                lote_id: lote.id,
-                numero_lote: lote.numero_lote || "S/ Lote",
-                quantidade: qtdConsumir,
+                lote_id: "",
+                numero_lote: "S/ LOTE",
+                quantidade: pendenteAlocar,
                 direcao: "para_satelite",
                 status: newStatus === "Concluido" ? "Aceito" : "Pendente",
                 data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
@@ -828,41 +941,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                 pedido_codigo: pedido.codigo,
                 observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
               });
-
-              pendenteAlocar -= qtdConsumir;
             }
-          }
-
-          // Se faltar saldo em lotes cadastrados, registra saída e transferência sem lote específico
-          if (pendenteAlocar > 0) {
-            await db.entities.Saida.create({
-              medicamento_id: med.id,
-              medicamento_nome: med.nome,
-              lote_id: "",
-              numero_lote: "S/ LOTE",
-              quantidade: pendenteAlocar,
-              data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-              destino: "Farmácia Satélite",
-              motivo: "Transferência de Estoque",
-              observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
-              tipo: "Transferência Central -> Satélite"
-            });
-
-            await db.entities.TransferenciaPendente.create({
-              medicamento_id: med.id,
-              medicamento_nome: med.nome,
-              lote_id: "",
-              numero_lote: "S/ LOTE",
-              quantidade: pendenteAlocar,
-              direcao: "para_satelite",
-              status: newStatus === "Concluido" ? "Aceito" : "Pendente",
-              data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-              data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
-              origem: "pedido_satelite",
-              pedido_id: pedido.id,
-              pedido_codigo: pedido.codigo,
-              observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
-            });
           }
 
           // Atualiza o estoque geral do medicamento no Central
@@ -2687,15 +2766,82 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
         .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
       const fefoLote = medLotes[0];
 
-      const initialLoteId = i.lote_id || i.lote_previsto_id || fefoLote?.id || "";
+      const initialQtdAtendida = Number(i.qtd_atendida !== undefined ? i.qtd_atendida : i.qtd_solicitada) || 0;
+
+      let alocacoes = [];
+      if (Array.isArray(i.alocacoes_lote) && i.alocacoes_lote.length > 0) {
+        alocacoes = i.alocacoes_lote.map((al, alIdx) => {
+          const lObj = medLotes.find(l => l.id === al.lote_id);
+          return {
+            id: al.id || `aloc-${medId}-${alIdx}-${Date.now()}`,
+            lote_id: al.lote_id || "",
+            numero_lote: al.numero_lote || lObj?.numero_lote || "",
+            data_validade: al.data_validade || lObj?.data_validade || "",
+            quantidade: Number(al.quantidade) || 0,
+            saldo_lote: lObj ? Number(lObj.quantidade_atual) || 0 : 0
+          };
+        });
+      } else {
+        // Inicialização com distribuição inteligente FEFO
+        if (medLotes.length === 0) {
+          alocacoes = [{
+            id: `aloc-${medId}-sem-lote`,
+            lote_id: "",
+            numero_lote: i.numero_lote || "S/ Lote",
+            data_validade: i.data_validade || "",
+            quantidade: initialQtdAtendida,
+            saldo_lote: 0
+          }];
+        } else {
+          let restante = initialQtdAtendida;
+          for (let lIdx = 0; lIdx < medLotes.length; lIdx++) {
+            const l = medLotes[lIdx];
+            const saldo = Number(l.quantidade_atual) || 0;
+            if (saldo <= 0) continue;
+
+            const qtdDeste = Math.min(saldo, restante);
+            alocacoes.push({
+              id: `aloc-${medId}-${l.id}-${lIdx}`,
+              lote_id: l.id,
+              numero_lote: l.numero_lote,
+              data_validade: l.data_validade,
+              quantidade: qtdDeste,
+              saldo_lote: saldo
+            });
+            restante -= qtdDeste;
+            if (restante <= 0) break;
+          }
+
+          if (restante > 0) {
+            if (alocacoes.length > 0) {
+              alocacoes[alocacoes.length - 1].quantidade += restante;
+            } else {
+              alocacoes.push({
+                id: `aloc-${medId}-${medLotes[0].id}-0`,
+                lote_id: medLotes[0].id,
+                numero_lote: medLotes[0].numero_lote,
+                data_validade: medLotes[0].data_validade,
+                quantidade: initialQtdAtendida,
+                saldo_lote: Number(medLotes[0].quantidade_atual) || 0
+              });
+            }
+          }
+        }
+      }
+
+      const initialLoteId = alocacoes[0]?.lote_id || i.lote_id || fefoLote?.id || "";
       const matchedLote = medLotes.find(l => l.id === initialLoteId) || fefoLote;
 
       return {
         ...i,
-        qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : i.qtd_atendida,
+        qtd_atendida: initialQtdAtendida,
+        qtd_recebida: i.qtd_recebida !== undefined ? i.qtd_recebida : initialQtdAtendida,
         lote_id: initialLoteId,
-        numero_lote: i.numero_lote || i.lote_previsto || matchedLote?.numero_lote || "",
-        data_validade: i.data_validade || i.lote_previsto_validade || matchedLote?.data_validade || "",
+        numero_lote: alocacoes.length > 1
+          ? alocacoes.map(a => `${a.numero_lote || 'S/ Lote'} (${a.quantidade} un)`).join(", ")
+          : (alocacoes[0]?.numero_lote || i.numero_lote || matchedLote?.numero_lote || ""),
+        data_validade: alocacoes[0]?.data_validade || i.data_validade || matchedLote?.data_validade || "",
+        alocacoes_lote: alocacoes,
         fefo_lote_id: fefoLote?.id || "",
         fefo_numero_lote: fefoLote?.numero_lote || "",
         motivo_troca_lote: i.motivo_troca_lote || ""
@@ -2741,21 +2887,188 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
     setItensState(next);
   };
 
-  const handleLoteChange = (index, newLoteId) => {
+  const handleUpdateAlocacao = (itemIndex, alocId, field, value) => {
     const next = [...itensState];
-    const item = next[index];
+    const item = next[itemIndex];
+    if (!item.alocacoes_lote) item.alocacoes_lote = [];
+    
     const medId = item.medicamento_id || item.id;
     const medLotes = (lotes || []).filter(l => (l.medicamento_id === medId || l.medicamentoId === medId));
-    const selectedLote = medLotes.find(l => l.id === newLoteId);
 
-    item.lote_id = newLoteId;
-    item.numero_lote = selectedLote?.numero_lote || "";
-    item.data_validade = selectedLote?.data_validade || "";
+    item.alocacoes_lote = item.alocacoes_lote.map(a => {
+      if (a.id !== alocId) return a;
+      if (field === "lote_id") {
+        const selectedLote = medLotes.find(l => l.id === value);
+        return {
+          ...a,
+          lote_id: value,
+          numero_lote: selectedLote?.numero_lote || "",
+          data_validade: selectedLote?.data_validade || "",
+          saldo_lote: selectedLote ? Number(selectedLote.quantidade_atual) || 0 : 0
+        };
+      }
+      if (field === "quantidade") {
+        const num = parseInt(value, 10);
+        return {
+          ...a,
+          quantidade: isNaN(num) ? 0 : Math.max(0, num)
+        };
+      }
+      return { ...a, [field]: value };
+    });
 
-    if (item.fefo_lote_id && newLoteId !== item.fefo_lote_id) {
-      toast.warning(`Lote alterado! Por favor, justifique o motivo de trocar o lote sugerido pelo FEFO (${item.fefo_numero_lote}) para rastreabilidade.`);
+    const novaSoma = item.alocacoes_lote.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
+    item.qtd_atendida = novaSoma;
+    if (item.qtd_recebida === undefined || mode === "central") {
+      item.qtd_recebida = novaSoma;
     }
+
+    if (item.alocacoes_lote.length > 0) {
+      item.lote_id = item.alocacoes_lote[0].lote_id;
+      item.data_validade = item.alocacoes_lote[0].data_validade;
+      item.numero_lote = item.alocacoes_lote.length > 1
+        ? item.alocacoes_lote.map(a => `${a.numero_lote || 'S/ Lote'} (${a.quantidade} un)`).join(", ")
+        : (item.alocacoes_lote[0].numero_lote || "S/ Lote");
+    }
+
     setItensState(next);
+  };
+
+  const handleAdicionarLoteSplit = (itemIndex) => {
+    const next = [...itensState];
+    const item = next[itemIndex];
+    if (!item.alocacoes_lote) item.alocacoes_lote = [];
+
+    const medId = item.medicamento_id || item.id;
+    const medLotes = (lotes || [])
+      .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+      .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+    const lotesJaUsados = item.alocacoes_lote.map(a => a.lote_id);
+    const proximoLote = medLotes.find(l => !lotesJaUsados.includes(l.id)) || medLotes[0];
+
+    const somaAtual = item.alocacoes_lote.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
+    const restanteSolicitado = Math.max(0, (Number(item.qtd_solicitada) || 0) - somaAtual);
+    const saldoProximo = proximoLote ? Number(proximoLote.quantidade_atual) || 0 : 0;
+    const qtdInicial = saldoProximo > 0 && restanteSolicitado > 0 ? Math.min(saldoProximo, restanteSolicitado) : restanteSolicitado;
+
+    const novaAloc = {
+      id: `aloc-${medId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      lote_id: proximoLote ? proximoLote.id : "",
+      numero_lote: proximoLote?.numero_lote || "",
+      data_validade: proximoLote?.data_validade || "",
+      quantidade: qtdInicial,
+      saldo_lote: saldoProximo
+    };
+
+    item.alocacoes_lote.push(novaAloc);
+
+    const novaSoma = item.alocacoes_lote.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
+    item.qtd_atendida = novaSoma;
+    if (item.qtd_recebida === undefined || mode === "central") {
+      item.qtd_recebida = novaSoma;
+    }
+    item.numero_lote = item.alocacoes_lote.map(a => `${a.numero_lote || 'S/ Lote'} (${a.quantidade} un)`).join(", ");
+
+    setItensState(next);
+    toast.info("Novo lote adicionado. Ajuste a quantidade a retirar de cada lote.");
+  };
+
+  const handleRemoverLoteSplit = (itemIndex, alocId) => {
+    const next = [...itensState];
+    const item = next[itemIndex];
+    if (!item.alocacoes_lote || item.alocacoes_lote.length <= 1) return;
+
+    item.alocacoes_lote = item.alocacoes_lote.filter(a => a.id !== alocId);
+
+    const novaSoma = item.alocacoes_lote.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
+    item.qtd_atendida = novaSoma;
+    if (item.qtd_recebida === undefined || mode === "central") {
+      item.qtd_recebida = novaSoma;
+    }
+    if (item.alocacoes_lote.length > 0) {
+      item.lote_id = item.alocacoes_lote[0].lote_id;
+      item.data_validade = item.alocacoes_lote[0].data_validade;
+      item.numero_lote = item.alocacoes_lote.length > 1
+        ? item.alocacoes_lote.map(a => `${a.numero_lote || 'S/ Lote'} (${a.quantidade} un)`).join(", ")
+        : (item.alocacoes_lote[0].numero_lote || "S/ Lote");
+    }
+
+    setItensState(next);
+  };
+
+  const handleAutoDistribuirFefo = (itemIndex) => {
+    const next = [...itensState];
+    const item = next[itemIndex];
+    const medId = item.medicamento_id || item.id;
+    const medLotes = (lotes || [])
+      .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+      .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+    const totalAlvo = Number(item.qtd_solicitada) || 0;
+    let restante = totalAlvo;
+    const novasAlocacoes = [];
+
+    if (medLotes.length === 0) {
+      novasAlocacoes.push({
+        id: `aloc-${medId}-sem-lote`,
+        lote_id: "",
+        numero_lote: item.numero_lote || "S/ Lote",
+        data_validade: item.data_validade || "",
+        quantidade: totalAlvo,
+        saldo_lote: 0
+      });
+    } else {
+      for (let i = 0; i < medLotes.length; i++) {
+        const l = medLotes[i];
+        const saldo = Number(l.quantidade_atual) || 0;
+        if (saldo <= 0) continue;
+
+        const qtdDeste = Math.min(saldo, restante);
+        novasAlocacoes.push({
+          id: `aloc-${medId}-${l.id}-${i}`,
+          lote_id: l.id,
+          numero_lote: l.numero_lote,
+          data_validade: l.data_validade,
+          quantidade: qtdDeste,
+          saldo_lote: saldo
+        });
+        restante -= qtdDeste;
+        if (restante <= 0) break;
+      }
+
+      if (restante > 0) {
+        if (novasAlocacoes.length > 0) {
+          novasAlocacoes[novasAlocacoes.length - 1].quantidade += restante;
+        } else {
+          novasAlocacoes.push({
+            id: `aloc-${medId}-${medLotes[0].id}-0`,
+            lote_id: medLotes[0].id,
+            numero_lote: medLotes[0].numero_lote,
+            data_validade: medLotes[0].data_validade,
+            quantidade: totalAlvo,
+            saldo_lote: Number(medLotes[0].quantidade_atual) || 0
+          });
+        }
+      }
+    }
+
+    item.alocacoes_lote = novasAlocacoes;
+    const soma = novasAlocacoes.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
+    item.qtd_atendida = soma;
+    if (item.qtd_recebida === undefined || mode === "central") {
+      item.qtd_recebida = soma;
+    }
+    if (novasAlocacoes.length > 0) {
+      item.lote_id = novasAlocacoes[0].lote_id;
+      item.data_validade = novasAlocacoes[0].data_validade;
+      item.numero_lote = novasAlocacoes.length > 1
+        ? novasAlocacoes.map(a => `${a.numero_lote || 'S/ Lote'} (${a.quantidade} un)`).join(", ")
+        : (novasAlocacoes[0].numero_lote || "S/ Lote");
+    }
+
+    setItensState(next);
+    toast.success("Lotes distribuídos por FEFO automaticamente!");
   };
 
   const handleMotivoTrocaLoteChange = (index, val) => {
@@ -2767,10 +3080,14 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
   const handleQtdAtendidaChange = (index, val) => {
     const next = [...itensState];
     const num = parseInt(val, 10);
-    const valNum = isNaN(num) ? 0 : num;
-    next[index].qtd_atendida = valNum;
-    if (next[index].qtd_recebida === undefined) {
-      next[index].qtd_recebida = valNum;
+    const valNum = isNaN(num) ? 0 : Math.max(0, num);
+    const item = next[index];
+    item.qtd_atendida = valNum;
+    if (item.qtd_recebida === undefined || mode === "central") {
+      item.qtd_recebida = valNum;
+    }
+    if (item.alocacoes_lote && item.alocacoes_lote.length === 1) {
+      item.alocacoes_lote[0].quantidade = valNum;
     }
     setItensState(next);
   };
@@ -2990,7 +3307,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                     </TableCell>
 
                     {/* COLUNA LOTE / VALIDADE (FEFO) */}
-                    <TableCell className="min-w-[210px] text-xs">
+                    <TableCell className="min-w-[280px] text-xs">
                       {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") ? (
                         (() => {
                           const medId = item.medicamento_id || item.id;
@@ -2998,8 +3315,8 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                             .filter(l => (l.medicamento_id === medId || l.medicamentoId === medId) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
                             .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
                           
-                          const fefoLote = medLotes[0];
-                          const isDivergent = item.lote_id && fefoLote && item.lote_id !== fefoLote.id;
+                          const alocacoes = item.alocacoes_lote || [];
+                          const somaAlocada = alocacoes.reduce((s, a) => s + (Number(a.quantidade) || 0), 0);
 
                           if (medLotes.length === 0) {
                             return (
@@ -3015,56 +3332,156 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                           }
 
                           return (
-                            <div className="space-y-1.5">
-                              <Select
-                                value={item.lote_id || fefoLote?.id || ""}
-                                onValueChange={(val) => handleLoteChange(idx, val)}
-                              >
-                                <SelectTrigger className={cn(
-                                  "h-8 text-xs font-mono font-medium bg-white",
-                                  isDivergent ? "border-amber-400 text-amber-900 bg-amber-50/30" : "border-slate-300"
-                                )}>
-                                  <SelectValue placeholder="Selecione o Lote" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {medLotes.map((l, lIdx) => (
-                                    <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
-                                      {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) - Saldo: {l.quantidade_atual} un
-                                      {lIdx === 0 ? " 🌟 [FEFO]" : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                            <div className="space-y-2">
+                              {/* Lista de Alocações de Lotes */}
+                              <div className="space-y-1.5">
+                                {alocacoes.map((aloc, aIdx) => {
+                                  const loteObj = medLotes.find(l => l.id === aloc.lote_id);
+                                  const saldoLote = loteObj ? Number(loteObj.quantidade_atual) || 0 : 0;
+                                  const isExcedente = Number(aloc.quantidade) > saldoLote;
 
-                              {isDivergent && (
-                                <div className="space-y-1 bg-amber-50 p-1.5 rounded border border-amber-200">
-                                  <div className="flex items-center gap-1 text-[10px] font-bold text-amber-800">
-                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                                    <span>Lote alterado (FEFO: {fefoLote?.numero_lote})</span>
-                                  </div>
-                                  <Input
-                                    placeholder="Motivo da troca de lote..."
-                                    value={item.motivo_troca_lote || ""}
-                                    onChange={(e) => handleMotivoTrocaLoteChange(idx, e.target.value)}
-                                    className="h-6 text-[11px] bg-white border-amber-300 placeholder:text-amber-400"
-                                  />
+                                  return (
+                                    <div key={aloc.id || aIdx} className="p-1.5 rounded bg-slate-50 border border-slate-200 space-y-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="flex-1">
+                                          <Select
+                                            value={aloc.lote_id}
+                                            onValueChange={(val) => handleUpdateAlocacao(idx, aloc.id, "lote_id", val)}
+                                          >
+                                            <SelectTrigger className="h-7 text-xs font-mono font-medium bg-white border-slate-300">
+                                              <SelectValue placeholder="Selecione o Lote" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {medLotes.map((l, lIdx) => (
+                                                <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
+                                                  {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) — Saldo: {l.quantidade_atual} un
+                                                  {lIdx === 0 ? " 🌟 [FEFO]" : ""}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            value={aloc.quantidade}
+                                            onChange={(e) => handleUpdateAlocacao(idx, aloc.id, "quantidade", e.target.value)}
+                                            className={cn(
+                                              "w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300",
+                                              isExcedente && "border-red-500 text-red-600 bg-red-50"
+                                            )}
+                                            title="Quantidade a entregar deste lote"
+                                          />
+                                          <span className="text-[10px] text-slate-500 font-bold">un</span>
+                                        </div>
+
+                                        {alocacoes.length > 1 && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleRemoverLoteSplit(idx, aloc.id)}
+                                            className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                                            title="Remover este lote dividido"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
+                                        )}
+                                      </div>
+
+                                      {/* Sub-linha de Informação do Lote */}
+                                      <div className="flex items-center justify-between text-[10px] text-slate-500 px-0.5">
+                                        <span>
+                                          Saldo Central: <strong className={isExcedente ? "text-red-600" : "text-slate-800"}>{saldoLote} un</strong>
+                                          {loteObj?.data_validade && ` • Val: ${format(new Date(loteObj.data_validade), "dd/MM/yy")}`}
+                                        </span>
+                                        {isExcedente && (
+                                          <span className="text-red-600 font-bold">⚠️ Excede saldo!</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Barra de Ações Multi-Lote e Balanço */}
+                              <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100">
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAdicionarLoteSplit(idx)}
+                                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                                    title="Dividir e entregar quantidade de múltiplos lotes"
+                                  >
+                                    <Plus className="w-3 h-3 text-indigo-600" />
+                                    + Dividir em outro Lote
+                                  </button>
+
+                                  {medLotes.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAutoDistribuirFefo(idx)}
+                                      className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-0.5 cursor-pointer bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded border border-slate-200 transition-colors"
+                                      title="Auto-distribuir pelos lotes mais próximos do vencimento (FEFO)"
+                                    >
+                                      <Wand2 className="w-2.5 h-2.5 text-amber-500" />
+                                      Auto FEFO
+                                    </button>
+                                  )}
                                 </div>
-                              )}
+
+                                <div className="text-[10px] font-mono">
+                                  {somaAlocada === Number(item.qtd_solicitada) ? (
+                                    <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold flex items-center gap-1">
+                                      <Check className="w-3 h-3 text-emerald-600 inline" />
+                                      Total: {somaAlocada} un
+                                    </span>
+                                  ) : somaAlocada < Number(item.qtd_solicitada) ? (
+                                    <span className="text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-bold">
+                                      Total: {somaAlocada} un (Faltam {Number(item.qtd_solicitada) - somaAlocada})
+                                    </span>
+                                  ) : (
+                                    <span className="text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 font-bold">
+                                      Total: {somaAlocada} un (+{somaAlocada - Number(item.qtd_solicitada)})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           );
                         })()
                       ) : (
                         <div className="space-y-1 font-mono">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Badge variant="outline" className="bg-indigo-50 text-indigo-900 border-indigo-300 font-bold text-[11px] py-0.5">
-                              📦 Lote: {item.numero_lote || item.lote_previsto || "S/ Lote"}
-                            </Badge>
-                            {item.data_validade && (
-                              <span className="text-[11px] text-slate-600">
-                                Val: {format(new Date(item.data_validade), "dd/MM/yyyy")}
-                              </span>
-                            )}
-                          </div>
+                          {item.alocacoes_lote && item.alocacoes_lote.length > 1 ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-700">
+                                <Boxes className="w-3.5 h-3.5 text-indigo-600" />
+                                <span>{item.alocacoes_lote.length} lotes atendidos:</span>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                {item.alocacoes_lote.map((aloc, aIdx) => (
+                                  <div key={aIdx} className="bg-indigo-50/80 border border-indigo-200 rounded px-1.5 py-0.5 text-[11px] flex items-center justify-between gap-1">
+                                    <span className="font-bold text-indigo-950 font-mono">Lote: {aloc.numero_lote || "S/ Lote"}</span>
+                                    <span className="text-slate-600 text-[10px]">{aloc.data_validade ? `Val: ${format(new Date(aloc.data_validade), "dd/MM/yy")}` : ""}</span>
+                                    <Badge className="bg-indigo-600 text-white font-mono text-[10px] px-1 py-0 h-4">{aloc.quantidade} un</Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Badge variant="outline" className="bg-indigo-50 text-indigo-900 border-indigo-300 font-bold text-[11px] py-0.5">
+                                📦 Lote: {item.numero_lote || item.lote_previsto || "S/ Lote"}
+                              </Badge>
+                              {item.data_validade && (
+                                <span className="text-[11px] text-slate-600">
+                                  Val: {format(new Date(item.data_validade), "dd/MM/yyyy")}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {item.motivo_troca_lote && (
                             <div className="text-[10px] text-amber-800 bg-amber-50 p-1 rounded border border-amber-200 leading-tight">
                               <strong>⚠️ Troca:</strong> {item.motivo_troca_lote}
