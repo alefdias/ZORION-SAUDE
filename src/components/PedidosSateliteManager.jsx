@@ -749,19 +749,24 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
     }
   };
 
-  // Modal Action Mutation (Separar, Entregar, Conferir/Receber)
+  // Modal Action Mutation (Separar, Entregar, Conferir/Receber) - OTIMIZADA EM LOTE SQL ATÔMICO
   const updatePedidoMutation = useMutation({
     mutationFn: async ({ pedido, newStatus, updatedItens, motivoCancelamento }) => {
       const payload = {
         status: newStatus,
-        itens_json: JSON.stringify(updatedItens)
+        itens_json: JSON.stringify(updatedItens),
+        saida_gerada: pedido.saida_gerada || 0
       };
+
+      const esc = (val) => (val === null || val === undefined ? "NULL" : `'${String(val).replace(/'/g, "''")}'`);
+      const nowIso = format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX");
+      const sqlBatch = ["BEGIN;"];
 
       const freshMeds = await db.entities.Medicamento.list();
       const freshLotes = await db.entities.Lote.list();
 
-      // Função auxiliar para processar baixa de saída da Central por transferência
-      const processarSaidaTransferenciaCentral = async () => {
+      // Função auxiliar para processar baixa de saída da Central por transferência (em lote SQL)
+      const prepararSaidaTransferenciaCentralBatch = () => {
         for (const item of updatedItens) {
           const qtdAtendida = Number(item.qtd_atendida) || 0;
           if (qtdAtendida <= 0) continue;
@@ -777,70 +782,35 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
               const lote = aloc.lote_id ? freshLotes.find(l => l.id === aloc.lote_id) : null;
               if (lote) {
-                const novaQtd = Math.max(0, (Number(lote.quantidade_atual) || 0) - qtdConsumir);
-                await db.entities.Lote.update(lote.id, {
-                  quantidade_atual: novaQtd,
-                  status: novaQtd <= 0 ? "esgotado" : lote.status
-                });
-                lote.quantidade_atual = novaQtd;
+                // 1. Baixa no saldo do lote
+                sqlBatch.push(
+                  `UPDATE "Lote" SET "quantidade_atual" = GREATEST(0, "quantidade_atual" - ${qtdConsumir}), ` +
+                  `"status" = CASE WHEN ("quantidade_atual" - ${qtdConsumir}) <= 0 THEN 'esgotado' ELSE "status" END ` +
+                  `WHERE "id" = ${esc(lote.id)};`
+                );
 
-                await db.entities.Saida.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: lote.id,
-                  numero_lote: lote.numero_lote || "S/ Lote",
-                  quantidade: qtdConsumir,
-                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  destino: "Farmácia Satélite",
-                  motivo: "Transferência de Estoque",
-                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
-                  tipo: "Transferência Central -> Satélite"
-                });
+                // 2. Registra Saída Central
+                sqlBatch.push(
+                  `INSERT INTO "Saida" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "data_saida", "destino", "motivo", "observacao", "tipo", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, ${esc(lote.id)}, ${esc(lote.numero_lote || "S/ Lote")}, ${qtdConsumir}, ${esc(nowIso)}, 'Farmácia Satélite', 'Transferência de Estoque', ${esc(`Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, 'Transferência Central -> Satélite', ${esc(nowIso)});`
+                );
 
-                await db.entities.TransferenciaPendente.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: lote.id,
-                  numero_lote: lote.numero_lote || "S/ Lote",
-                  quantidade: qtdConsumir,
-                  direcao: "para_satelite",
-                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
-                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
-                  origem: "pedido_satelite",
-                  pedido_id: pedido.id,
-                  pedido_codigo: pedido.codigo,
-                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
-                });
+                // 3. Registra TransferenciaPendente
+                sqlBatch.push(
+                  `INSERT INTO "TransferenciaPendente" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "direcao", "status", "data_solicitacao", "data_aceite", "origem", "pedido_id", "pedido_codigo", "observacao", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, ${esc(lote.id)}, ${esc(lote.numero_lote || "S/ Lote")}, ${qtdConsumir}, 'para_satelite', '${newStatus === "Concluido" ? "Aceito" : "Pendente"}', ${esc(nowIso)}, ${newStatus === "Concluido" ? esc(nowIso) : "NULL"}, 'pedido_satelite', ${esc(pedido.id)}, ${esc(pedido.codigo)}, ${esc(`Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, ${esc(nowIso)});`
+                );
               } else {
-                await db.entities.Saida.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: "",
-                  numero_lote: aloc.numero_lote || "S/ LOTE",
-                  quantidade: qtdConsumir,
-                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  destino: "Farmácia Satélite",
-                  motivo: "Transferência de Estoque",
-                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
-                  tipo: "Transferência Central -> Satélite"
-                });
+                // Sem lote específico
+                sqlBatch.push(
+                  `INSERT INTO "Saida" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "data_saida", "destino", "motivo", "observacao", "tipo", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, '', ${esc(aloc.numero_lote || "S/ LOTE")}, ${qtdConsumir}, ${esc(nowIso)}, 'Farmácia Satélite', 'Transferência de Estoque', ${esc(`Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, 'Transferência Central -> Satélite', ${esc(nowIso)});`
+                );
 
-                await db.entities.TransferenciaPendente.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: "",
-                  numero_lote: aloc.numero_lote || "S/ LOTE",
-                  quantidade: qtdConsumir,
-                  direcao: "para_satelite",
-                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
-                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
-                  origem: "pedido_satelite",
-                  pedido_id: pedido.id,
-                  pedido_codigo: pedido.codigo,
-                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
-                });
+                sqlBatch.push(
+                  `INSERT INTO "TransferenciaPendente" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "direcao", "status", "data_solicitacao", "data_aceite", "origem", "pedido_id", "pedido_codigo", "observacao", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, '', ${esc(aloc.numero_lote || "S/ LOTE")}, ${qtdConsumir}, 'para_satelite', '${newStatus === "Concluido" ? "Aceito" : "Pendente"}', ${esc(nowIso)}, ${newStatus === "Concluido" ? esc(nowIso) : "NULL"}, 'pedido_satelite', ${esc(pedido.id)}, ${esc(pedido.codigo)}, ${esc(`Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, ${esc(nowIso)});`
+                );
               }
             }
           } else {
@@ -849,7 +819,6 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               .filter(l => l.medicamento_id === med.id && (Number(l.quantidade_atual) || 0) > 0)
               .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
 
-            // Se o operador selecionou um lote específico na separação, prioriza-o
             if (item.lote_id) {
               const chosenLote = medLotes.find(l => l.id === item.lote_id);
               if (chosenLote) {
@@ -857,110 +826,51 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               }
             }
 
-            if (medLotes.length > 0) {
-              item.lote_id = medLotes[0].id;
-              item.numero_lote = medLotes[0].numero_lote || item.numero_lote;
-              item.data_validade = medLotes[0].data_validade || item.data_validade;
-            }
-
             let pendenteAlocar = qtdAtendida;
-
             for (const lote of medLotes) {
               if (pendenteAlocar <= 0) break;
               const qtdConsumir = Math.min(Number(lote.quantidade_atual) || 0, pendenteAlocar);
               if (qtdConsumir > 0) {
-                const novaQtd = (Number(lote.quantidade_atual) || 0) - qtdConsumir;
-                await db.entities.Lote.update(lote.id, {
-                  quantidade_atual: novaQtd,
-                  status: novaQtd <= 0 ? "esgotado" : lote.status
-                });
-                lote.quantidade_atual = novaQtd;
+                sqlBatch.push(
+                  `UPDATE "Lote" SET "quantidade_atual" = GREATEST(0, "quantidade_atual" - ${qtdConsumir}), ` +
+                  `"status" = CASE WHEN ("quantidade_atual" - ${qtdConsumir}) <= 0 THEN 'esgotado' ELSE "status" END ` +
+                  `WHERE "id" = ${esc(lote.id)};`
+                );
 
-                // 1. Registra a Saída no Estoque Central com motivo 'Transferência de Estoque'
-                await db.entities.Saida.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: lote.id,
-                  numero_lote: lote.numero_lote || "S/ Lote",
-                  quantidade: qtdConsumir,
-                  data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  destino: "Farmácia Satélite",
-                  motivo: "Transferência de Estoque",
-                  observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
-                  tipo: "Transferência Central -> Satélite"
-                });
+                sqlBatch.push(
+                  `INSERT INTO "Saida" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "data_saida", "destino", "motivo", "observacao", "tipo", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, ${esc(lote.id)}, ${esc(lote.numero_lote || "S/ Lote")}, ${qtdConsumir}, ${esc(nowIso)}, 'Farmácia Satélite', 'Transferência de Estoque', ${esc(`Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, 'Transferência Central -> Satélite', ${esc(nowIso)});`
+                );
 
-                // 2. Registra na Transferência de Estoque (TransferenciaPendente)
-                await db.entities.TransferenciaPendente.create({
-                  medicamento_id: med.id,
-                  medicamento_nome: med.nome,
-                  lote_id: lote.id,
-                  numero_lote: lote.numero_lote || "S/ Lote",
-                  quantidade: qtdConsumir,
-                  direcao: "para_satelite",
-                  status: newStatus === "Concluido" ? "Aceito" : "Pendente",
-                  data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                  data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
-                  origem: "pedido_satelite",
-                  pedido_id: pedido.id,
-                  pedido_codigo: pedido.codigo,
-                  observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
-                });
+                sqlBatch.push(
+                  `INSERT INTO "TransferenciaPendente" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "direcao", "status", "data_solicitacao", "data_aceite", "origem", "pedido_id", "pedido_codigo", "observacao", "created_at") ` +
+                  `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, ${esc(lote.id)}, ${esc(lote.numero_lote || "S/ Lote")}, ${qtdConsumir}, 'para_satelite', '${newStatus === "Concluido" ? "Aceito" : "Pendente"}', ${esc(nowIso)}, ${newStatus === "Concluido" ? esc(nowIso) : "NULL"}, 'pedido_satelite', ${esc(pedido.id)}, ${esc(pedido.codigo)}, ${esc(`Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, ${esc(nowIso)});`
+                );
 
                 pendenteAlocar -= qtdConsumir;
               }
             }
 
-            // Se faltar saldo em lotes cadastrados, registra saída e transferência sem lote específico
             if (pendenteAlocar > 0) {
-              await db.entities.Saida.create({
-                medicamento_id: med.id,
-                medicamento_nome: med.nome,
-                lote_id: "",
-                numero_lote: "S/ LOTE",
-                quantidade: pendenteAlocar,
-                data_saida: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                destino: "Farmácia Satélite",
-                motivo: "Transferência de Estoque",
-                observacao: `Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`,
-                tipo: "Transferência Central -> Satélite"
-              });
+              sqlBatch.push(
+                `INSERT INTO "Saida" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "data_saida", "destino", "motivo", "observacao", "tipo", "created_at") ` +
+                `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, '', 'S/ LOTE', ${pendenteAlocar}, ${esc(nowIso)}, 'Farmácia Satélite', 'Transferência de Estoque', ${esc(`Transferência referente ao Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, 'Transferência Central -> Satélite', ${esc(nowIso)});`
+              );
 
-              await db.entities.TransferenciaPendente.create({
-                medicamento_id: med.id,
-                medicamento_nome: med.nome,
-                lote_id: "",
-                numero_lote: "S/ LOTE",
-                quantidade: pendenteAlocar,
-                direcao: "para_satelite",
-                status: newStatus === "Concluido" ? "Aceito" : "Pendente",
-                data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                data_aceite: newStatus === "Concluido" ? format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX") : null,
-                origem: "pedido_satelite",
-                pedido_id: pedido.id,
-                pedido_codigo: pedido.codigo,
-                observacao: `Pedido ${pedido.codigo} (${pedido.ala_nome})`
-              });
+              sqlBatch.push(
+                `INSERT INTO "TransferenciaPendente" ("id", "medicamento_id", "medicamento_nome", "lote_id", "numero_lote", "quantidade", "direcao", "status", "data_solicitacao", "data_aceite", "origem", "pedido_id", "pedido_codigo", "observacao", "created_at") ` +
+                `VALUES (${esc(crypto.randomUUID())}, ${esc(med.id)}, ${esc(med.nome)}, '', 'S/ LOTE', ${pendenteAlocar}, 'para_satelite', '${newStatus === "Concluido" ? "Aceito" : "Pendente"}', ${esc(nowIso)}, ${newStatus === "Concluido" ? esc(nowIso) : "NULL"}, 'pedido_satelite', ${esc(pedido.id)}, ${esc(pedido.codigo)}, ${esc(`Pedido ${pedido.codigo} (${pedido.ala_nome})`)}, ${esc(nowIso)});`
+              );
             }
           }
 
-          // Atualiza o estoque geral do medicamento no Central
-          const novoEstoqueCentral = Math.max(0, (Number(med.estoque_atual) || 0) - qtdAtendida);
-          await db.entities.Medicamento.update(med.id, {
-            estoque_atual: novoEstoqueCentral
-          });
-          med.estoque_atual = novoEstoqueCentral;
+          // Atualiza estoque geral do medicamento no Central
+          sqlBatch.push(
+            `UPDATE "Medicamento" SET "estoque_atual" = GREATEST(0, "estoque_atual" - ${qtdAtendida}) WHERE "id" = ${esc(med.id)};`
+          );
         }
 
         payload.saida_gerada = 1;
-        try {
-          await db.logAction(
-            "Transferência de Pedido Satélite",
-            "PedidoSatelite",
-            pedido.id,
-            `Saída por transferência de estoque gerada para o Pedido ${pedido.codigo} (${pedido.ala_nome})`
-          );
-        } catch (e) {}
       };
 
       if (newStatus === "Cancelado") {
@@ -970,113 +880,112 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           ? `[CANCELADO: ${motivoCancelamento || "Sem motivo"}] ${pedido.observacao}`
           : `[CANCELADO: ${motivoCancelamento || "Sem motivo"}]`;
         
-        // Se a saída já havia sido gerada para a satélite, estorna ao estoque central
         if (pedido.saida_gerada) {
           try {
             const allTransfers = await db.entities.TransferenciaPendente.list();
             const pedidoTransfers = (allTransfers || []).filter(
-              t => t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo
+              t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo) && t.status === "Pendente"
             );
             for (const tr of pedidoTransfers) {
-              if (tr.status === "Pendente") {
-                if (tr.lote_id) {
-                  const lote = freshLotes.find(l => l.id === tr.lote_id);
-                  if (lote) {
-                    await db.entities.Lote.update(lote.id, {
-                      quantidade_atual: (Number(lote.quantidade_atual) || 0) + (Number(tr.quantidade) || 0),
-                      status: "disponivel"
-                    });
-                  }
-                }
-                if (tr.medicamento_id) {
-                  const med = freshMeds.find(m => m.id === tr.medicamento_id);
-                  if (med) {
-                    await db.entities.Medicamento.update(med.id, {
-                      estoque_atual: (Number(med.estoque_atual) || 0) + (Number(tr.quantidade) || 0)
-                    });
-                  }
-                }
-                await db.entities.TransferenciaPendente.update(tr.id, {
-                  status: "Cancelado"
-                });
+              if (tr.lote_id) {
+                sqlBatch.push(
+                  `UPDATE "Lote" SET "quantidade_atual" = "quantidade_atual" + ${Number(tr.quantidade) || 0}, "status" = 'disponivel' WHERE "id" = ${esc(tr.lote_id)};`
+                );
+              }
+              if (tr.medicamento_id) {
+                sqlBatch.push(
+                  `UPDATE "Medicamento" SET "estoque_atual" = "estoque_atual" + ${Number(tr.quantidade) || 0} WHERE "id" = ${esc(tr.medicamento_id)};`
+                );
               }
             }
+            sqlBatch.push(
+              `UPDATE "TransferenciaPendente" SET "status" = 'Cancelado' WHERE ("pedido_id" = ${esc(pedido.id)} OR "pedido_codigo" = ${esc(pedido.codigo)}) AND "status" = 'Pendente';`
+            );
           } catch (e) {
-            console.warn("Erro ao estornar transferências canceladas:", e);
+            console.warn("Erro ao preparar estornos:", e);
+          }
+        }
+      } else if (newStatus === "Separado") {
+        payload.data_separacao = new Date().toISOString();
+        if (!pedido.saida_gerada) {
+          prepararSaidaTransferenciaCentralBatch();
+        }
+      } else if (newStatus === "Entregue") {
+        payload.data_entrega = new Date().toISOString();
+        if (!pedido.saida_gerada) {
+          prepararSaidaTransferenciaCentralBatch();
+        }
+      } else if (newStatus === "Concluido") {
+        payload.data_recebimento = new Date().toISOString();
+
+        if (!pedido.saida_gerada) {
+          prepararSaidaTransferenciaCentralBatch();
+        }
+
+        // Credita estoque satélite
+        for (const item of updatedItens) {
+          const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
+          const qtdEnviada = Number(item.qtd_atendida) || 0;
+
+          if (qtdRealRecebida > 0) {
+            sqlBatch.push(
+              `UPDATE "Medicamento" SET "estoque_satelite" = COALESCE("estoque_satelite", 0) + ${qtdRealRecebida} WHERE "id" = ${esc(item.medicamento_id)};`
+            );
+          }
+
+          // Se houve divergência (chegou menos), devolve sobra para Central
+          if (qtdRealRecebida < qtdEnviada) {
+            const dif = qtdEnviada - qtdRealRecebida;
+            sqlBatch.push(
+              `UPDATE "Medicamento" SET "estoque_atual" = COALESCE("estoque_atual", 0) + ${dif} WHERE "id" = ${esc(item.medicamento_id)};`
+            );
           }
         }
 
-        try {
+        // Marca todas as transferências pendentes como Aceito
+        sqlBatch.push(
+          `UPDATE "TransferenciaPendente" SET "status" = 'Aceito', "data_aceite" = ${esc(nowIso)} WHERE ("pedido_id" = ${esc(pedido.id)} OR "pedido_codigo" = ${esc(pedido.codigo)}) AND "status" = 'Pendente';`
+        );
+      }
+
+      // Atualiza o PedidoSatelite
+      sqlBatch.push(
+        `UPDATE "PedidoSatelite" SET ` +
+        `"status" = ${esc(payload.status)}, ` +
+        `"itens_json" = ${esc(payload.itens_json)}, ` +
+        `"saida_gerada" = ${payload.saida_gerada ? 1 : 0}` +
+        (payload.data_separacao ? `, "data_separacao" = ${esc(payload.data_separacao)}` : '') +
+        (payload.data_entrega ? `, "data_entrega" = ${esc(payload.data_entrega)}` : '') +
+        (payload.data_recebimento ? `, "data_recebimento" = ${esc(payload.data_recebimento)}` : '') +
+        (payload.data_cancelamento ? `, "data_cancelamento" = ${esc(payload.data_cancelamento)}` : '') +
+        (payload.motivo_cancelamento ? `, "motivo_cancelamento" = ${esc(payload.motivo_cancelamento)}` : '') +
+        (payload.observacao ? `, "observacao" = ${esc(payload.observacao)}` : '') +
+        ` WHERE "id" = ${esc(pedido.id)};`
+      );
+
+      sqlBatch.push("COMMIT;");
+
+      // Executa toda a transação em UMA ÚNICA chamada/conexão TCP rápida e protegida
+      await db.executeRaw(sqlBatch.join("\n"));
+
+      // Auditoria pontual
+      try {
+        if (newStatus === "Cancelado") {
           await db.logAction(
             "Cancelamento Pedido",
             "PedidoSatelite",
             pedido.id,
             `Pedido ${pedido.codigo} (${pedido.ala_nome}) cancelado. Motivo: ${motivoCancelamento || "Sem motivo informado"}`
           );
-        } catch (e) {}
-      } else if (newStatus === "Separado") {
-        payload.data_separacao = new Date().toISOString();
-        if (!pedido.saida_gerada) {
-          await processarSaidaTransferenciaCentral();
-        }
-      } else if (newStatus === "Entregue") {
-        payload.data_entrega = new Date().toISOString();
-        if (!pedido.saida_gerada) {
-          await processarSaidaTransferenciaCentral();
-        }
-      } else if (newStatus === "Concluido") {
-        payload.data_recebimento = new Date().toISOString();
-
-        // Se ainda não gerou saída central (caso tenha pulado para concluído direto)
-        if (!pedido.saida_gerada) {
-          await processarSaidaTransferenciaCentral();
-        }
-
-        // Creditar entrada exclusivamente no estoque satélite conforme a quantidade conferida
-        for (const item of updatedItens) {
-          const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
-          const qtdEnviada = Number(item.qtd_atendida) || 0;
-
-          if (qtdRealRecebida > 0) {
-            const med = freshMeds.find(m => m.id === item.medicamento_id);
-            if (med) {
-              const currentSat = Number(med.estoque_satelite || 0);
-              await db.entities.Medicamento.update(med.id, {
-                estoque_satelite: currentSat + qtdRealRecebida
-              });
-            }
-          }
-
-          // Se houve divergência (chegou menos do que a central enviou), devolve a sobra para a Central
-          if (qtdRealRecebida < qtdEnviada) {
-            const dif = qtdEnviada - qtdRealRecebida;
-            const med = freshMeds.find(m => m.id === item.medicamento_id);
-            if (med) {
-              await db.entities.Medicamento.update(med.id, {
-                estoque_atual: (Number(med.estoque_atual) || 0) + dif
-              });
-            }
-          }
-        }
-
-        // Atualiza todas as transferências pendentes deste pedido para 'Aceito'
-        try {
-          const allTransfers = await db.entities.TransferenciaPendente.list();
-          const pedidoTransfers = (allTransfers || []).filter(
-            t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo) && t.status === "Pendente"
+        } else if (payload.saida_gerada && !pedido.saida_gerada) {
+          await db.logAction(
+            "Transferência de Pedido Satélite",
+            "PedidoSatelite",
+            pedido.id,
+            `Saída por transferência de estoque gerada para o Pedido ${pedido.codigo} (${pedido.ala_nome})`
           );
-          for (const tr of pedidoTransfers) {
-            await db.entities.TransferenciaPendente.update(tr.id, {
-              status: "Aceito",
-              data_aceite: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
-            });
-          }
-        } catch (e) {
-          console.warn("Erro ao atualizar status de TransferenciaPendente:", e);
         }
-      }
-
-      await db.entities.PedidoSatelite.update(pedido.id, payload);
+      } catch (e) {}
     },
     onSuccess: (_, variables) => {
       const { newStatus, pedido } = variables;

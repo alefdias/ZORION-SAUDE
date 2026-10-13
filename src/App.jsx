@@ -140,11 +140,15 @@ function App() {
     // Listeners via evento Tauri
     let unlistenDb;
     let unlistenAdmissao;
+    let dbUpdateTimer = null;
 
     const setup = async () => {
       try {
         unlistenDb = await listen('db_update', () => {
-          queryClientInstance.invalidateQueries();
+          if (dbUpdateTimer) clearTimeout(dbUpdateTimer);
+          dbUpdateTimer = setTimeout(() => {
+            queryClientInstance.invalidateQueries();
+          }, 800);
         });
       } catch (e) {
         console.warn('Failed to listen to db_update:', e);

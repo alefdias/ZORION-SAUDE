@@ -839,7 +839,14 @@ export async function registrarAuditoria(acao, entidade, entidadeId, detalhes) {
   }
 }
 
+export async function executeRawSql(query) {
+  const { ip, dbName, password } = getPgConfig();
+  if (!ip || !dbName) throw new Error("Postgres não configurado.");
+  return await invoke("execute_postgres", { ip, dbName, password, query });
+}
+
 export const db = {
+  executeRaw: executeRawSql,
   logAction: registrarAuditoria,
   entities: {
     Medicamento: createEntityProxy("Medicamento"),

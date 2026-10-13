@@ -185,7 +185,7 @@ export function NotificationBell({ activeSection }) {
   if (isCentral) {
     pendingPedidos = pedidos.filter(p => p.status === "Pendente" || p.status === "Em Separação");
   } else if (isSatelite) {
-    readyPedidos = pedidos.filter(p => p.status === "Separado");
+    readyPedidos = pedidos.filter(p => p.status === "Separado" || p.status === "Entregue");
     cancelledPedidos = pedidos.filter(p => {
       if (p.status !== "Cancelado") return false;
       if (dismissedCancelled.includes(p.id)) return false;
