@@ -21,7 +21,12 @@ import {
   HeartPulse,
   AlertTriangle,
   RotateCcw,
-  Pill
+  Pill,
+  Plus,
+  Trash2,
+  Building2,
+  Calendar,
+  Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,6 +40,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { normalizeSearch } from "@/utils/searchUtils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
+import { safeFormatDate } from "@/utils/dateUtils";
+import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import logo from "../assets/logo-tr.png";
 
 export default function SateliteInventario() {
@@ -46,20 +53,14 @@ export default function SateliteInventario() {
   const [isBlindCount, setIsBlindCount] = useState(false);
   const hoje = new Date();
 
-  // Estados para Modal de Ajuste Comum
-  const [ajusteComumModal, setAjusteComumModal] = useState({
+  // Estados para Modal de Ajuste com Distribuição de Lotes
+  const [ajusteModal, setAjusteModal] = useState({
     isOpen: false,
     medicamento: null,
-    novaQtd: "",
-    motivo: "Ajuste de Balanço Físico Manual"
-  });
-
-  // Estados para Modal de Conciliação Portaria 344
-  const [conciliacao344Modal, setConciliacao344Modal] = useState({
-    isOpen: false,
-    medicamento: null,
-    qtdFisica: "",
-    tipoResolucao: "paciente", // 'paciente' | 'perda' | 'sobra'
+    isControlado: false,
+    lotesItens: [], // [{ id, loteId, numero_lote, data_validade, saldo_central, saldo_satelite_anterior, quantidade_satelite, isNovo }]
+    motivo: "Ajuste de Balanço Físico Manual",
+    tipoResolucao: "paciente", // 'paciente' | 'perda'
     pacienteId: "",
     medicoNome: "",
     medicoCrm: "",
@@ -85,9 +86,33 @@ export default function SateliteInventario() {
   }
 
   // Buscar medicamentos
-  const { data: medicamentos = [], isLoading } = useQuery({
+  const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
     queryKey: ['medicamentos'],
     queryFn: () => db.entities.Medicamento.list(),
+  });
+
+  // Buscar lotes
+  const { data: lotes = [], isLoading: loadingLotes } = useQuery({
+    queryKey: ['lotes'],
+    queryFn: () => db.entities.Lote.list(),
+  });
+
+  // Buscar transferências pendentes
+  const { data: transferencias = [] } = useQuery({
+    queryKey: ['transferencias_pendentes'],
+    queryFn: () => (db.entities.TransferenciaPendente ? db.entities.TransferenciaPendente.list() : []),
+  });
+
+  // Buscar pedidos satélite
+  const { data: pedidosSatelite = [] } = useQuery({
+    queryKey: ['pedidos_satelite'],
+    queryFn: () => (db.entities.PedidoSatelite ? db.entities.PedidoSatelite.list() : []),
+  });
+
+  // Buscar saídas
+  const { data: saidas = [] } = useQuery({
+    queryKey: ['saidas'],
+    queryFn: () => (db.entities.Saida ? db.entities.Saida.list() : []),
   });
 
   // Buscar pacientes para conciliação
@@ -95,6 +120,8 @@ export default function SateliteInventario() {
     queryKey: ['pacientes'],
     queryFn: () => db.entities.Paciente.list(),
   });
+
+  const isLoading = loadingMeds || loadingLotes;
 
   const pacientesAtivos = useMemo(() => {
     return pacientes.filter(p => !p.deleted_at && p.status !== 'Inativo');
@@ -162,147 +189,281 @@ export default function SateliteInventario() {
     }, 150);
   };
 
-  // Abrir modal adequado conforme o tipo de medicamento
+  // Abrir modal de balanço inteligente por lote
   const handleOpenAjuste = (med) => {
     const isControlado = isPsicotropico(med.grupo_terapeutico) || med.portaria_344;
-    const saldoAtual = Number(med.estoque_satelite) || 0;
+    const saldoSatTotal = Number(med.estoque_satelite) || 0;
 
-    if (isControlado) {
-      setConciliacao344Modal({
-        isOpen: true,
-        medicamento: med,
-        qtdFisica: saldoAtual.toString(),
-        tipoResolucao: "paciente",
-        pacienteId: pacientesAtivos[0]?.id || "",
-        medicoNome: "",
-        medicoCrm: "",
-        perdaMotivo: "Quebra acidental de ampola durante o plantão",
-        observacao: ""
-      });
-    } else {
-      setAjusteComumModal({
-        isOpen: true,
-        medicamento: med,
-        novaQtd: saldoAtual.toString(),
-        motivo: "Ajuste de Balanço Físico Manual"
+    // 1. Filtrar todos os lotes que pertencem a este medicamento (cadastrados na Central ou sistema)
+    const medLotes = lotes.filter((l) => {
+      const lMedId = String(l.medicamento_id || l.medicamentoId || "");
+      if (lMedId && lMedId === String(med.id)) return true;
+      if (med.codigo && l.medicamento_codigo && String(l.medicamento_codigo).trim() === String(med.codigo).trim()) return true;
+      return false;
+    });
+
+    // 2. Calcular quais lotes possuem saldo comprovado na Satélite
+    const lotesSatComprovados = calcularLotesSatelite({
+      medId: med.id,
+      medCodigo: med.codigo,
+      medNome: med.nome,
+      saldoTotalSat: saldoSatTotal,
+      lotes,
+      transferencias,
+      pedidosSatelite,
+      saidas,
+    });
+
+    // 3. Montar a lista inicial de lotes para contagem no modal
+    const lotesItens = medLotes.map((l) => {
+      const satMatch = lotesSatComprovados.find(
+        (ls) => ls.id === l.id || (ls.numero_lote && l.numero_lote && ls.numero_lote.trim().toLowerCase() === l.numero_lote.trim().toLowerCase())
+      );
+      const saldoSatAnt = satMatch ? Number(satMatch.saldoSatelite) || 0 : 0;
+      return {
+        id: l.id,
+        loteId: l.id,
+        numero_lote: l.numero_lote || "S/L",
+        data_validade: l.data_validade || "",
+        saldo_central: Number(l.quantidade_atual) || 0, // Apenas visualização
+        saldo_satelite_anterior: saldoSatAnt,
+        quantidade_satelite: saldoSatAnt > 0 ? String(saldoSatAnt) : "0",
+        isNovo: false,
+      };
+    });
+
+    // Se o medicamento não possui nenhum lote cadastrado na Central, criar linha inicial editável
+    if (lotesItens.length === 0) {
+      lotesItens.push({
+        id: "lote-temp-1",
+        loteId: null,
+        numero_lote: "LOTE-01",
+        data_validade: "",
+        saldo_central: Number(med.estoque_atual) || 0,
+        saldo_satelite_anterior: saldoSatTotal,
+        quantidade_satelite: String(saldoSatTotal),
+        isNovo: true,
       });
     }
+
+    setAjusteModal({
+      isOpen: true,
+      medicamento: med,
+      isControlado: !!isControlado,
+      lotesItens,
+      motivo: "Ajuste de Balanço Físico Manual",
+      tipoResolucao: "paciente",
+      pacienteId: pacientesAtivos[0]?.id || "",
+      medicoNome: "",
+      medicoCrm: "",
+      perdaMotivo: "Quebra acidental de ampola durante o plantão",
+      observacao: ""
+    });
   };
 
-  // Salvar Ajuste de Medicamento Comum
-  const handleSalvarAjusteComum = async (e) => {
+  // Adicionar linha de lote manual
+  const handleAddLoteLinha = () => {
+    setAjusteModal((prev) => ({
+      ...prev,
+      lotesItens: [
+        ...prev.lotesItens,
+        {
+          id: `novo-lote-${Date.now()}`,
+          loteId: null,
+          numero_lote: "",
+          data_validade: "",
+          saldo_central: 0,
+          saldo_satelite_anterior: 0,
+          quantidade_satelite: "",
+          isNovo: true,
+        },
+      ],
+    }));
+  };
+
+  // Remover lote adicionado manualmente
+  const handleRemoveLoteLinha = (idx) => {
+    setAjusteModal((prev) => ({
+      ...prev,
+      lotesItens: prev.lotesItens.filter((_, i) => i !== idx),
+    }));
+  };
+
+  // Alterar campo de um lote
+  const handleLoteFieldChange = (idx, field, value) => {
+    setAjusteModal((prev) => {
+      const novosLotes = [...prev.lotesItens];
+      novosLotes[idx] = {
+        ...novosLotes[idx],
+        [field]: value,
+      };
+      return { ...prev, lotesItens: novosLotes };
+    });
+  };
+
+  // Salvar Ajuste com Distribuição por Lote (sem mexer na Central)
+  const handleSalvarAjuste = async (e) => {
     e.preventDefault();
-    const med = ajusteComumModal.medicamento;
+    const med = ajusteModal.medicamento;
     if (!med) return;
 
-    const novaQtdInt = parseInt(ajusteComumModal.novaQtd, 10);
-    if (isNaN(novaQtdInt) || novaQtdInt < 0) {
-      toast.error("Informe uma quantidade física válida.");
-      return;
+    // Validar se há lotes sem número
+    for (const item of ajusteModal.lotesItens) {
+      if (item.isNovo && (!item.numero_lote || !item.numero_lote.trim())) {
+        toast.error("Preencha o número do lote para todos os lotes adicionados.");
+        return;
+      }
+    }
+
+    // Calcular soma total da contagem física
+    const totalContado = ajusteModal.lotesItens.reduce((acc, it) => {
+      const val = parseInt(it.quantidade_satelite, 10);
+      return acc + (isNaN(val) || val < 0 ? 0 : val);
+    }, 0);
+
+    const saldoAnterior = Number(med.estoque_satelite) || 0;
+    const diferencaTotal = totalContado - saldoAnterior;
+
+    // Se for psicotrópico e houver falta (redução)
+    let selectedPac = null;
+    if (ajusteModal.isControlado && diferencaTotal < 0) {
+      if (ajusteModal.tipoResolucao === "paciente") {
+        selectedPac = pacientes.find((p) => String(p.id) === String(ajusteModal.pacienteId));
+        if (!selectedPac) {
+          toast.error("Selecione o paciente do plantão para justificar a saída legal no Livro 344.");
+          return;
+        }
+      }
     }
 
     try {
-      toast.loading("Atualizando estoque satélite...");
-      await db.entities.Medicamento.update(med.id, {
-        estoque_satelite: novaQtdInt
-      });
+      toast.loading("Gravando balanço satélite por lote...");
 
-      await queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
-      toast.dismiss();
-      toast.success(`Estoque de ${med.nome} atualizado para ${novaQtdInt} unidades!`);
-      setAjusteComumModal({ isOpen: false, medicamento: null, novaQtd: "", motivo: "" });
-    } catch (err) {
-      toast.dismiss();
-      toast.error("Erro ao atualizar estoque: " + (err.message || err));
-    }
-  };
+      // Processar cada lote individualmente
+      for (const it of ajusteModal.lotesItens) {
+        const qtdFisicaLote = parseInt(it.quantidade_satelite, 10) || 0;
+        let targetLoteId = it.loteId;
 
-  // Salvar Conciliação da Portaria 344
-  const handleSalvarConciliacao344 = async (e) => {
-    e.preventDefault();
-    const med = conciliacao344Modal.medicamento;
-    if (!med) return;
+        // Se for novo lote manual e ainda não tiver ID no banco
+        if (it.isNovo && !targetLoteId && it.numero_lote) {
+          const numLoteLimpo = it.numero_lote.trim();
+          const matchExisting = lotes.find(
+            (l) =>
+              String(l.medicamento_id || l.medicamentoId || "") === String(med.id) &&
+              l.numero_lote &&
+              l.numero_lote.trim().toLowerCase() === numLoteLimpo.toLowerCase()
+          );
 
-    const qtdFisicaInt = parseInt(conciliacao344Modal.qtdFisica, 10);
-    const saldoSistema = Number(med.estoque_satelite) || 0;
-
-    if (isNaN(qtdFisicaInt) || qtdFisicaInt < 0) {
-      toast.error("Informe a contagem física real válida.");
-      return;
-    }
-
-    const diferenca = saldoSistema - qtdFisicaInt;
-
-    try {
-      toast.loading("Processando conciliação da Portaria 344...");
-
-      // Se faltam medicamentos (saldo sistema > físico)
-      if (diferenca > 0) {
-        if (conciliacao344Modal.tipoResolucao === "paciente") {
-          const pac = pacientes.find(p => String(p.id) === String(conciliacao344Modal.pacienteId));
-          if (!pac) {
-            toast.dismiss();
-            toast.error("Selecione o paciente que recebeu o medicamento.");
-            return;
+          if (matchExisting) {
+            targetLoteId = matchExisting.id;
+          } else {
+            // Cria o lote formalmente com QUANTIDADE_ATUAL = 0 para que a Central não receba nada!
+            const novoLoteCriado = await db.entities.Lote.create({
+              medicamento_id: med.id,
+              numero_lote: numLoteLimpo,
+              data_validade: it.data_validade || null,
+              quantidade_atual: 0,
+              quantidade_inicial: 0,
+              status: "Ativo",
+              created_at: new Date().toISOString(),
+            });
+            targetLoteId = novoLoteCriado?.id || null;
           }
+        }
 
-          // Lança a saída no sistema vinculada ao paciente para o Livro 344
-          await db.entities.Saida.create({
+        const saldoAntLote = Number(it.saldo_satelite_anterior) || 0;
+        const diffLote = qtdFisicaLote - saldoAntLote;
+
+        // Se aumentou o saldo deste lote (sobra / veio do limbo):
+        // NUNCA MEXER NA CENTRAL! Cria entrada via TransferenciaPendente Aceita exclusiva para a satélite
+        if (diffLote > 0) {
+          await db.entities.TransferenciaPendente.create({
             medicamento_id: med.id,
             medicamento_nome: med.nome,
-            quantidade: diferenca,
-            destino: "Paciente",
-            motivo: "Dispensação Hospitalar - Balanço Satélite",
-            observacao: `Conciliação de dose não baixada no plantão: ${conciliacao344Modal.observacao || "Uso regular no leito"}`,
-            tipo: "SAIDA",
-            paciente_id: pac.id,
-            paciente_nome: pac.nome,
-            ala_nome: pac.alaNome || "Enfermaria",
-            responsavel: currentUser.nome,
-            responsavel_crf: currentUser.crf,
-            data_saida: new Date().toISOString()
+            lote_id: targetLoteId,
+            numero_lote: it.numero_lote,
+            quantidade: diffLote,
+            direcao: "para_satelite",
+            status: "Aceito",
+            data_solicitacao: new Date().toISOString(),
+            data_aceite: new Date().toISOString(),
+            observacao: `Ajuste de Balanço Físico Satélite (+${diffLote} un. Lote ${it.numero_lote})`,
           });
-        } else {
-          // Lança a perda oficial para o Livro 344
+        }
+
+        // Se diminuiu o saldo deste lote (falta / baixa física):
+        // Registra saída exclusiva da satélite sem alterar estoque central
+        if (diffLote < 0) {
+          const qtdBaixa = Math.abs(diffLote);
           await db.entities.Saida.create({
             medicamento_id: med.id,
             medicamento_nome: med.nome,
-            quantidade: diferenca,
-            destino: "Perda",
-            motivo: "Perda",
-            observacao: `Perda registrada no Balanço Satélite: ${conciliacao344Modal.perdaMotivo}. ${conciliacao344Modal.observacao || ""}`.trim(),
+            lote_id: targetLoteId,
+            numero_lote: it.numero_lote,
+            quantidade: qtdBaixa,
+            destino:
+              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+                ? "Paciente"
+                : "Ajuste de Balanço Satélite",
+            motivo:
+              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+                ? "Dispensação Hospitalar - Balanço Satélite"
+                : ajusteModal.isControlado && ajusteModal.tipoResolucao === "perda"
+                ? "Perda"
+                : "Ajuste de Balanço Físico Manual",
             tipo: "SAIDA",
+            origem: "satelite",
+            paciente_id: ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente" ? selectedPac?.id : null,
+            paciente_nome: ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente" ? selectedPac?.nome : null,
+            ala_nome:
+              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+                ? selectedPac?.alaNome || "Enfermaria"
+                : null,
             responsavel: currentUser.nome,
             responsavel_crf: currentUser.crf,
-            data_saida: new Date().toISOString()
+            data_saida: new Date().toISOString(),
+            observacao: ajusteModal.isControlado
+              ? ajusteModal.tipoResolucao === "perda"
+                ? `Perda registrada no Balanço Satélite: ${ajusteModal.perdaMotivo}. ${ajusteModal.observacao || ""}`.trim()
+                : `Conciliação de dose não baixada no plantão: ${ajusteModal.observacao || "Uso regular no leito"}`
+              : `Ajuste de Balanço Satélite (-${qtdBaixa} un. Lote ${it.numero_lote})`,
           });
         }
       }
 
-      // Atualiza o saldo físico exato na farmácia satélite
+      // Atualizar o saldo físico total do medicamento na Satélite
       await db.entities.Medicamento.update(med.id, {
-        estoque_satelite: qtdFisicaInt
+        estoque_satelite: totalContado,
       });
 
-      await queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
-      await queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      // Invalidar cache para atualizar visualmente todas as telas
+      await queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+      await queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      await queryClient.invalidateQueries({ queryKey: ["transferencias_pendentes"] });
+      await queryClient.invalidateQueries({ queryKey: ["saidas"] });
+      await queryClient.invalidateQueries({ queryKey: ["pedidos_satelite"] });
 
       toast.dismiss();
-      toast.success("Estoque conciliado e Livro da Portaria 344 protegido com sucesso!");
-      setConciliacao344Modal({
+      toast.success(
+        `Balanço de ${med.nome} concluído com sucesso! Estoque satélite ajustado para ${totalContado} un.`
+      );
+
+      setAjusteModal({
         isOpen: false,
         medicamento: null,
-        qtdFisica: "",
+        isControlado: false,
+        lotesItens: [],
+        motivo: "",
         tipoResolucao: "paciente",
         pacienteId: "",
         medicoNome: "",
         medicoCrm: "",
         perdaMotivo: "",
-        observacao: ""
+        observacao: "",
       });
     } catch (err) {
       toast.dismiss();
-      toast.error("Erro na conciliação: " + (err.message || err));
+      toast.error("Erro ao salvar balanço por lote: " + (err.message || err));
     }
   };
 
@@ -715,151 +876,231 @@ export default function SateliteInventario() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: AJUSTE DE MEDICAMENTO COMUM (NÃO CONTROLADO) */}
+      {/* NOVO MODAL: BALANÇO FÍSICO SATÉLITE POR LOTES (ESTOQUE CENTRAL PROTEGIDO) */}
       {/* ========================================================================= */}
       <Dialog
-        open={ajusteComumModal.isOpen}
-        onOpenChange={(open) => !open && setAjusteComumModal({ isOpen: false, medicamento: null, novaQtd: "", motivo: "" })}
+        open={ajusteModal.isOpen}
+        onOpenChange={(open) => !open && setAjusteModal(prev => ({ ...prev, isOpen: false }))}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
+            <DialogTitle className="flex items-center gap-2 text-slate-900 text-lg">
               <Sliders className="w-5 h-5 text-indigo-600" />
-              Ajustar Estoque Satélite
-            </DialogTitle>
-            <DialogDescription>
-              Atualize a quantidade física contada no armário para medicamentos comuns.
-            </DialogDescription>
-          </DialogHeader>
-
-          {ajusteComumModal.medicamento && (
-            <form onSubmit={handleSalvarAjusteComum} className="space-y-4 pt-2">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm">
-                <div className="font-bold text-slate-800">{ajusteComumModal.medicamento.nome}</div>
-                <div className="text-xs text-slate-500 mt-0.5">
-                  Código: {ajusteComumModal.medicamento.codigo || "S/C"} • Saldo Atual no Sistema:{" "}
-                  <strong className="text-indigo-600">{Number(ajusteComumModal.medicamento.estoque_satelite) || 0}</strong>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="novaQtd" className="text-xs font-bold text-slate-700">
-                  Nova Quantidade Física (Contada no Posto):
-                </Label>
-                <Input
-                  id="novaQtd"
-                  type="number"
-                  min="0"
-                  required
-                  value={ajusteComumModal.novaQtd}
-                  onChange={(e) => setAjusteComumModal(prev => ({ ...prev, novaQtd: e.target.value }))}
-                  className="font-mono text-base font-bold"
-                  placeholder="Ex: 15"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="motivo" className="text-xs font-bold text-slate-700">
-                  Motivo do Ajuste:
-                </Label>
-                <Input
-                  id="motivo"
-                  value={ajusteComumModal.motivo}
-                  onChange={(e) => setAjusteComumModal(prev => ({ ...prev, motivo: e.target.value }))}
-                  className="text-xs"
-                  placeholder="Ex: Balanço manual semanal"
-                />
-              </div>
-
-              <DialogFooter className="pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAjusteComumModal({ isOpen: false, medicamento: null, novaQtd: "", motivo: "" })}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
-                  Confirmar Ajuste
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ========================================================================= */}
-      {/* MODAL 2: CONCILIAÇÃO INTELIGENTE PORTARIA 344 (LIVRO PROTEGIDO) */}
-      {/* ========================================================================= */}
-      <Dialog
-        open={conciliacao344Modal.isOpen}
-        onOpenChange={(open) => !open && setConciliacao344Modal(prev => ({ ...prev, isOpen: false }))}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <ShieldAlert className="w-5 h-5 text-amber-600" />
-              Conciliação de Estoque • Portaria 344
+              Balanço Físico Satélite • Contagem por Lote
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Para cumprir as exigências da Vigilância Sanitária, toda baixa esquecida de psicotrópico deve ser conciliada com lastro legal no Livro.
+              Informe a quantidade física que você tem de cada lote no posto/gaveta da Satélite.
             </DialogDescription>
           </DialogHeader>
 
-          {conciliacao344Modal.medicamento && (() => {
-            const saldoSistema = Number(conciliacao344Modal.medicamento.estoque_satelite) || 0;
-            const qtdFisicaNum = parseInt(conciliacao344Modal.qtdFisica, 10);
-            const diferenca = !isNaN(qtdFisicaNum) ? saldoSistema - qtdFisicaNum : 0;
+          {ajusteModal.medicamento && (() => {
+            const med = ajusteModal.medicamento;
+            const saldoAnteriorSat = Number(med.estoque_satelite) || 0;
+            const totalContadoSat = ajusteModal.lotesItens.reduce((acc, it) => {
+              const val = parseInt(it.quantidade_satelite, 10);
+              return acc + (isNaN(val) || val < 0 ? 0 : val);
+            }, 0);
+            const diferencaTotal = totalContadoSat - saldoAnteriorSat;
 
             return (
-              <form onSubmit={handleSalvarConciliacao344} className="space-y-4 pt-1">
-                {/* Cartão de Detalhes do Medicamento */}
-                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs">
-                  <div className="font-bold text-amber-950 text-sm">{conciliacao344Modal.medicamento.nome}</div>
-                  <div className="text-amber-800 mt-1 flex justify-between">
-                    <span>Saldo Sistema: <strong>{saldoSistema}</strong></span>
-                    <span>Contagem Física: <strong>{!isNaN(qtdFisicaNum) ? qtdFisicaNum : "-"}</strong></span>
+              <form onSubmit={handleSalvarAjuste} className="space-y-4 pt-1">
+                {/* Identificação do Medicamento e Alerta da Central */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        {med.nome}
+                        {ajusteModal.isControlado && (
+                          <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                            <ShieldAlert className="w-3 h-3 mr-1 text-red-600" />
+                            Portaria 344
+                          </Badge>
+                        )}
+                        {isMav(med) && (
+                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                            MAV
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Código: {med.codigo || "S/C"} • Apresentação: {med.apresentacao || med.concentracao || "Geral"} • Armário: {med.localizacao || "Satélite"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Banner de Proteção da Central */}
+                  <div className="flex items-center gap-2 p-2.5 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-900">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
                     <span>
-                      Divergência:{" "}
-                      <strong className={cn(diferenca > 0 ? "text-red-600" : diferenca < 0 ? "text-emerald-700" : "text-slate-600")}>
-                        {diferenca > 0 ? `Faltam ${diferenca}` : diferenca < 0 ? `Sobram ${Math.abs(diferenca)}` : "Sem divergência"}
-                      </strong>
+                      <strong>Estoque da Central Intacto:</strong> Os lotes da Farmácia Central são exibidos apenas para consulta/visualização. Qualquer ajuste (para mais ou para menos) afeta exclusivamente a Farmácia Satélite.
                     </span>
                   </div>
                 </div>
 
-                {/* Input de Contagem Física */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="qtdFisica344" className="text-xs font-bold text-slate-700">
-                    Quantas unidades tem realmente na gaveta/posto agora?
-                  </Label>
-                  <Input
-                    id="qtdFisica344"
-                    type="number"
-                    min="0"
-                    required
-                    value={conciliacao344Modal.qtdFisica}
-                    onChange={(e) => setConciliacao344Modal(prev => ({ ...prev, qtdFisica: e.target.value }))}
-                    className="font-mono text-base font-bold"
-                    placeholder="Digite o saldo físico real..."
-                  />
+                {/* Tabela de Lotes da Farmácia Central e Contagem Satélite */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      Lotes Cadastrados e Contagem Física na Satélite:
+                    </Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddLoteLinha}
+                      className="h-7 text-xs px-2.5 gap-1 border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar outro lote físico
+                    </Button>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow className="text-[11px] font-bold text-slate-600">
+                          <TableHead className="py-2">Lote</TableHead>
+                          <TableHead className="py-2">Validade</TableHead>
+                          <TableHead className="py-2 text-center" title="Saldo na Central (apenas visualização)">
+                            Central (Visualizar)
+                          </TableHead>
+                          <TableHead className="py-2 text-center">Saldo Atual Satélite</TableHead>
+                          <TableHead className="py-2 text-center bg-indigo-50/60 text-indigo-900">
+                            Sua Contagem Satélite
+                          </TableHead>
+                          <TableHead className="py-2 text-center w-12"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs">
+                        {ajusteModal.lotesItens.map((item, idx) => (
+                          <TableRow key={item.id || idx} className="hover:bg-slate-50/50">
+                            {/* Número do Lote */}
+                            <TableCell className="font-semibold py-2">
+                              {item.isNovo ? (
+                                <Input
+                                  placeholder="Ex: LOT-2026-A"
+                                  value={item.numero_lote}
+                                  onChange={(e) => handleLoteFieldChange(idx, "numero_lote", e.target.value)}
+                                  className="h-8 text-xs font-mono font-bold"
+                                  required
+                                />
+                              ) : (
+                                <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800">
+                                  <Boxes className="w-3.5 h-3.5 text-slate-400" />
+                                  {item.numero_lote}
+                                </div>
+                              )}
+                            </TableCell>
+
+                            {/* Validade */}
+                            <TableCell className="py-2 text-slate-600">
+                              {item.isNovo ? (
+                                <Input
+                                  type="date"
+                                  value={item.data_validade || ""}
+                                  onChange={(e) => handleLoteFieldChange(idx, "data_validade", e.target.value)}
+                                  className="h-8 text-xs font-mono"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-1 font-mono text-xs">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  {safeFormatDate(item.data_validade)}
+                                </div>
+                              )}
+                            </TableCell>
+
+                            {/* Saldo na Central (Apenas Visualização) */}
+                            <TableCell className="py-2 text-center">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono bg-slate-100 text-slate-600 border border-slate-200" title="Saldo atual na Farmácia Central (apenas informativo)">
+                                <Building2 className="w-3 h-3 text-slate-400" />
+                                {item.saldo_central} un
+                              </span>
+                            </TableCell>
+
+                            {/* Saldo Anterior Satélite */}
+                            <TableCell className="py-2 text-center font-mono font-medium text-slate-500">
+                              {item.saldo_satelite_anterior} un
+                            </TableCell>
+
+                            {/* Quantidade Contada Satélite (Campo Editável) */}
+                            <TableCell className="py-2 text-center bg-indigo-50/30">
+                              <Input
+                                type="number"
+                                min="0"
+                                required
+                                value={item.quantidade_satelite}
+                                onChange={(e) => handleLoteFieldChange(idx, "quantidade_satelite", e.target.value)}
+                                className="h-8 w-24 mx-auto text-center font-mono font-bold text-sm bg-white border-indigo-200 text-indigo-700 focus:border-indigo-600"
+                                placeholder="0"
+                              />
+                            </TableCell>
+
+                            {/* Ação de remover se for lote adicionado */}
+                            <TableCell className="py-2 text-center">
+                              {item.isNovo && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveLoteLinha(idx)}
+                                  className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  title="Remover linha"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
 
-                {/* Se faltam unidades, oferecer as duas soluções legais */}
-                {diferenca > 0 && (
-                  <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <Label className="text-xs font-bold text-slate-800 block">
-                      Como deseja justificar a saída de {diferenca} unidade(s) no Livro da Portaria 344?
+                {/* Resumo do Balanço: Anterior vs Nova Contagem e Divergência */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <div className="p-2 bg-white rounded-lg border border-slate-200 text-center">
+                    <span className="text-slate-500 block text-[11px]">Saldo Anterior Satélite</span>
+                    <strong className="text-base font-mono text-slate-700">{saldoAnteriorSat} un</strong>
+                  </div>
+
+                  <div className="p-2 bg-indigo-50/70 rounded-lg border border-indigo-200 text-center">
+                    <span className="text-indigo-800 block text-[11px] font-semibold">Nova Contagem Física Satélite</span>
+                    <strong className="text-base font-mono text-indigo-700">{totalContadoSat} un</strong>
+                  </div>
+
+                  <div className={cn(
+                    "p-2 rounded-lg border text-center",
+                    diferencaTotal > 0
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                      : diferencaTotal < 0
+                      ? "bg-amber-50 border-amber-200 text-amber-900"
+                      : "bg-slate-100 border-slate-200 text-slate-700"
+                  )}>
+                    <span className="block text-[11px]">Divergência Total Satélite</span>
+                    <strong className="text-base font-mono">
+                      {diferencaTotal > 0 ? `+${diferencaTotal} un (Acréscimo)` : diferencaTotal < 0 ? `${diferencaTotal} un (Redução)` : "Sem divergência (0)"}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Se for Portaria 344 e houver falta física de psicotrópico */}
+                {ajusteModal.isControlado && diferencaTotal < 0 && (
+                  <div className="space-y-3 p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl">
+                    <Label className="text-xs font-bold text-amber-900 flex items-center gap-1.5 block">
+                      <ShieldAlert className="w-4 h-4 text-amber-600" />
+                      Como deseja justificar a falta de {Math.abs(diferencaTotal)} unidade(s) no Livro da Portaria 344?
                     </Label>
 
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setConciliacao344Modal(prev => ({ ...prev, tipoResolucao: "paciente" }))}
+                        onClick={() => setAjusteModal(prev => ({ ...prev, tipoResolucao: "paciente" }))}
                         className={cn(
                           "p-2.5 rounded-xl border text-left transition-all cursor-pointer",
-                          conciliacao344Modal.tipoResolucao === "paciente"
-                            ? "border-indigo-600 bg-indigo-50/80 text-indigo-900 font-bold shadow-xs"
+                          ajusteModal.tipoResolucao === "paciente"
+                            ? "border-indigo-600 bg-indigo-50/90 text-indigo-900 font-bold shadow-xs"
                             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                         )}
                       >
@@ -874,11 +1115,11 @@ export default function SateliteInventario() {
 
                       <button
                         type="button"
-                        onClick={() => setConciliacao344Modal(prev => ({ ...prev, tipoResolucao: "perda" }))}
+                        onClick={() => setAjusteModal(prev => ({ ...prev, tipoResolucao: "perda" }))}
                         className={cn(
                           "p-2.5 rounded-xl border text-left transition-all cursor-pointer",
-                          conciliacao344Modal.tipoResolucao === "perda"
-                            ? "border-amber-600 bg-amber-50/80 text-amber-900 font-bold shadow-xs"
+                          ajusteModal.tipoResolucao === "perda"
+                            ? "border-amber-600 bg-amber-50/90 text-amber-900 font-bold shadow-xs"
                             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                         )}
                       >
@@ -893,14 +1134,14 @@ export default function SateliteInventario() {
                     </div>
 
                     {/* Formulário de Paciente */}
-                    {conciliacao344Modal.tipoResolucao === "paciente" && (
-                      <div className="space-y-2 pt-1">
+                    {ajusteModal.tipoResolucao === "paciente" && (
+                      <div className="space-y-1.5 pt-1">
                         <Label htmlFor="pacienteSelect" className="text-xs font-semibold text-slate-700">
                           Selecione o Paciente do Plantão:
                         </Label>
                         <Select
-                          value={conciliacao344Modal.pacienteId}
-                          onValueChange={(val) => setConciliacao344Modal(prev => ({ ...prev, pacienteId: val }))}
+                          value={ajusteModal.pacienteId}
+                          onValueChange={(val) => setAjusteModal(prev => ({ ...prev, pacienteId: val }))}
                         >
                           <SelectTrigger id="pacienteSelect" className="h-9 text-xs">
                             <SelectValue placeholder="Selecione o paciente..." />
@@ -917,14 +1158,14 @@ export default function SateliteInventario() {
                     )}
 
                     {/* Formulário de Perda / Quebra */}
-                    {conciliacao344Modal.tipoResolucao === "perda" && (
-                      <div className="space-y-2 pt-1">
+                    {ajusteModal.tipoResolucao === "perda" && (
+                      <div className="space-y-1.5 pt-1">
                         <Label htmlFor="perdaMotivoSelect" className="text-xs font-semibold text-slate-700">
                           Motivo Formal da Perda:
                         </Label>
                         <Select
-                          value={conciliacao344Modal.perdaMotivo}
-                          onValueChange={(val) => setConciliacao344Modal(prev => ({ ...prev, perdaMotivo: val }))}
+                          value={ajusteModal.perdaMotivo}
+                          onValueChange={(val) => setAjusteModal(prev => ({ ...prev, perdaMotivo: val }))}
                         >
                           <SelectTrigger id="perdaMotivoSelect" className="h-9 text-xs">
                             <SelectValue placeholder="Selecione o motivo..." />
@@ -945,39 +1186,40 @@ export default function SateliteInventario() {
                       </Label>
                       <Input
                         id="obsConciliacao"
-                        value={conciliacao344Modal.observacao}
-                        onChange={(e) => setConciliacao344Modal(prev => ({ ...prev, observacao: e.target.value }))}
-                        placeholder="Ex: Dose prescrita no plantão noturno"
+                        value={ajusteModal.observacao}
+                        onChange={(e) => setAjusteModal(prev => ({ ...prev, observacao: e.target.value }))}
+                        placeholder="Ex: Dose prescrita no plantão"
                         className="h-8 text-xs"
                       />
                     </div>
                   </div>
                 )}
 
-                {/* Se sobram unidades (físico > sistema) */}
-                {diferenca < 0 && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      Sobra Física Identificada (+{Math.abs(diferenca)} unidades)
-                    </p>
-                    <p className="text-emerald-700 mt-1">
-                      O sistema registrará o acerto no saldo satélite como dose devolvida/não administrada sem alterar as notas fiscais de entrada.
-                    </p>
-                  </div>
-                )}
+                {/* Motivo geral do ajuste */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="motivoAjuste" className="text-xs font-semibold text-slate-700">
+                    Motivo / Justificativa do Balanço:
+                  </Label>
+                  <Input
+                    id="motivoAjuste"
+                    value={ajusteModal.motivo}
+                    onChange={(e) => setAjusteModal(prev => ({ ...prev, motivo: e.target.value }))}
+                    className="h-8 text-xs"
+                    placeholder="Ex: Balanço físico de rotina da satélite"
+                  />
+                </div>
 
-                <DialogFooter className="pt-2">
+                <DialogFooter className="pt-2 flex items-center justify-between">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setConciliacao344Modal(prev => ({ ...prev, isOpen: false }))}
+                    onClick={() => setAjusteModal(prev => ({ ...prev, isOpen: false }))}
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-1.5">
+                  <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5">
                     <FileCheck2 className="w-4 h-4" />
-                    Salvar e Blindar Livro 344
+                    Confirmar Balanço Satélite
                   </Button>
                 </DialogFooter>
               </form>
