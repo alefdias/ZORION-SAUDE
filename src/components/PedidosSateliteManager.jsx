@@ -74,7 +74,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   const [customDias, setCustomDias] = useState("");
   const [margemPercentual, setMargemPercentual] = useState(0); // 0, 10, 20, 25, 30, "custom"
   const [customMargem, setCustomMargem] = useState("");
-  const [descontarEstoque, setDescontarEstoque] = useState(true); // Padrão: abater estoque satélite já existente
+  const [descontarEstoque, setDescontarEstoque] = useState(false); // Padrão: NÃO abater estoque satélite (quantidade sugerida igual à prescrição)
   const [customQuantities, setCustomQuantities] = useState({}); // medId -> custom quantity
   const [observacaoPedido, setObservacaoPedido] = useState("");
   const [prioridadePedido, setPrioridadePedido] = useState("Normal"); // "Normal" | "Urgente" | "Emergência"
@@ -2393,6 +2393,14 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 // ─── SUBCOMPONENTE DE FOLHA A4 INDIVIDUAL POR DEPÓSITO ───────────────────────
 function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
   const isPsico = tipo === "psicotropico";
+  const totalPrescrito = (itens || []).reduce(
+    (acc, item) => acc + (Number(item.qtdPrescrita) || 0),
+    0
+  );
+  const totalEstoqueSatelite = (itens || []).reduce(
+    (acc, item) => acc + (Number(item.estoqueSatelite) || 0),
+    0
+  );
   const totalUnidades = (itens || []).reduce(
     (acc, item) => acc + (Number(item.qtdSolicitada) || 0),
     0
@@ -2534,8 +2542,14 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
             "font-bold border-t-2 border-slate-400 text-slate-950",
             isPsico ? "bg-purple-50/80" : "bg-slate-100"
           )}>
-            <td colSpan={isPsico ? 6 : 5} className="border border-slate-300 p-2 text-right uppercase">
-              Total {isPsico ? "Psicotrópicos" : "Clínicos"}: {itens.length} itens • Unidades:
+            <td colSpan={isPsico ? 4 : 3} className="border border-slate-300 p-2 text-right uppercase text-[11px]">
+              Totais ({itens.length} {itens.length === 1 ? "item" : "itens"}):
+            </td>
+            <td className="border border-slate-300 p-2 text-center font-mono text-xs font-bold text-slate-900">
+              {totalPrescrito} un
+            </td>
+            <td className="border border-slate-300 p-2 text-center font-mono text-xs text-slate-700">
+              {totalEstoqueSatelite} un
             </td>
             <td className={cn(
               "border border-slate-300 p-2 text-center font-mono text-sm font-black text-slate-950",

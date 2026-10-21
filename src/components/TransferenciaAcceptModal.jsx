@@ -49,26 +49,48 @@ export function TransferenciaAcceptModal({ activeSection }) {
     }
   }, [pendingTransfers]);
 
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const executeSingleTransfer = async (transfer, action) => {
+    if (!transfer || !transfer.id) return;
+
+    // Proteção Atômica: Confere se o registro no banco de dados ainda é 'Pendente'
+    // Evita duplicar saldo caso o modal execute duas vezes ou haja duplo clique
+    const freshTransfer = await db.entities.TransferenciaPendente.get(transfer.id).catch(() => null);
+    if (!freshTransfer || freshTransfer.status !== "Pendente") {
+      console.warn(`[TransferenciaAcceptModal] Transferência ${transfer.id} já processada ou não pendente (${freshTransfer?.status}). Ignorando.`);
+      return;
+    }
+
+    const nowIso = format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX");
+
+    // Marca imediatamente o status no banco para evitar que concorrência processe ao mesmo tempo
+    await db.entities.TransferenciaPendente.update(transfer.id, {
+      status: action === "accept" ? "Aceito" : "Recusado",
+      data_aceite: nowIso
+    });
+
     const med = await db.entities.Medicamento.get(transfer.medicamento_id);
     const lote = transfer.lote_id ? await db.entities.Lote.get(transfer.lote_id).catch(() => null) : null;
-    const nowIso = format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX");
 
     if (action === "accept") {
       if (transfer.direcao === "para_satelite") {
-        await db.entities.Medicamento.update(med.id, {
-          estoque_satelite: (med?.estoque_satelite || 0) + transfer.quantidade
-        });
+        if (med) {
+          await db.entities.Medicamento.update(med.id, {
+            estoque_satelite: (Number(med.estoque_satelite) || 0) + Number(transfer.quantidade)
+          });
+        }
         await db.entities.Saida.create({
-          medicamento_id: med.id,
-          medicamento_nome: med.nome,
+          medicamento_id: med?.id || transfer.medicamento_id,
+          medicamento_nome: med?.nome || transfer.medicamento_nome,
           lote_id: lote?.id || transfer.lote_id || null,
           numero_lote: lote?.numero_lote || transfer.numero_lote || "",
           data_saida: nowIso,
           quantidade: transfer.quantidade,
           destino: "Farmácia Satélite",
           motivo: "Transferência de Estoque",
-          observacao: "Transferido do Estoque Geral para Farmácia Satélite"
+          tipo: "transferencia_central",
+          observacao: `Transferência aceita no posto Satélite (Reg: ${transfer.id})`
         });
         await db.logAction(
           "TRANSFERENCIA_ESTOQUE_ACEITA",
@@ -77,24 +99,27 @@ export function TransferenciaAcceptModal({ activeSection }) {
           `Transferência de ${transfer.quantidade} un do medicamento '${med?.nome || transfer.medicamento_nome}' (Lote: ${lote?.numero_lote || transfer.numero_lote || 'N/I'}) aceita para Farmácia Satélite.`
         );
       } else if (transfer.direcao === "para_estoque") {
-        await db.entities.Medicamento.update(med.id, {
-          estoque_atual: (med?.estoque_atual || 0) + transfer.quantidade
-        });
+        if (med) {
+          await db.entities.Medicamento.update(med.id, {
+            estoque_atual: (Number(med.estoque_atual) || 0) + Number(transfer.quantidade)
+          });
+        }
         if (lote) {
           await db.entities.Lote.update(lote.id, {
-            quantidade_atual: (lote.quantidade_atual || 0) + transfer.quantidade,
+            quantidade_atual: (Number(lote.quantidade_atual) || 0) + Number(transfer.quantidade),
             status: "disponivel"
           });
         }
         await db.entities.Saida.create({
-          medicamento_id: med.id,
-          medicamento_nome: med.nome,
+          medicamento_id: med?.id || transfer.medicamento_id,
+          medicamento_nome: med?.nome || transfer.medicamento_nome,
           lote_id: lote?.id || transfer.lote_id || null,
           numero_lote: lote?.numero_lote || transfer.numero_lote || "",
           data_saida: nowIso,
           quantidade: transfer.quantidade,
           destino: "Estoque Geral",
           motivo: "Transferência de Estoque",
+          tipo: "devolucao_satelite",
           observacao: "Devolvido da Farmácia Satélite para o Estoque Geral"
         });
         await db.logAction(
@@ -105,7 +130,7 @@ export function TransferenciaAcceptModal({ activeSection }) {
         );
       } else if (transfer.direcao === "para_carrinho_parada") {
         const centralStock = await db.entities.CarrinhoEstoqueCentral.list();
-        const existingCentral = centralStock.find(c => c.medicamento_id === med.id && c.lote_id === (lote?.id || transfer.lote_id));
+        const existingCentral = centralStock.find(c => c.medicamento_id === med?.id && c.lote_id === (lote?.id || transfer.lote_id));
         
         if (existingCentral) {
           await db.entities.CarrinhoEstoqueCentral.update(existingCentral.id, {
@@ -113,8 +138,8 @@ export function TransferenciaAcceptModal({ activeSection }) {
           });
         } else {
           await db.entities.CarrinhoEstoqueCentral.create({
-            medicamento_id: med.id,
-            medicamento_nome: med.nome,
+            medicamento_id: med?.id || transfer.medicamento_id,
+            medicamento_nome: med?.nome || transfer.medicamento_nome,
             lote_id: lote?.id || transfer.lote_id || null,
             numero_lote: lote?.numero_lote || transfer.numero_lote || "",
             data_validade: lote?.data_validade || null,
@@ -124,8 +149,8 @@ export function TransferenciaAcceptModal({ activeSection }) {
         
         await db.entities.CarrinhoMovimentacao.create({
           tipo: 'transferencia_central',
-          medicamento_id: med.id,
-          medicamento_nome: med.nome,
+          medicamento_id: med?.id || transfer.medicamento_id,
+          medicamento_nome: med?.nome || transfer.medicamento_nome,
           lote_id: lote?.id || transfer.lote_id || null,
           numero_lote: lote?.numero_lote || transfer.numero_lote || "",
           quantidade: transfer.quantidade,
@@ -133,49 +158,50 @@ export function TransferenciaAcceptModal({ activeSection }) {
           observacao: "Transferido do Estoque Geral para o Centro de Distribuição dos Carrinhos"
         });
         await db.entities.Saida.create({
-          medicamento_id: med.id,
-          medicamento_nome: med.nome,
+          medicamento_id: med?.id || transfer.medicamento_id,
+          medicamento_nome: med?.nome || transfer.medicamento_nome,
           lote_id: lote?.id || transfer.lote_id || null,
           numero_lote: lote?.numero_lote || transfer.numero_lote || "",
           data_saida: nowIso,
           quantidade: transfer.quantidade,
           destino: "Carrinho de Parada (Estoque Central)",
           motivo: "Transferência de Estoque",
+          tipo: "transferencia_carrinho",
           observacao: "Transferido do Estoque Geral para o Centro de Distribuição dos Carrinhos de Parada"
         });
       }
-      await db.entities.TransferenciaPendente.update(transfer.id, {
-        status: "Aceito",
-        data_aceite: nowIso
-      });
     } else if (action === "reject") {
       // Rollback deduction
       if (transfer.direcao === "para_satelite" || transfer.direcao === "para_carrinho_parada") {
-        await db.entities.Medicamento.update(med.id, {
-          estoque_atual: (med?.estoque_atual || 0) + transfer.quantidade
-        });
+        if (med) {
+          await db.entities.Medicamento.update(med.id, {
+            estoque_atual: (Number(med.estoque_atual) || 0) + Number(transfer.quantidade)
+          });
+        }
         if (lote) {
           await db.entities.Lote.update(lote.id, {
-            quantidade_atual: (lote.quantidade_atual || 0) + transfer.quantidade,
+            quantidade_atual: (Number(lote.quantidade_atual) || 0) + Number(transfer.quantidade),
             status: "disponivel"
           });
         }
       } else if (transfer.direcao === "para_estoque") {
-        await db.entities.Medicamento.update(med.id, {
-          estoque_satelite: (med?.estoque_satelite || 0) + transfer.quantidade
-        });
+        if (med) {
+          await db.entities.Medicamento.update(med.id, {
+            estoque_satelite: (Number(med.estoque_satelite) || 0) + Number(transfer.quantidade)
+          });
+        }
       }
-      await db.entities.TransferenciaPendente.update(transfer.id, {
-        status: "Recusado",
-        data_aceite: nowIso
-      });
     }
   };
 
   const processBatchMutation = useMutation({
     mutationFn: async ({ transfersToProcess, action }) => {
+      setIsProcessing(true);
       let count = 0;
+      const seenIds = new Set();
       for (const t of transfersToProcess) {
+        if (!t || !t.id || seenIds.has(t.id)) continue;
+        seenIds.add(t.id);
         await executeSingleTransfer(t, action);
         count++;
       }
@@ -183,6 +209,7 @@ export function TransferenciaAcceptModal({ activeSection }) {
     },
     onSuccess: ({ count, action }) => {
       setSelectedIds([]);
+      setIsProcessing(false);
       queryClient.invalidateQueries();
       toast.success(
         action === "accept"
@@ -191,6 +218,7 @@ export function TransferenciaAcceptModal({ activeSection }) {
       );
     },
     onError: (err) => {
+      setIsProcessing(false);
       queryClient.invalidateQueries();
       toast.error("Erro ao processar transferências: " + (err.message || err));
     }
@@ -231,7 +259,7 @@ export function TransferenciaAcceptModal({ activeSection }) {
   if (pendingTransfers.length === 0) return null;
 
   const isAllSelected = pendingTransfers.length > 0 && selectedIds.length === pendingTransfers.length;
-  const isPending = processBatchMutation.isPending;
+  const isPending = processBatchMutation.isPending || isProcessing;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

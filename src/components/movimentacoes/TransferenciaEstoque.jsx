@@ -92,6 +92,7 @@ export default function TransferenciaEstoque() {
           quantidade: qtd,
           direcao: "para_satelite",
           status: "Pendente",
+          origem: "transferencia_manual",
           data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
 
@@ -115,6 +116,7 @@ export default function TransferenciaEstoque() {
           quantidade: qtd,
           direcao: "para_carrinho_parada",
           status: "Pendente",
+          origem: "transferencia_manual",
           data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
 
@@ -134,6 +136,7 @@ export default function TransferenciaEstoque() {
           quantidade: qtd,
           direcao: "para_estoque",
           status: "Pendente",
+          origem: "transferencia_manual",
           data_solicitacao: format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX")
         });
       }
@@ -142,6 +145,7 @@ export default function TransferenciaEstoque() {
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
       queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias_pendentes'] });
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       toast.success("Transferência realizada com sucesso!");
       setTransferenciaForm(prev => ({ ...prev, medicamento_id: "", lote_id: "", quantidade: "" }));

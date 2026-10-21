@@ -245,32 +245,64 @@ export default function Entradas({ isTab = false }) {
         // 1. Reverter ou atualizar o lote antigo
         const oldLote = lotes.find(l => l.id === oldEntrada.lote_id);
         
-        // Se mudou o medicamento ou o lote físico (número do lote), o comportamento é mais complexo.
-        // Mas o formulário de Entrada geralmente edita o MESMO registro de entrada vinculado a um lote específico.
-        // Se o usuário mudou a quantidade, ajustamos o lote.
-        
+        const mudouMedicamento = data.medicamento_id && String(data.medicamento_id) !== String(oldEntrada.medicamento_id);
         const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
-        if (oldLote) {
-          console.log("Ajustando lote vinculado:", oldLote.numero_lote, "Diff:", qtyDiff);
-          await db.entities.Lote.update(oldLote.id, {
-            quantidade_atual: (oldLote.quantidade_atual || 0) + qtyDiff,
-            data_validade: data.data_validade, // Atualizar validade se mudou
-            volume_frasco_ml: volFrasco || oldLote.volume_frasco_ml || null,
-          });
-        }
-
-        // 2. Atualizar estoque do medicamento antigo (se mudou med) ou atual
-        const oldMed = medicamentos.find(m => m.id === oldEntrada.medicamento_id);
-        if (oldMed) {
-          console.log("Ajustando estoque do medicamento:", oldMed.nome);
-          const medUp = {
-            estoque_atual: (oldMed.estoque_atual || 0) + qtyDiff,
-          };
-          if (data.atualizar_cadastro_med && volFrasco) {
-            medUp.volume_frasco_ml = volFrasco;
-            medUp.is_liquido = true;
+        
+        if (mudouMedicamento) {
+          // 1. Reverter estoque do medicamento antigo
+          const oldMed = medicamentos.find(m => String(m.id) === String(oldEntrada.medicamento_id));
+          if (oldMed) {
+            await db.entities.Medicamento.update(oldMed.id, {
+              estoque_atual: Math.max(0, (Number(oldMed.estoque_atual) || 0) - Number(oldEntrada.quantidade))
+            });
           }
-          await db.entities.Medicamento.update(oldMed.id, medUp);
+
+          // 2. Creditar no novo medicamento
+          const newMed = medicamentos.find(m => String(m.id) === String(data.medicamento_id));
+          if (newMed) {
+            const medUp = {
+              estoque_atual: (Number(newMed.estoque_atual) || 0) + Number(data.quantidade),
+            };
+            if (data.atualizar_cadastro_med && volFrasco) {
+              medUp.volume_frasco_ml = volFrasco;
+              medUp.is_liquido = true;
+            }
+            await db.entities.Medicamento.update(newMed.id, medUp);
+          }
+
+          // 3. Atualizar o lote vinculado para apontar para o novo medicamento (essencial para aparecer em Transferência)
+          if (oldLote) {
+            await db.entities.Lote.update(oldLote.id, {
+              medicamento_id: data.medicamento_id,
+              medicamento_nome: data.medicamento_nome,
+              numero_lote: data.numero_lote,
+              quantidade_atual: Math.max(0, (Number(oldLote.quantidade_atual) || 0) + qtyDiff),
+              data_validade: data.data_validade,
+              volume_frasco_ml: volFrasco || oldLote.volume_frasco_ml || null,
+            });
+          }
+        } else {
+          // Mesmo medicamento, ajusta lote e estoque
+          if (oldLote) {
+            await db.entities.Lote.update(oldLote.id, {
+              quantidade_atual: (Number(oldLote.quantidade_atual) || 0) + qtyDiff,
+              numero_lote: data.numero_lote,
+              data_validade: data.data_validade,
+              volume_frasco_ml: volFrasco || oldLote.volume_frasco_ml || null,
+            });
+          }
+
+          const oldMed = medicamentos.find(m => String(m.id) === String(oldEntrada.medicamento_id));
+          if (oldMed) {
+            const medUp = {
+              estoque_atual: (Number(oldMed.estoque_atual) || 0) + qtyDiff,
+            };
+            if (data.atualizar_cadastro_med && volFrasco) {
+              medUp.volume_frasco_ml = volFrasco;
+              medUp.is_liquido = true;
+            }
+            await db.entities.Medicamento.update(oldMed.id, medUp);
+          }
         }
 
         // 3. Atualizar a entrada

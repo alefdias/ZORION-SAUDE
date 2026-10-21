@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -35,6 +42,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
+import { safeFormatDate } from "@/utils/dateUtils";
 import { OrderDetailsModal } from "./PedidosSateliteManager";
 
 export default function PedidosSateliteUrgencia() {
@@ -77,6 +85,7 @@ export default function PedidosSateliteUrgencia() {
 
   // State: Adicionar Medicamento
   const [selectedMedId, setSelectedMedId] = useState("");
+  const [selectedLoteId, setSelectedLoteId] = useState("");
   const [qtdItem, setQtdItem] = useState(1);
   const [observacaoPedido, setObservacaoPedido] = useState("");
 
@@ -93,14 +102,27 @@ export default function PedidosSateliteUrgencia() {
     return medicamentos.find(m => String(m.id) === String(selectedMedId));
   }, [medicamentos, selectedMedId]);
 
-  // Lote previsto que virá da Central baseado no sistema FEFO (o que vence primeiro)
-  const loteFefoPrevisto = useMemo(() => {
-    if (!selectedMedObj) return null;
-    const medLotes = (lotes || [])
+  // Lotes disponíveis na Farmácia Central ordenados por FEFO (menor validade primeiro)
+  const medCentralLotes = useMemo(() => {
+    if (!selectedMedObj) return [];
+    return (lotes || [])
       .filter(l => String(l.medicamento_id) === String(selectedMedObj.id) && (Number(l.quantidade_atual) > 0) && l.status !== "Inativo")
       .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
-    return medLotes.length > 0 ? medLotes[0] : null;
   }, [selectedMedObj, lotes]);
+
+  // Lote previsto que virá da Central baseado no sistema FEFO (o que vence primeiro)
+  const loteFefoPrevisto = useMemo(() => {
+    return medCentralLotes.length > 0 ? medCentralLotes[0] : null;
+  }, [medCentralLotes]);
+
+  // Ao mudar de medicamento, pré-seleciona automaticamente o lote FEFO (vence primeiro), mas permite mudar
+  useEffect(() => {
+    if (medCentralLotes.length > 0) {
+      setSelectedLoteId(medCentralLotes[0].id);
+    } else {
+      setSelectedLoteId("");
+    }
+  }, [medCentralLotes]);
 
   // Add Item to List
   const handleAddItem = (e) => {
@@ -125,12 +147,21 @@ export default function PedidosSateliteUrgencia() {
     );
     const portariaList = isPsico ? getPortaria344List(selectedMedObj) : null;
 
+    // Lote escolhido (pode ser o FEFO ou qualquer outro lote selecionado pelo usuário)
+    const chosenLote = medCentralLotes.find(l => String(l.id) === String(selectedLoteId)) || loteFefoPrevisto;
+
     // Check if item already in list
     const existingIndex = itensPedido.findIndex(i => String(i.medicamento_id) === String(selectedMedObj.id));
     if (existingIndex >= 0) {
       const next = [...itensPedido];
       next[existingIndex].qtd_solicitada += qtd;
       next[existingIndex].qtd_atendida += qtd;
+      if (chosenLote) {
+        next[existingIndex].lote_id = chosenLote.id;
+        next[existingIndex].lote_previsto = chosenLote.numero_lote;
+        next[existingIndex].lote_previsto_id = chosenLote.id;
+        next[existingIndex].lote_previsto_validade = chosenLote.data_validade;
+      }
       setItensPedido(next);
       toast.info(`Quantidade de ${selectedMedObj.nome} atualizada (+${qtd}).`);
     } else {
@@ -148,9 +179,10 @@ export default function PedidosSateliteUrgencia() {
         estoque_central_momento: selectedMedObj.estoque_atual || 0,
         qtd_solicitada: qtd,
         qtd_atendida: qtd,
-        lote_previsto: loteFefoPrevisto ? loteFefoPrevisto.numero_lote : "",
-        lote_previsto_id: loteFefoPrevisto ? loteFefoPrevisto.id : "",
-        lote_previsto_validade: loteFefoPrevisto ? loteFefoPrevisto.data_validade : "",
+        lote_id: chosenLote ? chosenLote.id : "",
+        lote_previsto: chosenLote ? chosenLote.numero_lote : "",
+        lote_previsto_id: chosenLote ? chosenLote.id : "",
+        lote_previsto_validade: chosenLote ? chosenLote.data_validade : "",
         separado: false,
         conferido: false,
         is_psicotropico: isPsico ? 1 : 0,
@@ -162,7 +194,23 @@ export default function PedidosSateliteUrgencia() {
 
     // Reset selector
     setSelectedMedId("");
+    setSelectedLoteId("");
     setQtdItem(1);
+  };
+
+  const handleUpdateItemLote = (index, newLoteId) => {
+    const next = [...itensPedido];
+    const item = next[index];
+    const itemLotes = (lotes || []).filter(l => String(l.medicamento_id) === String(item.medicamento_id) && Number(l.quantidade_atual) > 0);
+    const newLote = itemLotes.find(l => String(l.id) === String(newLoteId));
+    if (newLote) {
+      next[index].lote_id = newLote.id;
+      next[index].lote_previsto = newLote.numero_lote;
+      next[index].lote_previsto_id = newLote.id;
+      next[index].lote_previsto_validade = newLote.data_validade;
+      setItensPedido(next);
+      toast.info(`Lote do item ${item.medicamento_nome} alterado para ${newLote.numero_lote}.`);
+    }
   };
 
   const handleRemoveItem = (index) => {
@@ -443,31 +491,38 @@ export default function PedidosSateliteUrgencia() {
                 )}
               </div>
 
-              {/* Destaque do Lote que virá pelo sistema FEFO (Primeiro que Vence) */}
-              {loteFefoPrevisto ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-2.5 rounded-lg text-emerald-900 dark:text-emerald-200 font-medium">
-                  <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
-                    ⭐ Lote Previsto (FEFO)
-                  </Badge>
-                  <span>
-                    Lote: <strong className="font-mono text-emerald-950 dark:text-emerald-100">{loteFefoPrevisto.numero_lote}</strong>
-                  </span>
-                  <span className="text-emerald-300">|</span>
-                  <span>
-                    Validade: <strong>{loteFefoPrevisto.data_validade ? format(new Date(loteFefoPrevisto.data_validade + 'T00:00:00'), "dd/MM/yyyy") : "N/I"}</strong>
-                  </span>
-                  <span className="text-emerald-300">|</span>
-                  <span>
-                    Saldo Central: <strong>{loteFefoPrevisto.quantidade_atual} un</strong>
-                  </span>
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 ml-auto italic">
-                    (Vence primeiro na Central — Sistema FEFO)
-                  </span>
+              {/* Seletor de Lote da Central com Indicação Clara de FEFO (o que vence 1º) mas permitindo escolher outro lote */}
+              {medCentralLotes.length > 0 ? (
+                <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3 rounded-lg space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-blue-600" />
+                      Escolha o Lote a Pedir (Central):
+                    </span>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                      ⭐ FEFO pré-selecionado (vence mais cedo), mas você pode escolher outro lote abaixo:
+                    </span>
+                  </div>
+                  <Select value={selectedLoteId} onValueChange={setSelectedLoteId}>
+                    <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-800 font-mono border-slate-300 dark:border-slate-700">
+                      <SelectValue placeholder="Selecione o lote..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {medCentralLotes.map((l, lIdx) => {
+                        const isFefo = lIdx === 0;
+                        return (
+                          <SelectItem key={l.id} value={l.id} className={isFefo ? "font-bold text-emerald-700 bg-emerald-50/60" : ""}>
+                            {isFefo ? "⭐ [FEFO - Vence 1º] " : ""}Lote: {l.numero_lote} • Val: {safeFormatDate(l.data_validade)} • Saldo Central: {l.quantidade_atual} un
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : (
                 <div className="text-xs bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-2 rounded-lg text-amber-800 dark:text-amber-300 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Nenhum lote ativo com saldo encontrado na Central. O lote será associado durante a separação.</span>
+                  <span>Nenhum lote ativo com saldo encontrado na Central. O lote será associado durante a separação na Farmácia Central.</span>
                 </div>
               )}
             </div>
@@ -503,7 +558,7 @@ export default function PedidosSateliteUrgencia() {
                   <TableHead className="text-xs font-bold text-center w-24">Tipo</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Central</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Estoque Satélite</TableHead>
-                  <TableHead className="text-xs font-bold text-center w-36">Lote Previsto (FEFO)</TableHead>
+                  <TableHead className="text-xs font-bold text-center w-48">Lote Solicitado</TableHead>
                   <TableHead className="text-xs font-bold text-center w-28">Qtd Pedido</TableHead>
                   <TableHead className="text-xs font-bold text-right w-16">Ação</TableHead>
                 </TableRow>
@@ -543,20 +598,48 @@ export default function PedidosSateliteUrgencia() {
                         {item.estoque_satelite_momento} un
                       </TableCell>
                       <TableCell className="text-center font-mono text-xs">
-                        {item.lote_previsto ? (
-                          <div>
-                            <span className="font-bold text-emerald-800 dark:text-emerald-300">
-                              {item.lote_previsto}
-                            </span>
-                            {item.lote_previsto_validade && (
-                              <div className="text-[10px] text-slate-500">
-                                Val: {format(new Date(item.lote_previsto_validade + 'T00:00:00'), "dd/MM/yyyy")}
+                        {(() => {
+                          const itemLotes = (lotes || [])
+                            .filter(l => String(l.medicamento_id) === String(item.medicamento_id) && Number(l.quantidade_atual) > 0 && l.status !== "Inativo")
+                            .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+                          
+                          if (itemLotes.length > 1) {
+                            return (
+                              <Select
+                                value={item.lote_id || item.lote_previsto_id || ""}
+                                onValueChange={(newLoteId) => handleUpdateItemLote(idx, newLoteId)}
+                              >
+                                <SelectTrigger className="h-7 text-[11px] font-mono px-2 py-0 border-slate-300">
+                                  <SelectValue placeholder="Lote..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {itemLotes.map((l, lIdx) => (
+                                    <SelectItem key={l.id} value={l.id} className="text-xs">
+                                      {lIdx === 0 ? "⭐ " : ""}{l.numero_lote} (Val: {safeFormatDate(l.data_validade)})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            );
+                          }
+                          
+                          if (item.lote_previsto) {
+                            return (
+                              <div>
+                                <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                                  {item.lote_previsto}
+                                </span>
+                                {item.lote_previsto_validade && (
+                                  <div className="text-[10px] text-slate-500">
+                                    Val: {safeFormatDate(item.lote_previsto_validade)}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 italic">Central definirá</span>
-                        )}
+                            );
+                          }
+
+                          return <span className="text-[10px] text-slate-400 italic">Central definirá</span>;
+                        })()}
                       </TableCell>
                       <TableCell className="text-center">
                         <Input
