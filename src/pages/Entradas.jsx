@@ -137,8 +137,9 @@ export default function Entradas({ isTab = false }) {
       try {
         // 1. Obter dados frescos do DB para evitar problemas no Bulk Import
         const existingLotes = await db.entities.Lote.list();
+        const normLote = (str) => (str || "").trim().toUpperCase();
         let loteParam = existingLotes.find(
-          l => l.medicamento_id === data.medicamento_id && l.numero_lote === data.numero_lote
+          l => String(l.medicamento_id) === String(data.medicamento_id) && normLote(l.numero_lote) === normLote(data.numero_lote)
         );
 
         const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
@@ -147,8 +148,10 @@ export default function Entradas({ isTab = false }) {
         if (loteParam) {
           console.log("Lote existente encontrado:", loteParam);
           // Atualizar quantidade do lote existente e volume se informado
+          const novaQtd = (Number(loteParam.quantidade_atual) || 0) + Number(data.quantidade);
           await db.entities.Lote.update(loteParam.id, {
-            quantidade_atual: (loteParam.quantidade_atual || 0) + data.quantidade,
+            quantidade_atual: novaQtd,
+            status: novaQtd > 0 ? "disponivel" : loteParam.status,
             volume_frasco_ml: volFrasco || loteParam.volume_frasco_ml || null,
           });
           finalLoteId = loteParam.id;
@@ -157,10 +160,10 @@ export default function Entradas({ isTab = false }) {
           // Criar novo lote com volume do frasco
           const newLote = await db.entities.Lote.create({
             medicamento_id: data.medicamento_id,
-            numero_lote: data.numero_lote,
+            numero_lote: (data.numero_lote || "").trim(),
             data_validade: data.data_validade,
-            quantidade_inicial: data.quantidade,
-            quantidade_atual: data.quantidade,
+            quantidade_inicial: Number(data.quantidade),
+            quantidade_atual: Number(data.quantidade),
             volume_frasco_ml: volFrasco,
             status: "disponivel",
           });

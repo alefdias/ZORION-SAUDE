@@ -1282,18 +1282,30 @@ export default function SateliteInventario() {
         <table className="w-full">
           <thead>
             <tr>
-              <th style={{ width: "70px" }}>CÓD.</th>
+              <th style={{ width: "65px" }}>CÓD.</th>
               <th>MEDICAMENTO / APRESENTAÇÃO</th>
-              <th style={{ width: "90px" }}>LOCALIZ.</th>
-              {!isBlindCount && <th style={{ width: "75px", textAlign: "center" }}>SISTEMA</th>}
-              <th style={{ width: "100px", textAlign: "center" }}>FÍSICO (CANETA)</th>
-              <th style={{ width: "60px", textAlign: "center" }}>DIVERG.</th>
-              <th style={{ width: "50px", textAlign: "center" }}>VISTO</th>
+              <th style={{ width: "160px" }}>LOTES / VALIDADE</th>
+              <th style={{ width: "75px" }}>LOCALIZ.</th>
+              {!isBlindCount && <th style={{ width: "70px", textAlign: "center" }}>SISTEMA</th>}
+              <th style={{ width: "95px", textAlign: "center" }}>FÍSICO (CANETA)</th>
+              <th style={{ width: "55px", textAlign: "center" }}>DIVERG.</th>
+              <th style={{ width: "45px", textAlign: "center" }}>VISTO</th>
             </tr>
           </thead>
           <tbody>
             {processedItems.map((med) => {
               const saldo = Number(med.estoque_satelite) || 0;
+              const lotesSat = calcularLotesSatelite({
+                medId: med.id,
+                medCodigo: med.codigo,
+                medNome: med.nome,
+                saldoTotalSat: saldo,
+                lotes,
+                transferencias,
+                pedidosSatelite,
+                saidas,
+              });
+
               return (
                 <tr key={med.id} className="page-break-avoid">
                   <td style={{ fontFamily: "monospace", fontWeight: "bold" }}>
@@ -1308,6 +1320,29 @@ export default function SateliteInventario() {
                       {med.portaria_344 ? " [PORTARIA 344]" : ""}
                       {isMav(med) ? " [MAV]" : ""}
                     </div>
+                  </td>
+                  <td style={{ fontSize: "10px" }}>
+                    {lotesSat && lotesSat.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                        {lotesSat.map((lt, idx) => (
+                          <div key={idx} style={{ lineHeight: "1.2" }}>
+                            <strong style={{ fontFamily: "monospace", fontSize: "10px" }}>{lt.numero_lote}</strong>
+                            <span style={{ color: "#475569", marginLeft: "4px" }}>
+                              {lt.data_validade ? `(Val: ${safeFormatDate(lt.data_validade)})` : ""}
+                            </span>
+                            {!isBlindCount && lt.saldoSatelite !== undefined && (
+                              <span style={{ color: "#1e40af", fontWeight: "bold", marginLeft: "4px" }}>
+                                [{lt.saldoSatelite} un]
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "9px" }}>
+                        {saldo > 0 ? "Lote não individualizado" : "-"}
+                      </span>
+                    )}
                   </td>
                   <td style={{ fontSize: "10px" }}>
                     {med.localizacao || "Geral"}

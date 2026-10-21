@@ -18,6 +18,8 @@ dist-ssr
 src-tauri/target/
 src-tauri/gen/schemas/
 relatorio-axion/
+*.sql
+!database/*.sql
 
 
 # Editor directories and files
