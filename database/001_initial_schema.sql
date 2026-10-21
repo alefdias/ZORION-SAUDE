@@ -138,12 +138,15 @@ CREATE TABLE IF NOT EXISTS "Ala" (
     "id" TEXT PRIMARY KEY,
     "nome" TEXT,
     "descricao" TEXT,
+    "responsavel" TEXT,
     "leitos" INTEGER DEFAULT 10,
-    "created_at" TEXT,
-    "deleted_at" TEXT
+    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    "deleted_at" TIMESTAMP WITH TIME ZONE
 );
 
 ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "leitos" INTEGER DEFAULT 10;
+ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "descricao" TEXT;
+ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
 
 -- 7. EMPRÉSTIMO
 CREATE TABLE IF NOT EXISTS "Emprestimo" (
@@ -642,50 +645,50 @@ CREATE INDEX IF NOT EXISTS "idx_prontuario_documento_paciente" ON "ProntuarioDoc
 -- ==============================================================================
 -- N1: 39 leitos
 UPDATE "Ala" SET "leitos" = 39 WHERE LOWER(TRIM("nome")) IN ('n1', 'ala n1', 'ala-n1');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-n1-uuid', 'N1', 'Ala N1 (39 leitos)', 39, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-n1-uuid', 'N1', 'Ala N1 (39 leitos)', 39
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('n1', 'ala n1', 'ala-n1') AND deleted_at IS NULL);
 
 -- N2: 39 leitos
 UPDATE "Ala" SET "leitos" = 39 WHERE LOWER(TRIM("nome")) IN ('n2', 'ala n2', 'ala-n2');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-n2-uuid', 'N2', 'Ala N2 (39 leitos)', 39, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-n2-uuid', 'N2', 'Ala N2 (39 leitos)', 39
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('n2', 'ala n2', 'ala-n2') AND deleted_at IS NULL);
 
 -- R1 M: 10 leitos
 UPDATE "Ala" SET "leitos" = 10 WHERE LOWER(TRIM("nome")) IN ('r1 m', 'r1-m', 'r1m', 'r1 masculino', 'ala r1 m', 'ala r1 masculino');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-r1m-uuid', 'R1 M', 'Ala R1 Masculino (10 leitos)', 10, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-r1m-uuid', 'R1 M', 'Ala R1 Masculino (10 leitos)', 10
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('r1 m', 'r1-m', 'r1m', 'r1 masculino', 'ala r1 m', 'ala r1 masculino') AND deleted_at IS NULL);
 
 -- R1 F: 15 leitos
 UPDATE "Ala" SET "leitos" = 15 WHERE LOWER(TRIM("nome")) IN ('r1 f', 'r1-f', 'r1f', 'r1 feminino', 'ala r1 f', 'ala r1 feminino');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-r1f-uuid', 'R1 F', 'Ala R1 Feminino (15 leitos)', 15, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-r1f-uuid', 'R1 F', 'Ala R1 Feminino (15 leitos)', 15
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('r1 f', 'r1-f', 'r1f', 'r1 feminino', 'ala r1 f', 'ala r1 feminino') AND deleted_at IS NULL);
 
 -- UCP: 10 leitos
 UPDATE "Ala" SET "leitos" = 10 WHERE LOWER(TRIM("nome")) IN ('ucp', 'ala ucp');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-ucp-uuid', 'UCP', 'Unidade de Cuidados Prolongados (10 leitos)', 10, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-ucp-uuid', 'UCP', 'Unidade de Cuidados Prolongados (10 leitos)', 10
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('ucp', 'ala ucp') AND deleted_at IS NULL);
 
 -- CL1: 10 leitos
 UPDATE "Ala" SET "leitos" = 10 WHERE LOWER(TRIM("nome")) IN ('cl1', 'cl 1', 'ala cl1', 'ala cl 1', 'clinica 1');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-cl1-uuid', 'CL1', 'Ala Clínica 1 (10 leitos)', 10, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-cl1-uuid', 'CL1', 'Ala Clínica 1 (10 leitos)', 10
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('cl1', 'cl 1', 'ala cl1', 'ala cl 1', 'clinica 1') AND deleted_at IS NULL);
 
 -- CL2: 10 leitos
 UPDATE "Ala" SET "leitos" = 10 WHERE LOWER(TRIM("nome")) IN ('cl2', 'cl 2', 'ala cl2', 'ala cl 2', 'clinica 2');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-cl2-uuid', 'CL2', 'Ala Clínica 2 (10 leitos)', 10, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-cl2-uuid', 'CL2', 'Ala Clínica 2 (10 leitos)', 10
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('cl2', 'cl 2', 'ala cl2', 'ala cl 2', 'clinica 2') AND deleted_at IS NULL);
 
 -- CASA MENINOS: 3 leitos
 UPDATE "Ala" SET "leitos" = 3 WHERE LOWER(TRIM("nome")) IN ('casa meninos', 'casa dos meninos', 'ala casa meninos', 'ala casa dos meninos');
-INSERT INTO "Ala" ("id", "nome", "descricao", "leitos", "created_at")
-SELECT 'ala-casameninos-uuid', 'Casa Meninos', 'Casa dos Meninos (3 leitos)', 3, NOW()::text
+INSERT INTO "Ala" ("id", "nome", "descricao", "leitos")
+SELECT 'ala-casameninos-uuid', 'Casa Meninos', 'Casa dos Meninos (3 leitos)', 3
 WHERE NOT EXISTS (SELECT 1 FROM "Ala" WHERE LOWER(TRIM("nome")) IN ('casa meninos', 'casa dos meninos', 'ala casa meninos', 'ala casa dos meninos') AND deleted_at IS NULL);
 
 -- ==============================================================================

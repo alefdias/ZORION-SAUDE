@@ -427,6 +427,20 @@ const ensureTableQuery = {
     ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "endereco" TEXT;
     ALTER TABLE "Fornecedor" ADD COLUMN IF NOT EXISTS "contato" TEXT;
   `,
+  Ala: `
+    CREATE TABLE IF NOT EXISTS "Ala" (
+        "id" TEXT PRIMARY KEY,
+        "nome" TEXT NOT NULL,
+        "descricao" TEXT,
+        "responsavel" TEXT,
+        "leitos" INTEGER DEFAULT 10,
+        "created_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "deleted_at" TIMESTAMP WITH TIME ZONE
+    );
+    ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "leitos" INTEGER DEFAULT 10;
+    ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "descricao" TEXT;
+    ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+  `,
   PlantaoOcorrencia: `
     CREATE TABLE IF NOT EXISTS "PlantaoOcorrencia" (
         "id" TEXT PRIMARY KEY,

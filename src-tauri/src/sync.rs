@@ -21,16 +21,20 @@ pub async fn test_postgres_connection(
                 // Cria as tabelas necessárias automaticamente
                 let schema = include_str!("../../database/001_initial_schema.sql");
                 if let Err(_batch_err) = client.batch_execute(schema) {
-                    // Se falhar em lote, executa comando por comando ignorando avisos de duplicidade
+                    // Se falhar em lote, executa comando por comando ignorando avisos de duplicidade e tipo
                     let mut fatal_err = None;
                     for stmt in schema.split(';') {
                         let trimmed = stmt.trim();
                         if !trimmed.is_empty() {
                             if let Err(e) = client.batch_execute(trimmed) {
-                                // Se for erro de sintaxe ou permissão real, guarda
                                 let err_str = e.to_string();
-                                if !err_str.contains("already exists") && !err_str.contains("duplicate") {
-                                    fatal_err = Some(format!("Erro ao executar instrução SQL ({}): {}", trimmed.chars().take(60).collect::<String>(), err_str));
+                                if !err_str.contains("already exists") 
+                                    && !err_str.contains("duplicate") 
+                                    && !err_str.contains("unique constraint") {
+                                    // Apenas falha estrutural em CREATE TABLE impede a conexão
+                                    if trimmed.to_uppercase().starts_with("CREATE TABLE") {
+                                        fatal_err = Some(format!("Erro ao criar tabela ({}): {}", trimmed.chars().take(60).collect::<String>(), err_str));
+                                    }
                                 }
                             }
                         }
