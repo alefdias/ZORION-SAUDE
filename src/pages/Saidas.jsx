@@ -987,7 +987,6 @@ export default function Saidas({ isTab = false }) {
                   <TableHead className="w-24 text-[11px] font-bold uppercase tracking-wider text-slate-600">Cód.</TableHead>
                   <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Medicamento</TableHead>
                   <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Saldo Satélite</TableHead>
-                  <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Estoque Central</TableHead>
                   <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lotes Cadastrados</TableHead>
                   <TableHead className="text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">Ações</TableHead>
                 </TableRow>
@@ -1017,7 +1016,7 @@ export default function Saidas({ isTab = false }) {
               ) : activeCategory === "disponiveis_satelite" ? (
                 filteredMedicamentosSatelite.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-16">
+                    <TableCell colSpan={5} className="text-center py-16">
                       <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
                         <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3.5 ring-8 ring-emerald-50/50 dark:ring-emerald-950/20">
                           <Boxes className="w-7 h-7" />
@@ -1092,11 +1091,6 @@ export default function Saidas({ isTab = false }) {
                         <TableCell className="text-center">
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
                             {med.estoque_satelite || 0} {med.unidade_medida || "un"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="text-xs font-semibold text-slate-500">
-                            {med.estoque_atual || 0} {med.unidade_medida || "un"}
                           </span>
                         </TableCell>
                         <TableCell>

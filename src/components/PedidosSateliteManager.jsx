@@ -922,23 +922,36 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           prepararSaidaTransferenciaCentralBatch();
         }
 
-        // Credita estoque satélite
-        for (const item of updatedItens) {
-          const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
-          const qtdEnviada = Number(item.qtd_atendida) || 0;
+        // Proteção contra duplicação: confere se alguma transferência deste pedido já foi aceita previamente
+        let jaAceitoAnteriormente = false;
+        try {
+          const allTransfers = await db.entities.TransferenciaPendente.list();
+          jaAceitoAnteriormente = (allTransfers || []).some(
+            t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo) && (t.status === "Aceito" || t.status === "aceito")
+          );
+        } catch (e) {
+          console.warn("Erro ao checar transferências anteriores do pedido:", e);
+        }
 
-          if (qtdRealRecebida > 0) {
-            sqlBatch.push(
-              `UPDATE "Medicamento" SET "estoque_satelite" = COALESCE("estoque_satelite", 0) + ${qtdRealRecebida} WHERE "id" = ${esc(item.medicamento_id)};`
-            );
-          }
+        // Credita estoque satélite SOMENTE se ainda não foi creditado por aceite prévio
+        if (!jaAceitoAnteriormente) {
+          for (const item of updatedItens) {
+            const qtdRealRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
+            const qtdEnviada = Number(item.qtd_atendida) || 0;
 
-          // Se houve divergência (chegou menos), devolve sobra para Central
-          if (qtdRealRecebida < qtdEnviada) {
-            const dif = qtdEnviada - qtdRealRecebida;
-            sqlBatch.push(
-              `UPDATE "Medicamento" SET "estoque_atual" = COALESCE("estoque_atual", 0) + ${dif} WHERE "id" = ${esc(item.medicamento_id)};`
-            );
+            if (qtdRealRecebida > 0) {
+              sqlBatch.push(
+                `UPDATE "Medicamento" SET "estoque_satelite" = COALESCE("estoque_satelite", 0) + ${qtdRealRecebida} WHERE "id" = ${esc(item.medicamento_id)};`
+              );
+            }
+
+            // Se houve divergência (chegou menos), devolve sobra para Central
+            if (qtdRealRecebida < qtdEnviada) {
+              const dif = qtdEnviada - qtdRealRecebida;
+              sqlBatch.push(
+                `UPDATE "Medicamento" SET "estoque_atual" = COALESCE("estoque_atual", 0) + ${dif} WHERE "id" = ${esc(item.medicamento_id)};`
+              );
+            }
           }
         }
 
