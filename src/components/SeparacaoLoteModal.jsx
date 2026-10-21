@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { format, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { db } from "@/api/db";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -57,6 +57,31 @@ import {
   calculatePrescQtdParaDias,
 } from "@/utils/prescricaoUtils";
 import { isPsicotropico } from "@/utils/mavUtils";
+import { safeFormatDate } from "@/utils/dateUtils";
+import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
+
+/**
+ * Verifica se um lote pertence a determinado medicamento por id, código ou nome
+ */
+function isLoteDoMedicamento(lote, item, medicamentos = []) {
+  if (!lote || !item) return false;
+  const lMedId = String(lote.medicamento_id || lote.medicamentoId || "");
+  const itemId = String(item.medicamentoId || "");
+  if (lMedId && itemId && lMedId === itemId) return true;
+
+  const medObj = (medicamentos || []).find((m) => String(m.id) === itemId);
+  if (medObj && lMedId && String(medObj.id) === lMedId) return true;
+
+  const lCodigo = lote.medicamento_codigo ? String(lote.medicamento_codigo).trim() : "";
+  const itemCodigo = item.codigo ? String(item.codigo).trim() : (medObj?.codigo ? String(medObj.codigo).trim() : "");
+  if (lCodigo && itemCodigo && lCodigo === itemCodigo) return true;
+
+  const lNome = (lote.medicamento_nome || "").trim().toLowerCase();
+  const itemNome = (item.medicamentoNome || medObj?.nome || "").trim().toLowerCase();
+  if (lNome && itemNome && lNome === itemNome) return true;
+
+  return false;
+}
 
 export function SeparacaoLoteModal({
   open,
@@ -75,6 +100,34 @@ export function SeparacaoLoteModal({
   const [isPrinting, setIsPrinting] = useState(false);
   const [itensConsolidados, setItensConsolidados] = useState([]);
   const [expandedMeds, setExpandedMeds] = useState({});
+
+  // Buscar todos os lotes do banco caso a prop venha vazia
+  const { data: dbLotes = [] } = useQuery({
+    queryKey: ['lotes'],
+    queryFn: () => (db.entities.Lote ? db.entities.Lote.list() : []),
+  });
+
+  const allLotes = useMemo(() => {
+    return (lotes && lotes.length > 0) ? lotes : dbLotes;
+  }, [lotes, dbLotes]);
+
+  // Buscar transferências da satélite para rastreabilidade precisa de lotes
+  const { data: transferencias = [] } = useQuery({
+    queryKey: ['transferencias_pendentes'],
+    queryFn: () => (db.entities.TransferenciaPendente ? db.entities.TransferenciaPendente.list() : []),
+  });
+
+  // Buscar pedidos da satélite
+  const { data: pedidosSatelite = [] } = useQuery({
+    queryKey: ['pedidos_satelite'],
+    queryFn: () => (db.entities.PedidoSatelite ? db.entities.PedidoSatelite.list() : []),
+  });
+
+  // Buscar saídas
+  const { data: saidas = [] } = useQuery({
+    queryKey: ['saidas'],
+    queryFn: () => (db.entities.Saida ? db.entities.Saida.list() : []),
+  });
 
   // Data de referência do ciclo
   const hoje = useMemo(() => new Date(), []);
@@ -160,20 +213,36 @@ export function SeparacaoLoteModal({
       });
     });
 
-    // Para cada medicamento consolidado, calcula as alocações de lote (FEFO ou split)
+    // Para cada medicamento consolidado, calcula as alocações de lote com lote e validade reais da Satélite
     const listaConsolidada = Array.from(map.values())
       .sort((a, b) => a.medicamentoNome.localeCompare(b.medicamentoNome))
       .map((item) => {
-        const medLotes = (lotes || [])
-          .filter(
-            (l) =>
-              (String(l.medicamento_id) === String(item.medicamentoId) ||
-                String(l.medicamentoId) === String(item.medicamentoId) ||
-                (item.codigo && l.medicamento_codigo && String(l.medicamento_codigo).trim() === String(item.codigo).trim())) &&
-              (Number(l.quantidade_atual) || 0) > 0 &&
-              l.status !== "Inativo"
-          )
-          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+        // 1. Todos os lotes cadastrados deste medicamento (ordenados por FEFO)
+        const todosLotesMed = (allLotes || [])
+          .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+          .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
+          .sort((a, b) => {
+            const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
+            const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
+            return da - db;
+          });
+
+        // 2. Lotes comprovados com saldo na Satélite
+        const lotesSatComprovados = calcularLotesSatelite({
+          medId: item.medicamentoId,
+          medCodigo: item.codigo,
+          medNome: item.medicamentoNome,
+          saldoTotalSat: item.estoqueSatelite,
+          lotes: allLotes,
+          transferencias,
+          pedidosSatelite,
+          saidas,
+        });
+
+        // Candidatos preferenciais: lotes com saldo comprovado na satélite com saldo > 0; se não houver saldo mapeado, todos os lotes do medicamento
+        const medLotes = lotesSatComprovados.some((l) => (Number(l.saldoSatelite) || 0) > 0)
+          ? lotesSatComprovados
+          : todosLotesMed;
 
         let alocs = [];
         if (medLotes.length === 0) {
@@ -181,6 +250,8 @@ export function SeparacaoLoteModal({
             {
               id: `alloc-${item.medicamentoId}-default`,
               loteId: "",
+              numero_lote: "Lote Geral",
+              data_validade: "",
               quantidade: item.qtdTotal,
             },
           ];
@@ -188,22 +259,15 @@ export function SeparacaoLoteModal({
           let restante = item.qtdTotal;
           for (let i = 0; i < medLotes.length; i++) {
             const l = medLotes[i];
-            const saldo = Number(l.quantidade_atual) || 0;
-            if (saldo <= 0) continue;
+            const saldo = Number(l.saldoSatelite ?? l.quantidade_atual ?? 0);
 
-            if (i === 0 && saldo >= restante) {
-              alocs.push({
-                id: `alloc-${item.medicamentoId}-${l.id}`,
-                loteId: l.id,
-                quantidade: restante,
-              });
-              restante = 0;
-              break;
-            } else {
+            if (saldo > 0) {
               const qtdDeste = Math.min(saldo, restante);
               alocs.push({
                 id: `alloc-${item.medicamentoId}-${l.id}`,
                 loteId: l.id,
+                numero_lote: l.numero_lote || "S/L",
+                data_validade: l.data_validade || null,
                 quantidade: qtdDeste,
               });
               restante -= qtdDeste;
@@ -215,9 +279,12 @@ export function SeparacaoLoteModal({
             if (alocs.length > 0) {
               alocs[alocs.length - 1].quantidade += restante;
             } else {
+              const primeiro = medLotes[0];
               alocs.push({
-                id: `alloc-${item.medicamentoId}-${medLotes[0].id}`,
-                loteId: medLotes[0].id,
+                id: `alloc-${item.medicamentoId}-${primeiro.id}`,
+                loteId: primeiro.id,
+                numero_lote: primeiro.numero_lote || "S/L",
+                data_validade: primeiro.data_validade || null,
                 quantidade: item.qtdTotal,
               });
             }
@@ -231,7 +298,7 @@ export function SeparacaoLoteModal({
       });
 
     setItensConsolidados(listaConsolidada);
-  }, [open, dias, activePrescs, selectedPacs, pacientes, medicamentos, lotes]);
+  }, [open, dias, activePrescs, selectedPacs, pacientes, medicamentos, allLotes, transferencias, pedidosSatelite, saidas]);
 
   // Contagens para os botões de filtro
   const contagensCategorias = useMemo(() => {
@@ -325,7 +392,13 @@ export function SeparacaoLoteModal({
             return { ...aloc, quantidade: Math.max(0, parseInt(valor) || 0) };
           }
           if (campo === "loteId") {
-            return { ...aloc, loteId: valor };
+            const loteObj = (allLotes || []).find((l) => String(l.id) === String(valor));
+            return {
+              ...aloc,
+              loteId: valor,
+              numero_lote: loteObj?.numero_lote || aloc.numero_lote || "S/L",
+              data_validade: loteObj?.data_validade || aloc.data_validade || null,
+            };
           }
           return aloc;
         });
@@ -340,14 +413,9 @@ export function SeparacaoLoteModal({
       prev.map((item) => {
         if (item.medicamentoId !== medId) return item;
 
-        const medLotes = (lotes || []).filter(
-          (l) =>
-            (String(l.medicamento_id) === String(item.medicamentoId) ||
-              String(l.medicamentoId) === String(item.medicamentoId) ||
-              (item.codigo && l.medicamento_codigo && String(l.medicamento_codigo).trim() === String(item.codigo).trim())) &&
-            (Number(l.quantidade_atual) || 0) > 0 &&
-            l.status !== "Inativo"
-        );
+        const medLotes = (allLotes || [])
+          .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+          .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo");
 
         const lotesUsados = item.alocacoes.map((a) => a.loteId);
         const proximoLote = medLotes.find((l) => !lotesUsados.includes(l.id)) || medLotes[0];
@@ -358,6 +426,8 @@ export function SeparacaoLoteModal({
         const novaAloc = {
           id: `alloc-${medId}-${Date.now()}`,
           loteId: proximoLote ? proximoLote.id : "",
+          numero_lote: proximoLote?.numero_lote || "S/L",
+          data_validade: proximoLote?.data_validade || null,
           quantidade: restante,
         };
 
@@ -390,13 +460,29 @@ export function SeparacaoLoteModal({
     }));
   };
 
-  // Executar Impressão da Guia de Separação Consolidada
+  // Executar Impressão da Guia de Separação Consolidada com Isolamento Total
   const handleImprimirGuia = () => {
     setIsPrinting(true);
+    document.body.classList.add("printing-separacao-lote");
+
+    // Ocultar qualquer print-area pai para garantia absoluta
+    const printAreaEl = document.getElementById("print-area");
+    if (printAreaEl) {
+      printAreaEl.setAttribute("data-prev-display", printAreaEl.style.display);
+      printAreaEl.style.setProperty("display", "none", "important");
+    }
+
     setTimeout(() => {
       window.print();
-      setIsPrinting(false);
-    }, 200);
+      setTimeout(() => {
+        document.body.classList.remove("printing-separacao-lote");
+        if (printAreaEl) {
+          printAreaEl.style.display = printAreaEl.getAttribute("data-prev-display") || "";
+          printAreaEl.removeAttribute("data-prev-display");
+        }
+        setIsPrinting(false);
+      }, 500);
+    }, 250);
   };
 
   // Mutação de Baixa em Lote dos itens filtrados
@@ -600,6 +686,13 @@ export function SeparacaoLoteModal({
       {isPrinting && (
         <style>{`
           @media print {
+            body {
+              background: white !important;
+              color: black !important;
+            }
+            body > *:not(#print-guia-separacao) {
+              display: none !important;
+            }
             body * {
               visibility: hidden !important;
             }
@@ -615,13 +708,18 @@ export function SeparacaoLoteModal({
               background: white !important;
               padding: 10mm !important;
               color: black !important;
+              z-index: 999999 !important;
+            }
+            #print-area, [role="dialog"], header, nav, .sonner-toaster {
+              display: none !important;
+              visibility: hidden !important;
             }
           }
         `}</style>
       )}
 
       {/* ─── GUIA DE SEPARAÇÃO IMPRIMÍVEL (A4 CONSOLIDADA POR MEDICAMENTO) ──────────── */}
-      <div id="print-guia-separacao" className="hidden">
+      <div id="print-guia-separacao" className={isPrinting ? "block" : "hidden"}>
         <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
           <div>
             <span className="text-xl font-black tracking-tight uppercase text-blue-950">
@@ -662,28 +760,43 @@ export function SeparacaoLoteModal({
                 TOTAL ({dias}d)
               </th>
               <th className="border border-slate-400 p-2">LOTE(S) & VALIDADE A RETIRAR</th>
-              <th className="border border-slate-400 p-2 text-center w-20">ESTOQUE</th>
+              <th className="border border-slate-400 p-2 text-center w-20">ESTOQUE SAT.</th>
               <th className="border border-slate-400 p-2 w-28">VISTO</th>
             </tr>
           </thead>
           <tbody>
             {itensFiltrados.map((item, idx) => {
-              const medLotes = (lotes || []).filter(
-                (l) =>
-                  String(l.medicamento_id) === String(item.medicamentoId) ||
-                  String(l.medicamentoId) === String(item.medicamentoId)
-              );
+              const medLotes = (allLotes || [])
+                .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+                .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
+                .sort((a, b) => {
+                  const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
+                  const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
+                  return da - db;
+                });
 
-              const lotesDesc = item.alocacoes
+              // Montar descrição com número de lote e validade reais
+              const lotesDesc = (item.alocacoes || [])
                 .map((a) => {
-                  const loteObj = medLotes.find((l) => String(l.id) === String(a.loteId));
-                  const num = loteObj ? loteObj.numero_lote : "S/ Lote";
-                  const val = loteObj?.data_validade
-                    ? format(new Date(loteObj.data_validade), "dd/MM/yy")
-                    : "-";
-                  return `${num} (Val: ${val}) [${a.quantidade} un]`;
+                  const loteObj =
+                    medLotes.find((l) => String(l.id) === String(a.loteId)) ||
+                    (allLotes || []).find((l) => String(l.id) === String(a.loteId));
+
+                  const num = loteObj?.numero_lote || a.numero_lote || (medLotes[0]?.numero_lote) || "S/ Lote";
+                  const rawVal = loteObj?.data_validade || a.data_validade || (medLotes[0]?.data_validade);
+                  const val = rawVal ? safeFormatDate(rawVal) : "-";
+                  const qtd = a.quantidade ?? item.qtdTotal;
+                  return `Lote: ${num} | Val: ${val} [${qtd} un]`;
                 })
+                .filter(Boolean)
                 .join(" • ");
+
+              const textoFinalLotes =
+                lotesDesc && !lotesDesc.includes("S/ Lote")
+                  ? lotesDesc
+                  : medLotes.length > 0
+                  ? `Lote: ${medLotes[0].numero_lote || "S/L"} | Val: ${safeFormatDate(medLotes[0].data_validade)} [${item.qtdTotal} un]`
+                  : (lotesDesc || "Sem lote cadastrado");
 
               return (
                 <tr key={item.medicamentoId} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
@@ -707,8 +820,8 @@ export function SeparacaoLoteModal({
                   <td className="border border-slate-400 p-2 text-center font-black text-sm font-mono bg-slate-100">
                     {item.qtdTotal} un
                   </td>
-                  <td className="border border-slate-400 p-2 text-[10px] font-mono">
-                    {lotesDesc || "Saldo Geral Satélite"}
+                  <td className="border border-slate-400 p-2 font-mono text-[11px] font-semibold text-slate-900">
+                    {textoFinalLotes}
                   </td>
                   <td className="border border-slate-400 p-2 text-center font-mono text-[10px]">
                     {item.estoqueSatelite} un
@@ -905,17 +1018,33 @@ export function SeparacaoLoteModal({
                         const med = (medicamentos || []).find((m) => String(m.id) === String(item.medicamentoId));
                         const estoqueSat = med ? Number(med.estoque_satelite) || 0 : 0;
 
-                        // Lotes disponíveis
-                        const medLotes = (lotes || [])
-                          .filter(
-                            (l) =>
-                              (String(l.medicamento_id) === String(item.medicamentoId) ||
-                                String(l.medicamentoId) === String(item.medicamentoId) ||
-                                (item.codigo && l.medicamento_codigo && String(l.medicamento_codigo).trim() === String(item.codigo).trim())) &&
-                              (Number(l.quantidade_atual) || 0) > 0 &&
-                              l.status !== "Inativo"
-                          )
-                          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+                        // Lotes disponíveis deste medicamento
+                        const lotesSatComprovados = calcularLotesSatelite({
+                          medId: item.medicamentoId,
+                          medCodigo: item.codigo,
+                          medNome: item.medicamentoNome,
+                          saldoTotalSat: estoqueSat,
+                          lotes: allLotes,
+                          transferencias,
+                          pedidosSatelite,
+                          saidas,
+                        });
+
+                        const medLotes = (allLotes || [])
+                          .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+                          .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
+                          .map((l) => {
+                            const satMatch = lotesSatComprovados.find((ls) => String(ls.id) === String(l.id));
+                            return {
+                              ...l,
+                              saldoSatelite: satMatch ? satMatch.saldoSatelite : 0,
+                            };
+                          })
+                          .sort((a, b) => {
+                            const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
+                            const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
+                            return da - db;
+                          });
 
                         // Soma das alocações dos lotes
                         const somaAlocacoes = item.alocacoes.reduce(
@@ -1036,11 +1165,10 @@ export function SeparacaoLoteModal({
                                             <SelectContent>
                                               {medLotes.map((l, lIdx) => (
                                                 <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
-                                                  {l.numero_lote} (Val:{" "}
-                                                  {l.data_validade
-                                                    ? format(new Date(l.data_validade), "dd/MM/yy")
-                                                    : "-"}
-                                                  ) - {l.quantidade_atual} un
+                                                  {l.numero_lote} (Val: {safeFormatDate(l.data_validade)})
+                                                  {l.saldoSatelite > 0
+                                                    ? ` • Sat: ${l.saldoSatelite} un`
+                                                    : ` • Central: ${l.quantidade_atual || 0} un`}
                                                   {lIdx === 0 ? " 🌟 [FEFO]" : ""}
                                                 </SelectItem>
                                               ))}

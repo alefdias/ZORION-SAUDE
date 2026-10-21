@@ -9,21 +9,25 @@ import { ptBR } from "date-fns/locale";
  */
 export function safeParseISO(dateStr) {
     if (!dateStr) return null;
-    const d = parseISO(dateStr);
+    if (dateStr instanceof Date) return isValid(dateStr) ? dateStr : null;
+    const d = parseISO(String(dateStr));
     return isValid(d) ? d : null;
 }
 
 /**
- * Safely formats a date string. Returns a fallback string if the date is invalid.
- * @param {string|null|undefined} dateStr - ISO date string from the database
+ * Safely formats a date string or Date object. Returns a fallback string if the date is invalid.
+ * @param {string|Date|null|undefined} dateStr - Date string or Date object
  * @param {string} [formatStr="dd/MM/yyyy"] - date-fns format string
- * @param {string} [fallback="Data inválida"] - value to return if date is invalid
+ * @param {string} [fallback="--/--/----"] - value to return if date is invalid
  * @returns {string}
  */
 export function safeFormatDate(dateStr, formatStr = "dd/MM/yyyy", fallback = "--/--/----") {
     if (!dateStr) return fallback;
     try {
-        const d = parseISO(dateStr);
+        let d = dateStr instanceof Date ? dateStr : parseISO(String(dateStr));
+        if (!isValid(d)) {
+            d = new Date(dateStr);
+        }
         if (!isValid(d)) return fallback;
         return format(d, formatStr, { locale: ptBR });
     } catch {
