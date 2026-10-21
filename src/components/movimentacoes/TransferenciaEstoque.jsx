@@ -157,26 +157,82 @@ export default function TransferenciaEstoque() {
 
   const deleteTransferenciaMutation = useMutation({
     mutationFn: async ({ transferencia, motivo }) => {
-      const lote = lotes.find(l => l.id === transferencia.lote_id);
-      const med = medicamentos.find(m => m.id === transferencia.medicamento_id);
+      // Obter dados frescos e atualizados diretamente do banco
+      const freshMed = await db.entities.Medicamento.get(transferencia.medicamento_id).catch(() => null);
+      const freshLote = transferencia.lote_id ? await db.entities.Lote.get(transferencia.lote_id).catch(() => null) : null;
+      const qtd = Number(transferencia.quantidade) || 0;
+      const isAccepted = transferencia.status === "Aceito" || transferencia.status === "aceito";
 
-      if (transferencia.direcao === "para_satelite" || transferencia.direcao === "para_carrinho_parada") {
-        if (lote) {
-          await db.entities.Lote.update(lote.id, {
-            quantidade_atual: (lote.quantidade_atual || 0) + transferencia.quantidade,
-            status: ((lote.quantidade_atual || 0) + transferencia.quantidade) > 0 ? "disponivel" : "esgotado"
+      if (transferencia.direcao === "para_satelite") {
+        // Se já havia sido aceita na Satélite, o estoque_satelite foi incrementado.
+        // Ao cancelar a transferência, DEVE debitar da Satélite e devolver para a Central!
+        if (isAccepted) {
+          if (freshMed) {
+            await db.entities.Medicamento.update(freshMed.id, {
+              estoque_satelite: Math.max(0, (Number(freshMed.estoque_satelite) || 0) - qtd),
+              estoque_atual: (Number(freshMed.estoque_atual) || 0) + qtd
+            });
+          }
+          if (freshLote) {
+            const novoQtdLote = (Number(freshLote.quantidade_atual) || 0) + qtd;
+            await db.entities.Lote.update(freshLote.id, {
+              quantidade_atual: novoQtdLote,
+              status: novoQtdLote > 0 ? "disponivel" : freshLote.status
+            });
+          }
+        } else {
+          // Se ainda estava pendente (não aceita), apenas estorna a dedução que havia sido feita na Central
+          if (freshLote) {
+            const novoQtdLote = (Number(freshLote.quantidade_atual) || 0) + qtd;
+            await db.entities.Lote.update(freshLote.id, {
+              quantidade_atual: novoQtdLote,
+              status: novoQtdLote > 0 ? "disponivel" : freshLote.status
+            });
+          }
+          if (freshMed) {
+            await db.entities.Medicamento.update(freshMed.id, {
+              estoque_atual: (Number(freshMed.estoque_atual) || 0) + qtd
+            });
+          }
+        }
+      } else if (transferencia.direcao === "para_carrinho_parada") {
+        // Para carrinho de parada, se foi aceita, remove do carrinho; de qualquer forma estorna na Central
+        if (freshLote) {
+          const novoQtdLote = (Number(freshLote.quantidade_atual) || 0) + qtd;
+          await db.entities.Lote.update(freshLote.id, {
+            quantidade_atual: novoQtdLote,
+            status: novoQtdLote > 0 ? "disponivel" : freshLote.status
           });
         }
-        if (med) {
-          await db.entities.Medicamento.update(med.id, {
-            estoque_atual: (med.estoque_atual || 0) + transferencia.quantidade
+        if (freshMed) {
+          await db.entities.Medicamento.update(freshMed.id, {
+            estoque_atual: (Number(freshMed.estoque_atual) || 0) + qtd
           });
         }
       } else {
-        if (med) {
-          await db.entities.Medicamento.update(med.id, {
-            estoque_satelite: (med.estoque_satelite || 0) + transferencia.quantidade
-          });
+        // direcao === 'para_estoque' (devolução da Satélite para a Central)
+        if (isAccepted) {
+          // Já havia entrado na Central: estorna da Central e devolve à Satélite
+          if (freshMed) {
+            await db.entities.Medicamento.update(freshMed.id, {
+              estoque_atual: Math.max(0, (Number(freshMed.estoque_atual) || 0) - qtd),
+              estoque_satelite: (Number(freshMed.estoque_satelite) || 0) + qtd
+            });
+          }
+          if (freshLote) {
+            const novoQtdLote = Math.max(0, (Number(freshLote.quantidade_atual) || 0) - qtd);
+            await db.entities.Lote.update(freshLote.id, {
+              quantidade_atual: novoQtdLote,
+              status: novoQtdLote > 0 ? freshLote.status : "esgotado"
+            });
+          }
+        } else {
+          // Estava pendente: a Satélite havia sido debitada na criação, então restaura o estoque da Satélite
+          if (freshMed) {
+            await db.entities.Medicamento.update(freshMed.id, {
+              estoque_satelite: (Number(freshMed.estoque_satelite) || 0) + qtd
+            });
+          }
         }
       }
 
@@ -198,8 +254,10 @@ export default function TransferenciaEstoque() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias_pendentes'] });
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      queryClient.invalidateQueries({ queryKey: ['saidas'] });
       setDeleteTransferenciaModal(null);
       setDeleteTransferenciaMotivo("");
       toast.success("Transferência cancelada e revertida com sucesso!");

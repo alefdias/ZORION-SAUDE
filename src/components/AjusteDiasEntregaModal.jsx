@@ -162,13 +162,9 @@ export function AjusteDiasEntregaModal({
     const b = normalize(nameB);
     if (!a || !b) return false;
     if (a === b) return true;
-    if (a.includes(b) || b.includes(a)) return true;
-    const wordsA = a.split(/\s+/).filter((w) => w.length >= 3);
-    const wordsB = b.split(/\s+/).filter((w) => w.length >= 3);
-    if (wordsA.length > 0 && wordsB.length > 0 && wordsA[0] === wordsB[0]) {
-      return true;
-    }
-    return false;
+    const cleanA = a.replace(/\b(comprimido|cp|frasco|ampola|gotas)\b/g, "").replace(/\s+/g, " ").trim();
+    const cleanB = b.replace(/\b(comprimido|cp|frasco|ampola|gotas)\b/g, "").replace(/\s+/g, " ").trim();
+    return cleanA === cleanB;
   };
 
   // Função para extrair a dose diária mesmo se totalDiario for ausente, somando slots de horários ou analisando esquema
