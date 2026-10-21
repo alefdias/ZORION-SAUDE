@@ -20,8 +20,24 @@ pub async fn test_postgres_connection(
                 
                 // Cria as tabelas necessárias automaticamente
                 let schema = include_str!("../../database/001_initial_schema.sql");
-                if let Err(e) = client.batch_execute(schema) {
-                    return Err(format!("Conectado, mas falhou ao inicializar tabelas: {}", e));
+                if let Err(_batch_err) = client.batch_execute(schema) {
+                    // Se falhar em lote, executa comando por comando ignorando avisos de duplicidade
+                    let mut fatal_err = None;
+                    for stmt in schema.split(';') {
+                        let trimmed = stmt.trim();
+                        if !trimmed.is_empty() {
+                            if let Err(e) = client.batch_execute(trimmed) {
+                                // Se for erro de sintaxe ou permissão real, guarda
+                                let err_str = e.to_string();
+                                if !err_str.contains("already exists") && !err_str.contains("duplicate") {
+                                    fatal_err = Some(format!("Erro ao executar instrução SQL ({}): {}", trimmed.chars().take(60).collect::<String>(), err_str));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(msg) = fatal_err {
+                        return Err(format!("Conectado, mas falhou ao inicializar tabelas: {}", msg));
+                    }
                 }
 
                 Ok("Conexão bem-sucedida e banco de dados inicializado!".to_string())
