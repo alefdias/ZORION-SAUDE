@@ -166,15 +166,6 @@ jobs:
             fi
           done
 
-      - name: Salvar Artefatos no GitHub Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Windows
-          path: release-artifacts/*
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
-
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         if: |
@@ -202,3 +193,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
+
+      - name: Salvar Artefatos no GitHub Actions
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Zorion-Saude-v${{ steps.app_info.outputs.VERSION }}-Windows
+          path: release-artifacts/*
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 1
