@@ -933,6 +933,11 @@ export default function PacientesMedicao() {
           }
         } catch (e) {}
 
+        if (loteId && loteEscolhido) {
+          const novaQtdSat = Math.max(0, (Number(loteEscolhido.quantidade_satelite) || 0) - qtdSaida);
+          await db.entities.Lote.update(loteId, { quantidade_satelite: novaQtdSat });
+        }
+
         await db.entities.Saida.create({
           medicamento_id: medId,
           medicamento_nome: pr.medicamentoNome || pr.medicamento_nome || (med ? med.nome : "Medicamento"),

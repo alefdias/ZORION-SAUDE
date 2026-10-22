@@ -170,6 +170,7 @@ const ensureTableQuery = {
     );
     ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "volume_frasco_ml" NUMERIC;
     ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "quantidade_inicial" INTEGER;
+    ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "quantidade_satelite" INTEGER DEFAULT 0;
   `,
   PedidoSatelite: `
     CREATE TABLE IF NOT EXISTS "PedidoSatelite" (

@@ -214,12 +214,18 @@ export default function SateliteInventario() {
       saidas,
     });
 
-    // 3. Montar a lista inicial de lotes para contagem no modal
+    // 3. Montar a lista inicial de lotes para contagem no modal com saldo limpo
     const lotesItens = medLotes.map((l) => {
-      const satMatch = lotesSatComprovados.find(
-        (ls) => ls.id === l.id || (ls.numero_lote && l.numero_lote && ls.numero_lote.trim().toLowerCase() === l.numero_lote.trim().toLowerCase())
-      );
-      const saldoSatAnt = satMatch ? Number(satMatch.saldoSatelite) || 0 : 0;
+      let saldoSatAnt = 0;
+      if (l.quantidade_satelite !== undefined && l.quantidade_satelite !== null) {
+        saldoSatAnt = Number(l.quantidade_satelite) || 0;
+      } else {
+        const satMatch = lotesSatComprovados.find(
+          (ls) => ls.id === l.id || (ls.numero_lote && l.numero_lote && ls.numero_lote.trim().toLowerCase() === l.numero_lote.trim().toLowerCase())
+        );
+        saldoSatAnt = satMatch ? Number(satMatch.saldoSatelite) || 0 : 0;
+      }
+
       return {
         id: l.id,
         loteId: l.id,
@@ -339,7 +345,7 @@ export default function SateliteInventario() {
     try {
       toast.loading("Gravando balanço satélite por lote...");
 
-      // Processar cada lote individualmente
+      // Processar cada lote individualmente com número limpo direto
       for (const it of ajusteModal.lotesItens) {
         const qtdFisicaLote = parseInt(it.quantidade_satelite, 10) || 0;
         let targetLoteId = it.loteId;
@@ -356,44 +362,35 @@ export default function SateliteInventario() {
 
           if (matchExisting) {
             targetLoteId = matchExisting.id;
+            await db.entities.Lote.update(targetLoteId, {
+              quantidade_satelite: qtdFisicaLote,
+            });
           } else {
-            // Cria o lote formalmente com QUANTIDADE_ATUAL = 0 para que a Central não receba nada!
+            // Cria o lote formalmente com QUANTIDADE_ATUAL = 0 para que a Central fique INTACTA!
             const novoLoteCriado = await db.entities.Lote.create({
               medicamento_id: med.id,
               numero_lote: numLoteLimpo,
               data_validade: it.data_validade || null,
               quantidade_atual: 0,
               quantidade_inicial: 0,
-              status: "Ativo",
+              quantidade_satelite: qtdFisicaLote,
+              status: "disponivel",
               created_at: new Date().toISOString(),
             });
             targetLoteId = novoLoteCriado?.id || null;
           }
+        } else if (targetLoteId) {
+          // Lote existente: grava estritamente o número limpo contado para a Satélite (Central intocada!)
+          await db.entities.Lote.update(targetLoteId, {
+            quantidade_satelite: qtdFisicaLote,
+          });
         }
 
         const saldoAntLote = Number(it.saldo_satelite_anterior) || 0;
         const diffLote = qtdFisicaLote - saldoAntLote;
 
-        // Se aumentou o saldo deste lote (sobra / veio do limbo):
-        // NUNCA MEXER NA CENTRAL! Cria entrada via TransferenciaPendente Aceita exclusiva para a satélite
-        if (diffLote > 0) {
-          await db.entities.TransferenciaPendente.create({
-            medicamento_id: med.id,
-            medicamento_nome: med.nome,
-            lote_id: targetLoteId,
-            numero_lote: it.numero_lote,
-            quantidade: diffLote,
-            direcao: "para_satelite",
-            status: "Aceito",
-            data_solicitacao: new Date().toISOString(),
-            data_aceite: new Date().toISOString(),
-            observacao: `Ajuste de Balanço Físico Satélite (+${diffLote} un. Lote ${it.numero_lote})`,
-          });
-        }
-
-        // Se diminuiu o saldo deste lote (falta / baixa física):
-        // Registra saída exclusiva da satélite sem alterar estoque central
-        if (diffLote < 0) {
+        // Se for psicotrópico (Portaria 344) e houver perda ou falta, registra saída legal para justificar no Livro 344
+        if (ajusteModal.isControlado && diffLote < 0) {
           const qtdBaixa = Math.abs(diffLote);
           await db.entities.Saida.create({
             medicamento_id: med.id,
@@ -402,36 +399,34 @@ export default function SateliteInventario() {
             numero_lote: it.numero_lote,
             quantidade: qtdBaixa,
             destino:
-              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+              ajusteModal.tipoResolucao === "paciente"
                 ? "Paciente"
                 : "Ajuste de Balanço Satélite",
             motivo:
-              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+              ajusteModal.tipoResolucao === "paciente"
                 ? "Dispensação Hospitalar - Balanço Satélite"
-                : ajusteModal.isControlado && ajusteModal.tipoResolucao === "perda"
+                : ajusteModal.tipoResolucao === "perda"
                 ? "Perda"
                 : "Ajuste de Balanço Físico Manual",
             tipo: "SAIDA",
             origem: "satelite",
-            paciente_id: ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente" ? selectedPac?.id : null,
-            paciente_nome: ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente" ? selectedPac?.nome : null,
+            paciente_id: ajusteModal.tipoResolucao === "paciente" ? selectedPac?.id : null,
+            paciente_nome: ajusteModal.tipoResolucao === "paciente" ? selectedPac?.nome : null,
             ala_nome:
-              ajusteModal.isControlado && ajusteModal.tipoResolucao === "paciente"
+              ajusteModal.tipoResolucao === "paciente"
                 ? selectedPac?.alaNome || "Enfermaria"
                 : null,
             responsavel: currentUser.nome,
             responsavel_crf: currentUser.crf,
             data_saida: new Date().toISOString(),
-            observacao: ajusteModal.isControlado
-              ? ajusteModal.tipoResolucao === "perda"
-                ? `Perda registrada no Balanço Satélite: ${ajusteModal.perdaMotivo}. ${ajusteModal.observacao || ""}`.trim()
-                : `Conciliação de dose não baixada no plantão: ${ajusteModal.observacao || "Uso regular no leito"}`
-              : `Ajuste de Balanço Satélite (-${qtdBaixa} un. Lote ${it.numero_lote})`,
+            observacao: ajusteModal.tipoResolucao === "perda"
+              ? `Perda registrada no Balanço Satélite: ${ajusteModal.perdaMotivo}. ${ajusteModal.observacao || ""}`.trim()
+              : `Conciliação de dose não baixada no plantão: ${ajusteModal.observacao || "Uso regular no leito"}`,
           });
         }
       }
 
-      // Atualizar o saldo físico total do medicamento na Satélite
+      // Atualizar o saldo físico total do medicamento na Satélite (NÚMERO LIMPO DIRETO!)
       await db.entities.Medicamento.update(med.id, {
         estoque_satelite: totalContado,
       });
@@ -806,11 +801,18 @@ export default function SateliteInventario() {
                           {med.codigo || "S/C"}
                         </TableCell>
                         <TableCell>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">
-                            {med.nome}
+                          <div className="font-bold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-1.5 flex-wrap">
+                            <span>{med.nome}</span>
+                            {med.concentracao && (
+                              <Badge variant="secondary" className="font-mono font-bold text-[11px] bg-indigo-50 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300 border border-indigo-200/80 px-1.5 py-0 h-5">
+                                {med.concentracao}
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                            <span>{med.apresentacao || med.concentracao || "-"}</span>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">
+                              {[med.concentracao, med.apresentacao].filter(Boolean).join(" • ") || "-"}
+                            </span>
                             {isControlado && (
                               <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 flex items-center gap-1">
                                 <ShieldAlert className="w-3 h-3 text-red-600" />
@@ -908,8 +910,13 @@ export default function SateliteInventario() {
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                        {med.nome}
+                      <div className="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
+                        <span>{med.nome}</span>
+                        {med.concentracao && (
+                          <Badge className="bg-indigo-600 text-white font-mono font-bold text-xs px-2 py-0.5 shadow-xs">
+                            {med.concentracao}
+                          </Badge>
+                        )}
                         {ajusteModal.isControlado && (
                           <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
                             <ShieldAlert className="w-3 h-3 mr-1 text-red-600" />
@@ -922,8 +929,14 @@ export default function SateliteInventario() {
                           </Badge>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Código: {med.codigo || "S/C"} • Apresentação: {med.apresentacao || med.concentracao || "Geral"} • Armário: {med.localizacao || "Satélite"}
+                      <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+                        <span><strong>Código:</strong> {med.codigo || "S/C"}</span>
+                        <span>•</span>
+                        <span><strong>Dosagem:</strong> {med.concentracao || "Não informada"}</span>
+                        <span>•</span>
+                        <span><strong>Forma:</strong> {med.apresentacao || "Geral"}</span>
+                        <span>•</span>
+                        <span><strong>Armário:</strong> {med.localizacao || "Satélite"}</span>
                       </div>
                     </div>
                   </div>
@@ -1312,11 +1325,11 @@ export default function SateliteInventario() {
                     {med.codigo || "S/C"}
                   </td>
                   <td>
-                    <div style={{ fontWeight: "bold", textTransform: "uppercase" }}>
-                      {med.nome}
+                    <div style={{ fontWeight: "bold", textTransform: "uppercase", fontSize: "11px" }}>
+                      {med.nome} {med.concentracao ? `(${med.concentracao})` : ""}
                     </div>
                     <div style={{ fontSize: "9px", color: "#64748b" }}>
-                      {med.apresentacao || med.concentracao || ""}
+                      {[med.concentracao, med.apresentacao].filter(Boolean).join(" • ")}
                       {med.portaria_344 ? " [PORTARIA 344]" : ""}
                       {isMav(med) ? " [MAV]" : ""}
                     </div>

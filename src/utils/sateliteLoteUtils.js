@@ -73,6 +73,24 @@ export function calcularLotesSatelite({
     return [];
   }
 
+  // PRIORIDADE 1: Se o lote já possui quantidade_satelite gravada explicitamente (número limpo direto)
+  const temSaldoGravadoDireto = lotesDoMed.some((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0);
+  if (temSaldoGravadoDireto) {
+    return lotesDoMed
+      .filter((l) => Number(l.quantidade_satelite || 0) > 0)
+      .map((l) => ({
+        ...l,
+        saldoSatelite: Number(l.quantidade_satelite || 0),
+      }))
+      .sort((a, b) => {
+        const da = safeParseISO(a.data_validade);
+        const db = safeParseISO(b.data_validade);
+        if (!da) return 1;
+        if (!db) return -1;
+        return da - db;
+      });
+  }
+
   // Mapa para acumular saldo específico de cada lote na Satélite
   const mapaSaldoLote = {};
   lotesDoMed.forEach((l) => {
