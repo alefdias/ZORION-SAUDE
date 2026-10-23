@@ -45,8 +45,10 @@ import {
   CheckSquare,
   Square,
   Calendar,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { safeFormatDate } from "@/utils/dateUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 
 export function AjusteDiasEntregaModal({
@@ -273,6 +275,15 @@ export function AjusteDiasEntregaModal({
     return Math.max(1, diff + 1);
   }, [dataFimCiclo, hoje]);
 
+  // Função para definir ciclo rápido (ex: 8 dias padrão) pré-preenchendo a data de fechamento e dias a entregar
+  const handleSetCicloDias = (numDias) => {
+    const d = Math.max(1, parseInt(numDias) || 8);
+    const novaDataFim = format(addDays(hoje, d - 1), "yyyy-MM-dd");
+    setDataFimCiclo(novaDataFim);
+    setCustomDias({});
+    setCustomQtds({});
+  };
+
   // Função para verificar se a prescrição teve receita / alteração na data especificada
   const teveAlteracaoNaData = (pr, dataAlvo) => {
     if (!dataAlvo) return true;
@@ -427,11 +438,12 @@ export function AjusteDiasEntregaModal({
           }
         }
 
+        const maxDiasPermitidos = Math.max(1, diasRestantes || diasSugeridos || 1);
         const diasFinais = jaDispensado
           ? 0
           : (customDias[pr.id] !== undefined
-              ? Math.max(1, parseInt(customDias[pr.id]) || 1)
-              : Math.max(1, diasRestantes));
+              ? Math.min(maxDiasPermitidos, Math.max(1, parseInt(customDias[pr.id]) || 1))
+              : maxDiasPermitidos);
 
         // Dose efetiva a dispensar (diferença se aumento, ou dose cheia se nova medicação)
         const doseEfetiva = jaDispensado
@@ -585,7 +597,12 @@ export function AjusteDiasEntregaModal({
   // Alterar dias de uma prescrição específica
   const handleDiasChange = (prId, diasVal, item) => {
     if (item.jaDispensado) return;
-    const d = Math.max(1, parseInt(diasVal) || 1);
+    const maxTeto = item.diasRestantes || item.diasSugeridos || diasRestantesCiclo || 1;
+    let d = Math.max(1, parseInt(diasVal) || 1);
+    if (d > maxTeto) {
+      d = maxTeto;
+      toast.warning(`Limite do ciclo atingido: máximo de ${maxTeto} dia(s) para este medicamento.`);
+    }
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
     // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
     const doseRef = item.doseAtual > 0 ? item.doseAtual : (item.diferencaDose > 0 ? item.diferencaDose : 1);
@@ -836,28 +853,63 @@ export function AjusteDiasEntregaModal({
                 </p>
               </div>
 
-              {/* Seletor da Data Final do Ciclo */}
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-xs shrink-0">
-                <CalendarDays className="w-4 h-4 text-indigo-600" />
-                <div className="text-left">
-                  <Label className="text-[10px] font-bold text-slate-500 uppercase block">
-                    Fechar Ciclo do Paciente Até:
-                  </Label>
-                  <Input
-                    type="date"
-                    min={hojeStr}
-                    value={dataFimCiclo}
-                    onChange={(e) => setDataFimCiclo(e.target.value)}
-                    className="h-7 text-xs font-bold font-mono px-2 py-0 w-[130px] border-slate-300"
-                  />
+              {/* Seletor da Data Final do Ciclo e Atalhos */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-xs shrink-0">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-indigo-600" />
+                  <div className="text-left">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase block">
+                      Fechar Ciclo Até:
+                    </Label>
+                    <Input
+                      type="date"
+                      min={hojeStr}
+                      value={dataFimCiclo}
+                      onChange={(e) => setDataFimCiclo(e.target.value)}
+                      className="h-7 text-xs font-bold font-mono px-2 py-0 w-[130px] border-slate-300"
+                    />
+                  </div>
                 </div>
-                <div className="border-l border-slate-200 dark:border-slate-700 pl-2.5 text-center">
-                  <span className="text-[10px] text-slate-400 font-bold block">
-                    Ciclo
+
+                <div className="flex items-center gap-1.5 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-700 pt-1.5 sm:pt-0 sm:pl-2.5">
+                  <span className="text-[10px] text-slate-400 font-bold block sm:hidden">
+                    Atalhos:
                   </span>
-                  <span className="text-xs font-black text-indigo-600 font-mono">
-                    {diasRestantesCiclo}d
-                  </span>
+                  <Button
+                    type="button"
+                    variant={diasRestantesCiclo === 8 ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleSetCicloDias(8)}
+                    className="h-6 px-2 text-[11px] font-bold"
+                  >
+                    8d (Padrão)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={diasRestantesCiclo === 15 ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleSetCicloDias(15)}
+                    className="h-6 px-2 text-[11px] font-bold"
+                  >
+                    15d
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={diasRestantesCiclo === 30 ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleSetCicloDias(30)}
+                    className="h-6 px-2 text-[11px] font-bold"
+                  >
+                    30d
+                  </Button>
+                  <div className="text-center pl-1">
+                    <span className="text-[10px] text-slate-400 font-bold block leading-none">
+                      Ciclo
+                    </span>
+                    <span className="text-xs font-black text-indigo-600 font-mono">
+                      {diasRestantesCiclo}d
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -887,6 +939,19 @@ export function AjusteDiasEntregaModal({
                 <span>Exibir apenas receitas alteradas nesta data</span>
               </label>
             </div>
+          </div>
+
+          {/* Banner Informativo do Ciclo Fechado */}
+          <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="text-slate-700 dark:text-slate-300">
+                <strong>Ciclo Fechado ({diasRestantesCiclo}d):</strong> As novas receitas e complementos são limitados até <strong>{safeFormatDate(dataFimCiclo)}</strong>. Medicamentos já cobertos até o fim do ciclo ficam com 🔒 0 dias e não geram duplicidade.
+              </span>
+            </div>
+            <Badge className="bg-indigo-600 text-white font-mono shrink-0">
+              Até {safeFormatDate(dataFimCiclo)}
+            </Badge>
           </div>
 
           {/* Tabela de Prescrições para Ajuste */}
@@ -1067,13 +1132,18 @@ export function AjusteDiasEntregaModal({
                             )}
                           </TableCell>
 
-                          {/* Dias a Entregar (com trava automática de fim do tratamento) */}
+                          {/* Dias a Entregar (com trava automática de fim do tratamento e teto de ciclo) */}
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                             {item.jaDispensado ? (
-                              <div className="text-center">
-                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                  0 dias (Coberto)
-                                </span>
+                              <div className="flex flex-col items-center justify-center">
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                                  <Lock className="w-3 h-3 text-emerald-600" /> 0 dias (Já coberto)
+                                </Badge>
+                                {item.cobertoAteStr && (
+                                  <span className="text-[9px] text-emerald-600 font-mono mt-0.5">
+                                    Até {safeFormatDate(item.cobertoAteStr)}
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <div className="flex flex-col items-center gap-1">
@@ -1081,7 +1151,7 @@ export function AjusteDiasEntregaModal({
                                   <Input
                                     type="number"
                                     min="1"
-                                    max={diasTratamento || diasRestantesCiclo}
+                                    max={item.diasRestantes || diasRestantesCiclo}
                                     value={diasFinais}
                                     disabled={!isSelected}
                                     onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
@@ -1089,6 +1159,9 @@ export function AjusteDiasEntregaModal({
                                   />
                                   <span className="text-xs text-slate-600 font-bold">dias</span>
                                 </div>
+                                <span className="text-[9px] font-semibold text-slate-500 block">
+                                  Máx: {item.diasRestantes || diasRestantesCiclo}d (até {safeFormatDate(item.dataAlvoFimStr)})
+                                </span>
                                 {diasTratamento && (
                                   <span
                                     className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"

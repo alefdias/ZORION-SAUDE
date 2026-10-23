@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, addDays } from "date-fns";
+import { format, addDays, parseISO, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { db } from "@/api/db";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +48,7 @@ import {
   Boxes,
   Stethoscope,
   ShieldAlert,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -181,9 +182,29 @@ export function SeparacaoLoteModal({
       const codigo = pr.medicamentoCodigo || med?.codigo || "";
       const psico = isPsicotropico(med || medNome);
 
-      let qtdSugerida = calculatePrescQtdParaDias(pr, dias);
-      if (qtdSugerida <= 0 && Number(pr.totalDiario) > 0) {
-        qtdSugerida = Math.ceil(Number(pr.totalDiario) * dias);
+      // ── VERIFICAÇÃO DE COBERTURA PRECEDENTE (JÁ ENTREGUE / CADEADO) ──────────
+      const cobAte = pr.coberto_ate ? pr.coberto_ate.split("T")[0] : null;
+      // Já está 100% coberto se a prescrição já foi entregue até ou além da data fim deste ciclo
+      const jaCoberto = Boolean(cobAte && cobAte >= dataFimStr);
+
+      let qtdSugerida = 0;
+      if (!jaCoberto) {
+        if (cobAte && cobAte >= hojeStr && cobAte < dataFimStr) {
+          // Cobertura parcial: calcula apenas os dias faltantes entre cobAte e dataFimStr
+          const diasFaltantes = differenceInCalendarDays(parseISO(dataFimStr), parseISO(cobAte));
+          if (diasFaltantes > 0) {
+            qtdSugerida = calculatePrescQtdParaDias(pr, diasFaltantes);
+            if (qtdSugerida <= 0 && Number(pr.totalDiario) > 0) {
+              qtdSugerida = Math.ceil(Number(pr.totalDiario) * diasFaltantes);
+            }
+          }
+        } else {
+          // Cobertura total dos dias solicitados
+          qtdSugerida = calculatePrescQtdParaDias(pr, dias);
+          if (qtdSugerida <= 0 && Number(pr.totalDiario) > 0) {
+            qtdSugerida = Math.ceil(Number(pr.totalDiario) * dias);
+          }
+        }
       }
 
       if (!map.has(medId)) {
@@ -210,6 +231,8 @@ export function SeparacaoLoteModal({
         pac,
         qtdIndividual: qtdSugerida,
         doseDiaria: Number(pr.totalDiario) || 0,
+        jaCoberto,
+        cobertoAte: cobAte,
       });
     });
 
@@ -550,7 +573,10 @@ export function SeparacaoLoteModal({
 
         // Registrar Saídas e Coberturas para cada paciente que toma este medicamento
         for (const pacEntry of item.pacientesAtendidos) {
-          const { pr, pac, qtdIndividual, doseDiaria } = pacEntry;
+          const { pr, pac, qtdIndividual, doseDiaria, jaCoberto } = pacEntry;
+          if (jaCoberto || qtdIndividual <= 0) {
+            continue; // Já entregue neste ciclo! Pula para não duplicar saída nem consumir estoque
+          }
           let qtdRestantePac = qtdIndividual;
 
           while (qtdRestantePac > 0 && ponteiroLote < filaLotes.length) {
@@ -1123,21 +1149,30 @@ export function SeparacaoLoteModal({
                               {/* Quantidade Total a Separar (Soma de Todos) */}
                               <TableCell className="text-center">
                                 <div className="flex flex-col items-center gap-1">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      value={item.qtdTotal}
-                                      onChange={(e) => handleUpdateQtdTotal(item.medicamentoId, e.target.value)}
-                                      className="w-20 h-8 text-center font-mono font-black text-sm bg-white dark:bg-slate-900 border-slate-300 text-indigo-900"
-                                      title="Total somado de todos os pacientes (você pode editar antes da baixa)"
-                                    />
-                                    <span className="text-xs text-slate-600 font-bold">un</span>
-                                  </div>
-                                  {item.qtdTotal !== item.qtdSugerida && (
-                                    <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded font-medium">
-                                      Sugerido: {item.qtdSugerida} un
-                                    </span>
+                                  {item.pacientesAtendidos.length > 0 && item.pacientesAtendidos.every(p => p.jaCoberto) ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold gap-1 py-1">
+                                      <Lock className="w-3 h-3 text-emerald-600" />
+                                      Já Entregue no Ciclo
+                                    </Badge>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          value={item.qtdTotal}
+                                          onChange={(e) => handleUpdateQtdTotal(item.medicamentoId, e.target.value)}
+                                          className="w-20 h-8 text-center font-mono font-black text-sm bg-white dark:bg-slate-900 border-slate-300 text-indigo-900"
+                                          title="Total somado de todos os pacientes (você pode editar antes da baixa)"
+                                        />
+                                        <span className="text-xs text-slate-600 font-bold">un</span>
+                                      </div>
+                                      {item.qtdTotal !== item.qtdSugerida && (
+                                        <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded font-medium">
+                                          Sugerido: {item.qtdSugerida} un
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </TableCell>
@@ -1277,14 +1312,26 @@ export function SeparacaoLoteModal({
                                               Leito: {pEntry.pac?.leito || "S/L"} • {pEntry.pac?.alaNome || "Geral"}
                                             </p>
                                           </div>
-                                          <div className="text-right shrink-0">
-                                            <span className="font-mono font-bold text-indigo-700 dark:text-indigo-400 text-xs">
-                                              {pEntry.qtdIndividual} un
-                                            </span>
-                                            <p className="text-[9px] text-slate-400 font-mono">
-                                              {pEntry.doseDiaria} un/dia
-                                            </p>
-                                          </div>
+                                          {pEntry.jaCoberto ? (
+                                            <div className="text-right shrink-0">
+                                              <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded text-[10px] border border-emerald-300">
+                                                <Lock className="w-3 h-3 text-emerald-600" />
+                                                Já coberto {pEntry.cobertoAte ? `(até ${safeFormatDate(pEntry.cobertoAte)})` : ""}
+                                              </span>
+                                              <p className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                                0 un a retirar
+                                              </p>
+                                            </div>
+                                          ) : (
+                                            <div className="text-right shrink-0">
+                                              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-400 text-xs">
+                                                {pEntry.qtdIndividual} un
+                                              </span>
+                                              <p className="text-[9px] text-slate-400 font-mono">
+                                                {pEntry.doseDiaria} un/dia
+                                              </p>
+                                            </div>
+                                          )}
                                         </div>
                                       ))}
                                     </div>

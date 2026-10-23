@@ -715,16 +715,6 @@ export function ProntuarioPacienteModal({
                   <Button 
                     variant="outline" 
                     className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm cursor-pointer shadow-xs" 
-                    onClick={() => onOpenPrintReceita(patient, prescricoesAtivas)}
-                    title="Imprimir relatório de prescrição deste paciente"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Imprimir Prescrição
-                  </Button>
-
-                  <Button 
-                    variant="outline" 
-                    className="border-white/30 text-white hover:bg-white/10 bg-transparent rounded-full px-4 gap-1.5 text-xs sm:text-sm cursor-pointer shadow-xs" 
                     onClick={() => setTransferModalOpen(true)}
                     title="Transferir paciente de ala ou leito"
                   >
