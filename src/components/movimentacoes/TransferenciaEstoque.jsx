@@ -238,19 +238,12 @@ export default function TransferenciaEstoque() {
 
       await db.entities.TransferenciaPendente.delete(transferencia.id);
 
-      const nowStr = new Date().toISOString();
-      await db.entities.Saida.create({
-        medicamento_id: transferencia.medicamento_id,
-        medicamento_nome: transferencia.medicamento_nome,
-        lote_id: transferencia.lote_id,
-        numero_lote: transferencia.numero_lote,
-        quantidade: transferencia.quantidade,
-        destino: "Reversão de Transferência",
-        motivo: "Cancelamento de Transferência",
-        observacao: `Excluída por usuário. Motivo fornecido: ${motivo}`,
-        data_saida: format(new Date(), 'yyyy-MM-dd'),
-        created_at: nowStr
-      });
+      await db.logAction(
+        "TRANSFERENCIA_CANCELADA",
+        "TransferenciaPendente",
+        transferencia.id,
+        `Transferência de ${transferencia.quantidade} un de '${transferencia.medicamento_nome}' cancelada e revertida para o estoque de origem. Motivo: ${motivo}`
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transferencias'] });

@@ -3,12 +3,10 @@ import { useLocation } from "react-router-dom";
 import Saidas from "./Saidas";
 import Devolucoes from "./Devolucoes";
 import PassagemPlantao from "./PassagemPlantao";
-import { ShoppingCart, PackagePlus, RotateCcw, PackageMinus, ClipboardList, Calendar } from "lucide-react";
-import { PedidosSateliteManager } from "@/components/PedidosSateliteManager";
+import { PackagePlus, RotateCcw, PackageMinus, ClipboardList, Calendar } from "lucide-react";
 import PedidosSateliteUrgencia from "@/components/PedidosSateliteUrgencia";
 import { MapaMensalDispensacao } from "@/components/relatorios/MapaMensalDispensacao";
 import { cn } from "@/lib/utils";
-
 
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function SateliteMovimentacoes() {
@@ -16,11 +14,13 @@ export default function SateliteMovimentacoes() {
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get("tab");
 
-  const [activeTab, setActiveTab] = useState(tabParam || "pedidos");
+  // Se vier tab="pedidos" legado ou não vier nada, padrão é "pedidos_urgencia" (Avulsos)
+  const initialTab = (tabParam === "pedidos" || !tabParam) ? "pedidos_urgencia" : tabParam;
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
     if (tabParam) {
-      setActiveTab(tabParam);
+      setActiveTab(tabParam === "pedidos" ? "pedidos_urgencia" : tabParam);
     }
   }, [tabParam]);
 
@@ -28,19 +28,6 @@ export default function SateliteMovimentacoes() {
     <div className="w-full h-full bg-slate-50/50 dark:bg-slate-950 flex flex-col">
       {/* Tabs */}
       <div className="flex gap-0 border-b border-slate-200 bg-white px-4 shrink-0 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab("pedidos")}
-          className={cn(
-            "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
-            activeTab === "pedidos"
-              ? "border-indigo-600 text-indigo-700 font-bold"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          )}
-        >
-          <ShoppingCart className="w-4 h-4 text-indigo-600" />
-          Pedidos à Central (Cálculo)
-        </button>
-
         <button
           onClick={() => setActiveTab("pedidos_urgencia")}
           className={cn(
@@ -51,7 +38,7 @@ export default function SateliteMovimentacoes() {
           )}
         >
           <PackagePlus className="w-4 h-4 text-blue-600" />
-          Pedidos Avulsos
+          Pedidos à Central (Avulsos)
           <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-bold border border-blue-200">
             Manual
           </span>
@@ -115,11 +102,7 @@ export default function SateliteMovimentacoes() {
 
       {/* Conteúdo */}
       <div className="flex-1 overflow-auto">
-        {activeTab === "pedidos" ? (
-          <div className="p-6">
-            <PedidosSateliteManager mode="satelite" />
-          </div>
-        ) : activeTab === "pedidos_urgencia" ? (
+        {(activeTab === "pedidos" || activeTab === "pedidos_urgencia") ? (
           <div className="p-6">
             <PedidosSateliteUrgencia />
           </div>

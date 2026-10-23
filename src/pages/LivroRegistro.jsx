@@ -216,6 +216,17 @@ export default function LivroRegistro() {
     return (mov) => {
       if (!mov) return { nome: "Farmacêutico", crf: "CRF: _______" };
 
+      // 0. Responsável customizado de exibição (ex: Transferência Central -> Satélite)
+      if (mov.responsavelExibicao) {
+        return mov.responsavelExibicao;
+      }
+      if (mov.tipo === 'SAIDA_TRANSFERENCIA') {
+        return { nome: "Almoxarifado Central", crf: "Transferência" };
+      }
+      if (mov.tipo === 'ENTRADA_TRANSFERENCIA') {
+        return { nome: "Farmácia Satélite", crf: "Recebimento Satélite" };
+      }
+
       // 1. Campo responsavel gravado diretamente no registro
       if (mov.responsavel && String(mov.responsavel).trim() !== "") {
         const respTrim = String(mov.responsavel).trim();
@@ -349,37 +360,140 @@ export default function LivroRegistro() {
   const historicoMovimentos = useMemo(() => {
     if (!effectiveSelectedMedId) return [];
 
+    // 1. Entradas externas (Almoxarifado Central, Fornecedores, Compras Drogaria / Adiantamento)
     const entradas = entradasLivro
       .filter(e => String(e.medicamento_id) === String(effectiveSelectedMedId) && (Number(e.quantidade) || 0) > 0)
       .map(e => ({
         ...e,
         tipo: 'ENTRADA',
-        dataObj: getSafeDateObj(e.data_entrada || e.created_at)
+        dataObj: getSafeDateObj(e.data_entrada || e.created_at),
+        sortOrder: 0
       }));
 
-    const saidas = saidasLivro
+    // 2. Processar saídas da tabela 'saidas'
+    const saidasProcessadas = [];
+
+    saidasLivro
       .filter(s => String(s.medicamento_id) === String(effectiveSelectedMedId) && (Number(s.quantidade) || 0) > 0)
-      .map(s => {
+      .forEach(s => {
         const motivoStr = String(s.motivo || "").toLowerCase();
-        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
-        return {
+        const destinoStr = String(s.destino || "").toLowerCase();
+        const tipoStr = String(s.tipo || "").toLowerCase();
+
+        // A) Descartar cancelamentos e reversões de transferências (não são saída nem consumo real)
+        if (
+          destinoStr.includes('reversão') ||
+          destinoStr.includes('reversao') ||
+          motivoStr.includes('cancelamento') ||
+          tipoStr.includes('reversao') ||
+          tipoStr.includes('cancelamento')
+        ) {
+          return;
+        }
+
+        const dataBase = getSafeDateObj(s.data_saida || s.created_at);
+
+        // B) Transferência interna: Central -> Satélite
+        // REGRA OFICIAL DA INSTITUIÇÃO:
+        // Central dá saída da quantidade enviada (Saída: X)
+        // Satélite dá entrada da quantidade recebida (Entrada: X)
+        // O saldo total institucional é preservado, e o rastreio fica 100% documentado.
+        const isTransferCentralSatelite =
+          s.motivo === "Transferência de Estoque" ||
+          s.destino === "Farmácia Satélite" ||
+          destinoStr.includes("satélite") ||
+          destinoStr.includes("satelite") ||
+          tipoStr.includes("transferencia_central") ||
+          tipoStr.includes("transferência central");
+
+        const isDevolucaoSateliteCentral =
+          tipoStr.includes("devolucao_satelite") ||
+          destinoStr.includes("estoque geral");
+
+        if (isTransferCentralSatelite) {
+          // 1º: Saída da Central
+          saidasProcessadas.push({
+            ...s,
+            tipo: 'SAIDA_TRANSFERENCIA',
+            descricao: 'TRANSFERÊNCIA INTERNA: SAÍDA DA CENTRAL P/ SATÉLITE',
+            responsavelExibicao: { nome: s.responsavel || "Almoxarifado Central", crf: "Transferência Interna" },
+            dataObj: dataBase,
+            sortOrder: 1
+          });
+          // 2º: Entrada correspondente na Satélite (1 segundo depois para ordem no livro)
+          saidasProcessadas.push({
+            ...s,
+            tipo: 'ENTRADA_TRANSFERENCIA',
+            descricao: 'TRANSFERÊNCIA INTERNA: ENTRADA NA FARMÁCIA SATÉLITE',
+            responsavelExibicao: { nome: "Farmácia Satélite", crf: "Recebimento Satélite" },
+            dataObj: new Date(dataBase.getTime() + 1000),
+            sortOrder: 2
+          });
+          return;
+        }
+
+        if (isDevolucaoSateliteCentral) {
+          // 1º: Saída da Satélite (Devolução)
+          saidasProcessadas.push({
+            ...s,
+            tipo: 'SAIDA_TRANSFERENCIA',
+            descricao: 'DEVOLUÇÃO INTERNA: SAÍDA DA SATÉLITE P/ CENTRAL',
+            responsavelExibicao: { nome: "Farmácia Satélite", crf: "Devolução Satélite" },
+            dataObj: dataBase,
+            sortOrder: 1
+          });
+          // 2º: Entrada no Almoxarifado Central
+          saidasProcessadas.push({
+            ...s,
+            tipo: 'ENTRADA_TRANSFERENCIA',
+            descricao: 'DEVOLUÇÃO INTERNA: ENTRADA NO ALMOXARIFADO CENTRAL',
+            responsavelExibicao: { nome: "Almoxarifado Central", crf: "Recebimento Devolução" },
+            dataObj: new Date(dataBase.getTime() + 1000),
+            sortOrder: 2
+          });
+          return;
+        }
+
+        // C) Perdas / Quebras declaradas
+        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || s.destino === 'Descarte Especial SNGPC' || motivoStr.includes('quebra') || motivoStr.includes('perda');
+        if (isPerda) {
+          saidasProcessadas.push({
+            ...s,
+            tipo: 'PERDA',
+            descricao: 'PERDA / QUEBRA DECLARADA',
+            dataObj: dataBase,
+            sortOrder: 3
+          });
+          return;
+        }
+
+        // D) Baixa real de Paciente (Dispensação no posto Satélite)
+        saidasProcessadas.push({
           ...s,
-          tipo: isPerda ? 'PERDA' : 'SAIDA',
-          dataObj: getSafeDateObj(s.data_saida || s.created_at)
-        };
+          tipo: 'SAIDA',
+          descricao: s.paciente_nome 
+            ? `PACIENTE: ${s.paciente_nome}${s.ala_nome ? ` (${s.ala_nome})` : ''}` 
+            : (s.destino || 'Paciente Ambulatorial / Internação'),
+          dataObj: dataBase,
+          sortOrder: 4
+        });
       });
 
-    const todos = [...entradas, ...saidas].sort((a, b) => {
+    const todos = [...entradas, ...saidasProcessadas].sort((a, b) => {
       const timeA = a.dataObj?.getTime?.() || 0;
       const timeB = b.dataObj?.getTime?.() || 0;
-      return timeA - timeB;
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
 
     let saldoAtual = 0;
     return todos.map(mov => {
       const qtd = Number(mov.quantidade) || 0;
-      if (mov.tipo === 'ENTRADA') saldoAtual += qtd;
-      else saldoAtual -= qtd;
+      if (mov.tipo === 'ENTRADA' || mov.tipo === 'ENTRADA_TRANSFERENCIA') {
+        saldoAtual += qtd;
+      } else {
+        saldoAtual -= qtd;
+      }
       return { ...mov, saldo: saldoAtual };
     });
   }, [effectiveSelectedMedId, entradasLivro, saidasLivro]);
@@ -427,11 +541,34 @@ export default function LivroRegistro() {
         });
         const qtdEntradas = entradasNoPeriodo.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
-        // Saídas comuns no período
+        // Saídas comuns no período (Apenas consumo real hospitalar de pacientes, sem transferências internas ou reversões)
         const saidasNoPeriodo = saidasLivro.filter(s => {
           if (String(s.medicamento_id) !== String(med.id)) return false;
           const motivoStr = String(s.motivo || "").toLowerCase();
-          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
+          const destinoStr = String(s.destino || "").toLowerCase();
+          const tipoStr = String(s.tipo || "").toLowerCase();
+
+          // Ignora reversões de transferências ou cancelamentos
+          if (
+            destinoStr.includes('reversão') ||
+            destinoStr.includes('reversao') ||
+            motivoStr.includes('cancelamento') ||
+            tipoStr.includes('reversao') ||
+            tipoStr.includes('cancelamento')
+          ) return false;
+
+          // Ignora remanejamentos internos da mesma instituição
+          if (
+            s.motivo === "Transferência de Estoque" ||
+            s.destino === "Farmácia Satélite" ||
+            destinoStr.includes("satélite") ||
+            destinoStr.includes("satelite") ||
+            destinoStr.includes("estoque geral") ||
+            tipoStr.includes("transferencia") ||
+            tipoStr.includes("devolucao")
+          ) return false;
+
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || s.destino === 'Descarte Especial SNGPC' || motivoStr.includes('quebra') || motivoStr.includes('perda');
           if (isPerda) return false;
           const dt = getSafeDateObj(s.data_saida || s.created_at);
           const t = dt.getTime();
@@ -443,7 +580,18 @@ export default function LivroRegistro() {
         const perdasNoPeriodo = saidasLivro.filter(s => {
           if (String(s.medicamento_id) !== String(med.id)) return false;
           const motivoStr = String(s.motivo || "").toLowerCase();
-          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || motivoStr.includes('quebra') || motivoStr.includes('perda');
+          const destinoStr = String(s.destino || "").toLowerCase();
+          const tipoStr = String(s.tipo || "").toLowerCase();
+
+          if (
+            destinoStr.includes('reversão') ||
+            destinoStr.includes('reversao') ||
+            motivoStr.includes('cancelamento') ||
+            tipoStr.includes('reversao') ||
+            tipoStr.includes('cancelamento')
+          ) return false;
+
+          const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || s.destino === 'Descarte Especial SNGPC' || motivoStr.includes('quebra') || motivoStr.includes('perda');
           if (!isPerda) return false;
           const dt = getSafeDateObj(s.data_saida || s.created_at);
           const t = dt.getTime();
@@ -505,43 +653,61 @@ export default function LivroRegistro() {
     const totalEntrada = entradas.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0) || (Number(loteObj?.quantidade_inicial) || 0);
 
     // Internal transfers (Central -> Satélite)
-    const transferencias = saidas.filter(s =>
-      s.motivo === "Transferência de Estoque" ||
-      s.destino === "Farmácia Satélite" ||
-      String(s.destino || "").includes("Satélite")
-    );
+    const transferencias = saidas.filter(s => {
+      const motivoStr = String(s.motivo || "").toLowerCase();
+      const destStr = String(s.destino || "").toLowerCase();
+      const tipoStr = String(s.tipo || "").toLowerCase();
+      if (destStr.includes("reversão") || destStr.includes("reversao") || motivoStr.includes("cancelamento") || tipoStr.includes("cancelamento")) return false;
+      return (
+        s.motivo === "Transferência de Estoque" ||
+        s.destino === "Farmácia Satélite" ||
+        destStr.includes("satélite") ||
+        destStr.includes("satelite") ||
+        tipoStr.includes("transferencia")
+      );
+    });
     const totalTransferido = transferencias.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
     // Patient administrations
     const dispensacoesPacientes = saidas.filter(s => {
-      const dest = String(s.destino || "");
-      const motivo = String(s.motivo || "").toLowerCase();
+      const destStr = String(s.destino || "").toLowerCase();
+      const motivoStr = String(s.motivo || "").toLowerCase();
+      const tipoStr = String(s.tipo || "").toLowerCase();
+      if (destStr.includes("reversão") || destStr.includes("reversao") || motivoStr.includes("cancelamento") || tipoStr.includes("cancelamento")) return false;
       return (
         s.motivo !== "Transferência de Estoque" && 
         s.destino !== "Farmácia Satélite" && 
+        !destStr.includes("satélite") &&
+        !destStr.includes("satelite") &&
         s.destino !== "Perda" &&
         s.destino !== "Descarte Especial SNGPC" &&
-        !dest.includes("Geral") &&
-        !motivo.includes("quebra") &&
-        !motivo.includes("perda")
+        !destStr.includes("geral") &&
+        !motivoStr.includes("quebra") &&
+        !motivoStr.includes("perda") &&
+        !tipoStr.includes("transferencia") &&
+        !tipoStr.includes("devolucao")
       );
     });
     const totalDispensado = dispensacoesPacientes.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
     // Losses & Discards
     const perdasEDescartes = saidas.filter(s => {
-      const motivo = String(s.motivo || "").toLowerCase();
+      const motivoStr = String(s.motivo || "").toLowerCase();
+      const destStr = String(s.destino || "").toLowerCase();
+      if (destStr.includes("reversão") || destStr.includes("reversao") || motivoStr.includes("cancelamento")) return false;
       return (
         s.destino === "Perda" || 
         s.motivo === "Perda" || 
         s.destino === "Descarte Especial SNGPC" ||
-        motivo.includes("quebra") ||
-        motivo.includes("perda")
+        motivoStr.includes("quebra") ||
+        motivoStr.includes("perda")
       );
     });
     const totalPerdas = perdasEDescartes.reduce((acc, cur) => acc + (Number(cur.quantidade) || 0), 0);
 
-    const saldoAtual = loteObj?.quantidade_atual !== undefined ? Number(loteObj.quantidade_atual) : Math.max(0, totalEntrada - totalDispensado - totalPerdas);
+    const saldoCentral = Number(loteObj?.quantidade_atual) || 0;
+    const saldoSatelite = Number(loteObj?.quantidade_satelite) || 0;
+    const saldoAtual = loteObj ? (saldoCentral + saldoSatelite) : Math.max(0, totalEntrada - totalDispensado - totalPerdas);
 
     return {
       numero_lote: activeLoteNumber,
@@ -554,6 +720,8 @@ export default function LivroRegistro() {
       totalTransferido,
       totalDispensado,
       totalPerdas,
+      saldoCentral,
+      saldoSatelite,
       saldoAtual,
       entradas,
       transferencias,
@@ -802,9 +970,21 @@ export default function LivroRegistro() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl">
               <div className="text-right">
-                <span className="text-[11px] text-slate-500 font-medium block">Estoque Atual Total</span>
+                <span className="text-[10px] text-slate-500 font-semibold uppercase block">Central</span>
+                <span className="text-sm font-bold text-slate-800">
+                  {formatQtd(selectedMed?.estoque_atual || 0)} {selectedMed?.unidade_medida || "UN"}
+                </span>
+              </div>
+              <div className="text-right border-l border-slate-200 pl-3">
+                <span className="text-[10px] text-blue-600 font-semibold uppercase block">Satélite</span>
+                <span className="text-sm font-bold text-blue-700">
+                  {formatQtd(selectedMed?.estoque_satelite || 0)} {selectedMed?.unidade_medida || "UN"}
+                </span>
+              </div>
+              <div className="text-right border-l-2 border-indigo-200 pl-3">
+                <span className="text-[10px] text-indigo-700 font-black uppercase tracking-wider block">Total Geral</span>
                 <span className="text-lg font-black text-indigo-700">
                   {formatQtd((Number(selectedMed?.estoque_atual) || 0) + (Number(selectedMed?.estoque_satelite) || 0))} {selectedMed?.unidade_medida || "UN"}
                 </span>
@@ -920,13 +1100,33 @@ export default function LivroRegistro() {
                             ) : (
                               mov.fornecedor_nome || 'Almoxarifado Central'
                             )
+                          ) : mov.tipo === 'SAIDA_TRANSFERENCIA' ? (
+                            <span className="text-blue-800 font-bold flex items-center gap-1.5">
+                              <span className="inline-block w-2 h-2 rounded-full bg-blue-600"></span>
+                              {mov.descricao || 'TRANSFERÊNCIA INTERNA: SAÍDA DA CENTRAL P/ SATÉLITE'}
+                            </span>
+                          ) : mov.tipo === 'ENTRADA_TRANSFERENCIA' ? (
+                            <span className="text-emerald-800 font-bold flex items-center gap-1.5">
+                              <span className="inline-block w-2 h-2 rounded-full bg-emerald-600"></span>
+                              {mov.descricao || 'TRANSFERÊNCIA INTERNA: ENTRADA NA FARMÁCIA SATÉLITE'}
+                            </span>
+                          ) : mov.tipo === 'PERDA' ? (
+                            <span className="text-red-700 font-bold">
+                              PERDA / QUEBRA DECLARADA {mov.motivo ? `(${mov.motivo})` : ''}
+                            </span>
                           ) : (
-                            mov.tipo === 'PERDA' ? 'PERDA / QUEBRA DECLARADA' : (mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente')
+                            mov.descricao || mov.paciente_nome || mov.ala_nome || mov.destino || 'Paciente'
                           )}
                         </TableCell>
-                        <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">{mov.tipo === 'ENTRADA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
-                        <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">{mov.tipo === 'SAIDA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
-                        <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">{mov.tipo === 'PERDA' ? formatQtd(mov.quantidade) : '-'}</TableCell>
+                        <TableCell className="text-center font-bold text-emerald-700 bg-emerald-50/50 px-1 border border-slate-300">
+                          {(mov.tipo === 'ENTRADA' || mov.tipo === 'ENTRADA_TRANSFERENCIA') ? formatQtd(mov.quantidade) : '-'}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-blue-700 bg-blue-50/50 px-1 border border-slate-300">
+                          {(mov.tipo === 'SAIDA' || mov.tipo === 'SAIDA_TRANSFERENCIA') ? formatQtd(mov.quantidade) : '-'}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-red-700 bg-red-50/50 px-1 border border-slate-300">
+                          {mov.tipo === 'PERDA' ? formatQtd(mov.quantidade) : '-'}
+                        </TableCell>
                         <TableCell className="text-center font-bold text-slate-900 bg-slate-100/50 border border-slate-300 text-sm">{formatQtd(mov.saldo)}</TableCell>
                         <TableCell className="border border-slate-300 p-0 align-middle text-center">
                           {(() => {
@@ -945,12 +1145,22 @@ export default function LivroRegistro() {
                         </TableCell>
                         <TableCell className="text-[10px] text-slate-600 min-w-[150px] border border-slate-300 px-2 break-words whitespace-normal">
                           Lote: <span className="font-semibold text-slate-800">{mov.numero_lote || mov.lote || "-"}</span>
+                          {mov.tipo === 'SAIDA_TRANSFERENCIA' && (
+                            <span className="block text-blue-700 font-semibold mt-0.5">
+                              [Saída da Central p/ Satélite]
+                            </span>
+                          )}
+                          {mov.tipo === 'ENTRADA_TRANSFERENCIA' && (
+                            <span className="block text-emerald-700 font-semibold mt-0.5">
+                              [Entrada na Satélite recebida da Central]
+                            </span>
+                          )}
                           {isAdiantamentoEntrada && (
                             <span className="block text-amber-800 font-semibold mt-0.5">
                               [Compra Drogaria / Adiantamento{selectedMed?.nota_fiscal ? ` NF: ${selectedMed.nota_fiscal}` : ""}]
                             </span>
                           )}
-                          {mov.motivo ? ` | ${mov.motivo}` : ''}
+                          {mov.tipo !== 'SAIDA_TRANSFERENCIA' && mov.tipo !== 'ENTRADA_TRANSFERENCIA' && mov.motivo ? ` | ${mov.motivo}` : ''}
                         </TableCell>
                       </TableRow>
                     );
@@ -1313,6 +1523,9 @@ export default function LivroRegistro() {
                   <div className="bg-white/10 p-3 rounded-xl border border-indigo-400/40 col-span-2 sm:col-span-1">
                     <span className="text-[10px] text-amber-300 uppercase font-bold block">Saldo Remanescente</span>
                     <span className="text-xl font-black text-amber-300">{formatQtd(loteTraceData.saldoAtual)} un</span>
+                    <span className="text-[9px] text-slate-300 block mt-0.5">
+                      Central: {formatQtd(loteTraceData.saldoCentral || 0)} | Satélite: {formatQtd(loteTraceData.saldoSatelite || 0)}
+                    </span>
                   </div>
                 </div>
               </div>
