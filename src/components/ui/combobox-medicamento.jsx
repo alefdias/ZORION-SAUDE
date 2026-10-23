@@ -22,7 +22,9 @@ export function ComboboxMedicamento({
     medicamentos = [],
     value,
     onChange,
-    placeholder = "Selecione o medicamento..."
+    placeholder = "Selecione o medicamento...",
+    stockMode = "satelite", // "satelite" | "central" | "none"
+    blockZeroStock = false
 }) {
     const [open, setOpen] = React.useState(false)
     const [search, setSearch] = React.useState("")
@@ -52,13 +54,18 @@ export function ComboboxMedicamento({
     };
 
     const renderItem = (m) => {
-        const hasSatelite = Number(m.estoque_satelite || 0) > 0;
-        
+        const isCentral = stockMode === "central";
+        const stockVal = isCentral ? (Number(m.estoque_atual) || 0) : (Number(m.estoque_satelite) || 0);
+        const hasStock = stockVal > 0;
+        const isBlocked = blockZeroStock && !hasStock;
+
         return (
             <CommandItem
                 key={m.id}
                 value={m.id} // value passes through filter
+                disabled={isBlocked}
                 onSelect={(selectedVal) => {
+                    if (isBlocked) return;
                     // Cmdk returns the internal lowercase value representing the id if there are uppercase on id (ex utils.uuid)
                     // We must match it back to the original case if our ids have case sensitivity
                     const correctMed = medicamentos.find(med => med.id.toLowerCase() === selectedVal || med.id === selectedVal);
@@ -71,7 +78,8 @@ export function ComboboxMedicamento({
                 }}
                 className={cn(
                     "flex flex-col items-start px-3 py-2 text-sm cursor-pointer rounded-sm w-full max-w-full my-0.5 relative min-w-0 overflow-hidden",
-                    value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : "data-[selected=true]:bg-slate-100"
+                    isBlocked && "opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900/40 select-none",
+                    !isBlocked && value === m.id ? "bg-emerald-50 text-emerald-900 data-[selected=true]:bg-emerald-100" : !isBlocked ? "data-[selected=true]:bg-slate-100" : ""
                 )}
             >
                 <div className="flex items-start gap-2 w-full max-w-full min-w-0 pr-6">
@@ -90,20 +98,21 @@ export function ComboboxMedicamento({
                     )}
                     <span className={cn(
                         "break-words whitespace-normal [overflow-wrap:anywhere] [word-break:break-word] text-xs leading-snug flex-1 text-left min-w-0",
-                        isMav(m) && "text-red-900 font-bold",
-                        !isMav(m) && hasSatelite ? "text-emerald-700 font-bold" : "text-slate-800"
+                        isBlocked && "text-slate-400 line-through",
+                        !isBlocked && isMav(m) && "text-red-900 font-bold",
+                        !isBlocked && !isMav(m) && hasStock ? "text-emerald-700 font-bold" : !isBlocked ? "text-slate-800" : ""
                     )} title={formatMedLabel(m)}>
                         {formatMedLabel(m)}
                         {isMav(m) && " (MAV)"}
                     </span>
-                    {m.estoque_satelite !== undefined && (
+                    {stockMode !== "none" && (
                         <span className={cn(
                             "text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ml-auto whitespace-nowrap",
-                            hasSatelite
+                            hasStock
                                 ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                : "bg-slate-100 text-slate-500 border border-slate-200"
+                                : "bg-red-50 text-red-600 border border-red-200"
                         )}>
-                            Sat: {Number(m.estoque_satelite) || 0} un
+                            {isCentral ? "Central: " : "Sat: "}{stockVal} un{hasStock ? "" : " (Zerado)"}
                         </span>
                     )}
                 </div>
@@ -113,6 +122,11 @@ export function ComboboxMedicamento({
             </CommandItem>
         );
     };
+
+    const isCentralMode = stockMode === "central";
+    const selectedStock = selectedMed 
+        ? (isCentralMode ? (Number(selectedMed.estoque_atual) || 0) : (Number(selectedMed.estoque_satelite) || 0))
+        : 0;
 
     return (
         <Popover open={open} onOpenChange={setOpen} modal={true}>
@@ -142,9 +156,15 @@ export function ComboboxMedicamento({
                                 {formatMedLabel(selectedMed)}
                                 {isMav(selectedMed) && " (MAV)"}
                             </span>
-                            {selectedMed.estoque_satelite !== undefined && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-emerald-100 text-emerald-800 border border-emerald-200 mt-0.5">
-                                    Saldo Satélite: {selectedMed.estoque_satelite || 0} un
+                            {stockMode !== "none" && (
+                                <span className={cn(
+                                    "text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 border mt-0.5",
+                                    selectedStock > 0
+                                        ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                        : "bg-red-50 text-red-600 border-red-200"
+                                )}>
+                                    {isCentralMode ? `Saldo Central: ${selectedStock} un` : `Saldo Satélite: ${selectedStock} un`}
+                                    {selectedStock <= 0 ? " (Zerado)" : ""}
                                 </span>
                             )}
                         </div>

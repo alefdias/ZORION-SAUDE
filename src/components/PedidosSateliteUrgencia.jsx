@@ -88,6 +88,7 @@ export default function PedidosSateliteUrgencia() {
   const [selectedLoteId, setSelectedLoteId] = useState("");
   const [qtdItem, setQtdItem] = useState(1);
   const [observacaoPedido, setObservacaoPedido] = useState("");
+  const [apenasComEstoqueCentral, setApenasComEstoqueCentral] = useState(true);
 
   // Order Items List
   const [itensPedido, setItensPedido] = useState([]);
@@ -96,6 +97,12 @@ export default function PedidosSateliteUrgencia() {
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [filtroHistorico, setFiltroHistorico] = useState("avulsos"); // 'avulsos' | 'todos'
+
+  // Medicamentos elegíveis para pedido à Central (filtra zerados se a opção estiver ativa)
+  const medicamentosDisponiveis = useMemo(() => {
+    if (!apenasComEstoqueCentral) return medicamentos;
+    return (medicamentos || []).filter(m => (Number(m.estoque_atual) || 0) > 0);
+  }, [medicamentos, apenasComEstoqueCentral]);
 
   const selectedMedObj = useMemo(() => {
     if (!selectedMedId) return null;
@@ -133,9 +140,20 @@ export default function PedidosSateliteUrgencia() {
       return;
     }
 
+    const saldoCentral = Number(selectedMedObj.estoque_atual) || 0;
+    if (saldoCentral <= 0) {
+      toast.error(`O medicamento "${selectedMedObj.nome}" está com estoque ZERADO na Farmácia Central (Saldo: 0 un). Não é possível solicitar itens sem saldo na Central.`);
+      return;
+    }
+
     const qtd = parseInt(qtdItem, 10);
     if (isNaN(qtd) || qtd <= 0) {
       toast.error("Informe uma quantidade válida maior que zero.");
+      return;
+    }
+
+    if (qtd > saldoCentral) {
+      toast.error(`Quantidade solicitada (${qtd} un) não pode ser maior que o saldo disponível na Central (${saldoCentral} un).`);
       return;
     }
 
@@ -153,9 +171,14 @@ export default function PedidosSateliteUrgencia() {
     // Check if item already in list
     const existingIndex = itensPedido.findIndex(i => String(i.medicamento_id) === String(selectedMedObj.id));
     if (existingIndex >= 0) {
+      const novaQtdTotal = itensPedido[existingIndex].qtd_solicitada + qtd;
+      if (novaQtdTotal > saldoCentral) {
+        toast.error(`A quantidade total solicitada (${novaQtdTotal} un) excede o estoque disponível na Farmácia Central (${saldoCentral} un).`);
+        return;
+      }
       const next = [...itensPedido];
-      next[existingIndex].qtd_solicitada += qtd;
-      next[existingIndex].qtd_atendida += qtd;
+      next[existingIndex].qtd_solicitada = novaQtdTotal;
+      next[existingIndex].qtd_atendida = novaQtdTotal;
       if (chosenLote) {
         next[existingIndex].lote_id = chosenLote.id;
         next[existingIndex].lote_previsto = chosenLote.numero_lote;
@@ -221,6 +244,20 @@ export default function PedidosSateliteUrgencia() {
   const handleUpdateItemQtd = (index, val) => {
     const num = parseInt(val, 10);
     const valid = isNaN(num) || num < 0 ? 0 : num;
+    const item = itensPedido[index];
+    const med = medicamentos.find(m => String(m.id) === String(item.medicamento_id));
+    const saldoCentral = Number(med ? med.estoque_atual : item.estoque_central_momento) || 0;
+
+    if (saldoCentral <= 0) {
+      toast.error(`O medicamento "${item.medicamento_nome}" está ZERADO na Farmácia Central.`);
+      return;
+    }
+
+    if (valid > saldoCentral) {
+      toast.error(`A quantidade (${valid} un) não pode ultrapassar o saldo da Farmácia Central (${saldoCentral} un).`);
+      return;
+    }
+
     const next = [...itensPedido];
     next[index].qtd_solicitada = valid;
     next[index].qtd_atendida = valid;
@@ -233,6 +270,19 @@ export default function PedidosSateliteUrgencia() {
       const validItens = itensPedido.filter(i => i.qtd_solicitada > 0);
       if (validItens.length === 0) {
         throw new Error("Adicione ao menos um medicamento com quantidade maior que zero.");
+      }
+
+      // Validação de segurança em tempo real antes de salvar no banco
+      const freshMeds = await db.entities.Medicamento.list();
+      for (const item of validItens) {
+        const med = freshMeds.find(m => String(m.id) === String(item.medicamento_id));
+        const saldoCentral = Number(med ? med.estoque_atual : item.estoque_central_momento) || 0;
+        if (saldoCentral <= 0) {
+          throw new Error(`O medicamento "${item.medicamento_nome}" está com estoque ZERADO na Farmácia Central (Saldo: 0 un). Remova-o do pedido para prosseguir.`);
+        }
+        if (item.qtd_solicitada > saldoCentral) {
+          throw new Error(`A quantidade solicitada de "${item.medicamento_nome}" (${item.qtd_solicitada} un) ultrapassa o estoque disponível na Farmácia Central (${saldoCentral} un).`);
+        }
       }
 
       const timestampCode = Date.now().toString().slice(-6);
@@ -423,10 +473,21 @@ export default function PedidosSateliteUrgencia() {
 
         {/* Adicionar Medicamento à Lista (Combobox idêntico às outras janelas) */}
         <div className="bg-slate-50/80 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-3">
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-            <Plus className="w-4 h-4 text-blue-600" />
-            Adicionar Medicamento:
-          </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-blue-600" />
+              Adicionar Medicamento:
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium cursor-pointer select-none bg-white dark:bg-slate-900 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700">
+              <input
+                type="checkbox"
+                checked={apenasComEstoqueCentral}
+                onChange={(e) => setApenasComEstoqueCentral(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+              />
+              <span>Ocultar medicamentos zerados na Central ({medicamentos.filter(m => (Number(m.estoque_atual) || 0) <= 0).length} zerados)</span>
+            </label>
+          </div>
 
           <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             <div className="md:col-span-8 space-y-1">
@@ -434,10 +495,12 @@ export default function PedidosSateliteUrgencia() {
                 Medicamento:
               </Label>
               <ComboboxMedicamento
-                medicamentos={medicamentos}
+                medicamentos={medicamentosDisponiveis}
                 value={selectedMedId}
                 onChange={setSelectedMedId}
-                placeholder="Digite o nome do medicamento (ex: Dipirona, Domperidona...)"
+                placeholder="Digite o nome do medicamento com estoque na Central..."
+                stockMode="central"
+                blockZeroStock={true}
               />
             </div>
 
@@ -457,7 +520,8 @@ export default function PedidosSateliteUrgencia() {
             <div className="md:col-span-2">
               <Button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 text-xs gap-1.5 shadow-xs"
+                disabled={!selectedMedObj || (Number(selectedMedObj.estoque_atual) || 0) <= 0}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold h-9 text-xs gap-1.5 shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Adicionar
@@ -477,8 +541,9 @@ export default function PedidosSateliteUrgencia() {
                   Estoque Satélite: <strong>{selectedMedObj.estoque_satelite || 0} un</strong>
                 </span>
                 <span className="text-slate-300">|</span>
-                <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-amber-600 font-bold"}>
+                <span className={Number(selectedMedObj.estoque_atual || 0) > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 font-bold"}>
                   Estoque Central: <strong>{selectedMedObj.estoque_atual || 0} un</strong>
+                  {Number(selectedMedObj.estoque_atual || 0) <= 0 ? " (ZERADO)" : ""}
                 </span>
                 {selectedMedObj.portaria_344 || isPsicotropico(selectedMedObj) ? (
                   <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 font-bold ml-auto">
@@ -490,6 +555,17 @@ export default function PedidosSateliteUrgencia() {
                   </Badge>
                 )}
               </div>
+
+              {/* Aviso se o estoque na Central estiver zerado */}
+              {(Number(selectedMedObj.estoque_atual) || 0) <= 0 && (
+                <div className="bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 p-3 rounded-xl text-xs text-red-800 dark:text-red-300 flex items-center gap-2 font-medium">
+                  <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+                  <div>
+                    <strong className="block text-red-900 dark:text-red-200">Medicamento ZERADO na Farmácia Central (Saldo: 0 un)</strong>
+                    Não é permitido solicitar este medicamento no pedido avulso porque a Farmácia Central não possui unidades em estoque.
+                  </div>
+                </div>
+              )}
 
               {/* Seletor de Lote da Central com Indicação Clara de FEFO (o que vence 1º) mas permitindo escolher outro lote */}
               {medCentralLotes.length > 0 ? (

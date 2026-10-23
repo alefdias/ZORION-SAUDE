@@ -666,6 +666,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
             medicamentos.find(m => m.codigo && i.codigo && m.codigo !== "-" && m.codigo === i.codigo) ||
             medicamentos.find(m => m.nome && (m.nome === i.medicamento_nome || m.nome === i.nome));
 
+          const actualMedId = medObj ? medObj.id : medId;
+
           const isPsico = i.is_psicotropico !== undefined
             ? Boolean(i.is_psicotropico)
             : (i.isPsicotropico !== undefined
@@ -678,6 +680,42 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
           const portariaList = i.portaria_344 || (isPsico ? getPortaria344List(medObj || i.medicamento_nome || i.nome) : null);
 
+          // Descobrir lote(s) FEFO / alocados para a impressão
+          let loteDesc = "";
+          if (Array.isArray(i.alocacoes_lote) && i.alocacoes_lote.length > 0) {
+            const alocsValidas = i.alocacoes_lote.filter(a => Number(a.quantidade || a.qtd) > 0);
+            if (alocsValidas.length > 0) {
+              loteDesc = alocsValidas.map(a => {
+                const num = a.numero_lote || a.lote || "S/L";
+                const val = a.data_validade ? format(new Date(a.data_validade), "dd/MM/yy") : "-";
+                return `L: ${num} (V: ${val}) [${a.quantidade || a.qtd} un]`;
+              }).join(" | ");
+            }
+          }
+
+          if (!loteDesc && (i.lote_previsto || i.lote_numero || i.lote)) {
+            const num = i.lote_previsto || i.lote_numero || i.lote;
+            const rawVal = i.lote_previsto_validade || i.data_validade;
+            const val = rawVal ? format(new Date(rawVal), "dd/MM/yy") : "-";
+            loteDesc = `Lote: ${num} (Val: ${val})`;
+          }
+
+          if (!loteDesc) {
+            const medLotes = (lotes || [])
+              .filter(l => (String(l.medicamento_id) === String(actualMedId) || String(l.medicamentoId) === String(actualMedId)) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+              .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+            if (medLotes.length > 0) {
+              const fefo = medLotes[0];
+              const val = fefo.data_validade ? format(new Date(fefo.data_validade), "dd/MM/yy") : "-";
+              loteDesc = `⭐ FEFO: ${fefo.numero_lote} (Val: ${val})`;
+              if (medLotes.length > 1) {
+                loteDesc += ` • Disp: ${fefo.quantidade_atual} un`;
+              }
+            } else {
+              loteDesc = "Sem saldo na Central";
+            }
+          }
+
           return {
             codigo: i.codigo || "-",
             nome: i.medicamento_nome || i.medicamentoNome || i.nome || "Medicamento",
@@ -689,7 +727,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               ? i.qtd_solicitada 
               : (i.qtdSolicitada !== undefined ? i.qtdSolicitada : (i.finalQtd ?? 0)),
             isPsicotropico: isPsico,
-            portariaList
+            portariaList,
+            loteDesc
           };
         })
       });
@@ -710,6 +749,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         const medObj = medicamentos.find(m => String(m.id) === String(item.medicamentoId)) ||
           medicamentos.find(m => m.nome === item.nome);
 
+        const actualMedId = medObj ? medObj.id : item.medicamentoId;
+
         const isPsico = item.isPsicotropico !== undefined 
           ? Boolean(item.isPsicotropico)
           : Boolean(
@@ -720,6 +761,23 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
 
         const portariaList = item.portariaList || (isPsico ? getPortaria344List(medObj || item.nome) : null);
 
+        // Buscar lote FEFO para a prévia calculada
+        const medLotes = (lotes || [])
+          .filter(l => (String(l.medicamento_id) === String(actualMedId) || String(l.medicamentoId) === String(actualMedId)) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+          .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+
+        let loteDesc = "";
+        if (medLotes.length > 0) {
+          const fefo = medLotes[0];
+          const val = fefo.data_validade ? format(new Date(fefo.data_validade), "dd/MM/yy") : "-";
+          loteDesc = `⭐ FEFO: ${fefo.numero_lote} (Val: ${val})`;
+          if (medLotes.length > 1) {
+            loteDesc += ` • Disp: ${fefo.quantidade_atual} un`;
+          }
+        } else {
+          loteDesc = "Sem saldo na Central";
+        }
+
         return {
           codigo: item.codigo || "-",
           nome: item.nome,
@@ -729,7 +787,8 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           estoqueSatelite: item.estoqueSatelite,
           qtdSolicitada: finalQtd,
           isPsicotropico: isPsico,
-          portariaList
+          portariaList,
+          loteDesc
         };
       });
 
@@ -2539,24 +2598,27 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
             "text-slate-900 font-bold border-b-2 border-slate-400",
             isPsico ? "bg-purple-50/80" : "bg-slate-100"
           )}>
-            <th className="border border-slate-300 p-1.5 text-center w-8">#</th>
-            <th className="border border-slate-300 p-1.5 text-center w-14">Cód.</th>
+            <th className="border border-slate-300 p-1.5 text-center w-7">#</th>
+            <th className="border border-slate-300 p-1.5 text-center w-12">Cód.</th>
             <th className="border border-slate-300 p-1.5 text-left">
               {isPsico ? "Medicamento Psicotrópico / Controlado" : "Medicamento Clínico / Concentração"}
             </th>
             {isPsico && (
-              <th className="border border-slate-300 p-1.5 text-center w-28">Portaria 344</th>
+              <th className="border border-slate-300 p-1.5 text-center w-24">Portaria 344</th>
             )}
-            <th className="border border-slate-300 p-1.5 text-center w-20">Prescr. ({data.dias}D)</th>
-            <th className="border border-slate-300 p-1.5 text-center w-16">Est. Sat.</th>
+            <th className="border border-slate-300 p-1.5 text-center w-16">Prescr.</th>
+            <th className="border border-slate-300 p-1.5 text-center w-14">Est. Sat.</th>
             <th className={cn(
-              "border border-slate-300 p-1.5 text-center w-24 font-black text-slate-950",
+              "border border-slate-300 p-1.5 text-center w-20 font-black text-slate-950",
               isPsico ? "bg-purple-100/80" : "bg-blue-100/80"
             )}>
-              Qtd Solicitada
+              Qtd Pedido
             </th>
-            <th className="border border-slate-300 p-1.5 text-center w-28">
-              {isPsico ? "Conf. / Lote / Val." : "Conferência"}
+            <th className="border border-slate-300 p-1.5 text-left w-56 font-bold text-slate-900 bg-amber-50/70">
+              Lote(s) FEFO & Validade (Central)
+            </th>
+            <th className="border border-slate-300 p-1.5 text-center w-14">
+              Visto
             </th>
           </tr>
         </thead>
@@ -2583,8 +2645,11 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
               )}>
                 {item.qtdSolicitada} un
               </td>
+              <td className="border border-slate-300 p-1 text-left font-mono text-[10px] text-slate-900 font-semibold bg-amber-50/30 leading-tight">
+                {item.loteDesc || <span className="text-slate-400 italic text-[9px]">Lote FEFO na separação</span>}
+              </td>
               <td className="border border-slate-300 p-1 text-center font-mono text-slate-400 text-[10px]">
-                {isPsico ? "[ ] L:___ V:___" : "[     ]"}
+                [     ]
               </td>
             </tr>
           ))}
@@ -2609,6 +2674,7 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
             )}>
               {totalUnidades} un
             </td>
+            <td className="border border-slate-300 p-2 font-mono text-[10px] text-slate-500"></td>
             <td className="border border-slate-300 p-2"></td>
           </tr>
         </tfoot>
