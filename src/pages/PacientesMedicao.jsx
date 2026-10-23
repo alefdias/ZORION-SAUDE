@@ -2916,8 +2916,9 @@ export default function PacientesMedicao() {
             <PhotoCaptureField
               value={patientFormData.foto}
               onChange={(foto) => setPatientFormData(prev => ({ ...prev, foto }))}
-              label="Foto do Paciente"
-              helperText="Tire uma foto via webcam ou selecione um arquivo do computador"
+              prontuario={patientFormData.prontuario}
+              label="Foto do Paciente (Prontuário)"
+              helperText={`Foto identificada pelo Prontuário: ${patientFormData.prontuario || "Informe o prontuário"}`}
             />
 
             <div>

@@ -32,6 +32,7 @@ export function PhotoCaptureField({
   onChange,
   disabled = false,
   label = "Foto",
+  prontuario = "",
   helperText = "Tire uma foto pela webcam ou carregue do computador",
   className = ""
 }) {
@@ -139,7 +140,7 @@ export function PhotoCaptureField({
     if (capturedTemp) {
       onChange(capturedTemp);
       setIsCameraOpen(false);
-      toast.success("Foto registrada com sucesso!");
+      toast.success(prontuario ? `Foto do prontuário ${prontuario} registrada com sucesso!` : "Foto registrada com sucesso!");
     }
   };
 
@@ -159,7 +160,7 @@ export function PhotoCaptureField({
       img.onload = () => {
         const compressed = compressImage(img, 400, 0.85);
         onChange(compressed);
-        toast.success("Foto carregada com sucesso!");
+        toast.success(prontuario ? `Foto do prontuário ${prontuario} carregada com sucesso!` : "Foto carregada com sucesso!");
       };
       img.src = event.target.result;
     };
@@ -247,9 +248,16 @@ export function PhotoCaptureField({
             />
           </div>
 
-          <p className="text-[11px] text-slate-400 leading-tight">
-            {helperText}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[11px] text-slate-400 leading-tight">
+              {helperText}
+            </p>
+            {value && prontuario && (
+              <span className="text-[10px] font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-1.5 py-0.2 rounded">
+                Arquivo: prontuario_{prontuario}.jpg
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

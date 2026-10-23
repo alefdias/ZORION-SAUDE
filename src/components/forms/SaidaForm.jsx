@@ -371,20 +371,22 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                                 <div className="space-y-1.5">
                                     <div className="flex items-center justify-between">
-                                        <Label className="text-xs font-semibold text-slate-700">Medicamento</Label>
+                                        <Label className="text-xs font-semibold text-slate-700">Medicamento (Satélite)</Label>
                                         <span 
                                             className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-300 flex items-center gap-1"
                                             title="Exibindo exclusivamente medicamentos com saldo disponível na Farmácia Satélite"
                                         >
                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                            Estoque Satélite ({medsParaExibir.length})
+                                            Apenas Saldo Satélite
                                         </span>
                                     </div>
                                     <ComboboxMedicamento
                                         medicamentos={medsParaExibir}
                                         value={currentItem.medicamento_id}
                                         onChange={handleMedicamento}
-                                        placeholder={medsParaExibir.length === 0 ? "Nenhum medicamento com estoque na Satélite" : "Selecione o medicamento..."}
+                                        stockMode="satelite"
+                                        blockZeroStock={true}
+                                        placeholder={medsParaExibir.length === 0 ? "Nenhum medicamento com estoque na Satélite" : "Selecione o medicamento da Satélite..."}
                                     />
                                     {medsParaExibir.length === 0 && (
                                         <p className="text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200 mt-1">
@@ -399,9 +401,9 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                 </div>
                                 <div className="space-y-1.5">
                                     <div className="flex items-center justify-between">
-                                        <Label className="text-xs font-semibold text-slate-700">Lote</Label>
+                                        <Label className="text-xs font-semibold text-slate-700">Lote (Farmácia Satélite)</Label>
                                         {filteredLotes.length > 0 && (
-                                            <span className="text-[10px] text-amber-700 font-medium">⭐ FEFO (Mais próximo)</span>
+                                            <span className="text-[10px] text-amber-700 font-medium">⭐ FEFO Satélite</span>
                                         )}
                                     </div>
                                     <Select
@@ -412,7 +414,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                         <SelectTrigger className="text-xs bg-white h-9">
                                             <SelectValue placeholder={
                                                 !currentItem.medicamento_id ? "Selecione o medicamento..." :
-                                                    filteredLotes.length === 0 ? "Saldo sem lote específico" : "Selecione o lote"
+                                                    filteredLotes.length === 0 ? "Saldo sem lote específico" : "Selecione o lote da Satélite"
                                             } />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -429,7 +431,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                                             <div className="flex items-center justify-between w-full gap-2">
                                                                 <span>{index === 0 ? "⭐ " : ""}{l.numero_lote} (Val: {l.data_validade || "N/I"})</span>
                                                                 <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 ml-2">
-                                                                    Disp: {l.saldoSatelite} un
+                                                                    Saldo Satélite: {l.saldoSatelite} un
                                                                 </span>
                                                             </div>
                                                         </SelectItem>
@@ -445,7 +447,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                                 Lote: <strong>{selectedLote.numero_lote}</strong>
                                             </span>
                                             <span className="text-emerald-950 font-bold bg-emerald-100/80 px-2 py-0.5 rounded">
-                                                Saldo no Lote: {selectedLote.saldoSatelite} un
+                                                Saldo Satélite: {selectedLote.saldoSatelite} un
                                             </span>
                                         </div>
                                     )}
@@ -457,7 +459,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                         <Label className="text-xs font-semibold text-slate-700">Quantidade</Label>
                                         {selectedLote ? (
                                             <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                                Saldo no Lote: <strong className="font-bold">{selectedLote.saldoSatelite} un</strong>
+                                                Saldo Satélite no Lote: <strong className="font-bold">{selectedLote.saldoSatelite} un</strong>
                                             </span>
                                         ) : selectedMed ? (
                                             <span className="text-[10px] text-slate-500">

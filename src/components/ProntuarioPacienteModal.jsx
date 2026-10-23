@@ -52,6 +52,8 @@ import { toast } from "sonner";
 import { PrescricaoService, VisitaService, PacienteService, AlaService } from "../api/db";
 import { ProntuarioService } from "../api/prontuarioService";
 import { AjusteDiasEntregaModal } from "./AjusteDiasEntregaModal";
+import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
+import { Camera } from "lucide-react";
 const DIAS_SEMANA_MAP = [
   { id: 1, label: "Seg" },
   { id: 2, label: "Ter" },
@@ -300,7 +302,8 @@ export function ProntuarioPacienteModal({
         nome: patient.nome || "",
         prontuario: patient.prontuario || "",
         idade: patient.idade || "",
-        leito: patient.leito || ""
+        leito: patient.leito || "",
+        foto: patient.foto || ""
       });
     }
   }, [editPatientModalOpen, patient]);
@@ -416,21 +419,24 @@ export function ProntuarioPacienteModal({
   // Edição Cadastral do Paciente
   const handleSaveEditPatient = async () => {
     try {
-      await PacienteService.update(patient.id, {
+      const payload = {
         nome: patientEditForm.nome,
         prontuario: patientEditForm.prontuario,
         idade: patientEditForm.idade ? parseInt(patientEditForm.idade, 10) : null,
-        leito: patientEditForm.leito
-      });
+        leito: patientEditForm.leito,
+        foto: patientEditForm.foto || null
+      };
+      await PacienteService.update(patient.id, payload);
       patient.nome = patientEditForm.nome;
       patient.prontuario = patientEditForm.prontuario;
       patient.idade = patientEditForm.idade ? parseInt(patientEditForm.idade, 10) : patient.idade;
       patient.leito = patientEditForm.leito;
-      toast.success("Dados do paciente atualizados!");
+      patient.foto = patientEditForm.foto || null;
+      toast.success("Dados e foto do paciente atualizados!");
       setEditPatientModalOpen(false);
       if (onRefresh) onRefresh();
     } catch (e) {
-      toast.error("Erro ao atualizar paciente.");
+      toast.error("Erro ao atualizar paciente: " + (e?.message || e));
     }
   };
 
@@ -678,7 +684,11 @@ export function ProntuarioPacienteModal({
               
               {/* Avatar e Identificação do Paciente */}
               <div className="flex items-start gap-4 min-w-0 flex-1">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white/40 shadow-inner flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5 overflow-hidden">
+                <div 
+                  onClick={() => setEditPatientModalOpen(true)}
+                  className="relative group w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white/40 shadow-inner flex items-center justify-center text-[#0e3b8f] shrink-0 mt-0.5 overflow-hidden cursor-pointer"
+                  title="Clique para editar dados e foto do paciente"
+                >
                   {patient.foto ? (
                     <img 
                       src={patient.foto} 
@@ -688,6 +698,9 @@ export function ProntuarioPacienteModal({
                   ) : (
                     <User className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400" />
                   )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                    <Camera className="w-5 h-5" />
+                  </div>
                 </div>
 
                 <div className="min-w-0 flex-1 break-words whitespace-normal leading-tight">
@@ -2632,7 +2645,16 @@ export function ProntuarioPacienteModal({
             </div>
           </div>
 
-          <div className="space-y-3 text-xs">
+          <div className="space-y-3.5 text-xs">
+            {/* Foto do Paciente */}
+            <PhotoCaptureField
+              value={patientEditForm.foto}
+              onChange={(foto) => setPatientEditForm(prev => ({ ...prev, foto }))}
+              prontuario={patientEditForm.prontuario || patient.prontuario}
+              label="Foto do Paciente (Vinculada ao Prontuário)"
+              helperText={`Foto identificada pelo Prontuário: ${patientEditForm.prontuario || patient.prontuario || "S/P"}`}
+            />
+
             <div>
               <Label className="font-bold text-slate-700 mb-1 block">Nome Completo:</Label>
               <Input 

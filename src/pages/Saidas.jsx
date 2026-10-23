@@ -21,6 +21,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
+import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import SaidaForm from "@/components/forms/SaidaForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -110,12 +111,18 @@ export default function Saidas({ isTab = false }) {
       const { itens, ...commonData } = data;
       const createdSaidas = [];
 
-      // Validar obrigatoriedade de Ala e Paciente
+      // Validar obrigatoriedade de Ala
       if (!commonData.ala_nome || !commonData.ala_nome.trim()) {
         throw new Error("A Ala / Setor de Destino é obrigatória para registrar a dispensação.");
       }
-      if (!commonData.paciente_nome || !commonData.paciente_nome.trim()) {
-        throw new Error("O Nome do Paciente é obrigatório. Não é permitido dispensar sem identificar o paciente.");
+
+      // Validar obrigatoriedade de Paciente para Controlados / Antibióticos / MAV
+      const temControlado = itens.some(it => {
+        const med = medicamentos.find(m => m.id === it.medicamento_id);
+        return isPsicotropico(med) || isMedicamentoAntibiotico(med) || isMav(med);
+      });
+      if (temControlado && (!commonData.paciente_nome || !commonData.paciente_nome.trim())) {
+        throw new Error("O Nome do Paciente é OBRIGATÓRIO para dispensar medicamentos controlados, antibióticos ou de alta vigilância.");
       }
       
       // Validar se há estoque suficiente na Farmácia Satélite para todos os itens primeiro
