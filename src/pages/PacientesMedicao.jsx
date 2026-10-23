@@ -53,7 +53,9 @@ import {
   Droplet,
   Check,
   ChevronDown,
-  Filter
+  Filter,
+  ShieldAlert,
+  Lock
 } from "lucide-react";
 import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
