@@ -106,15 +106,14 @@ export function TransferenciaAcceptModal({ activeSection }) {
       } else if (transfer.direcao === "para_estoque") {
         if (med) {
           await db.entities.Medicamento.update(med.id, {
-            estoque_atual: (Number(med.estoque_atual) || 0) + Number(transfer.quantidade),
-            estoque_satelite: Math.max(0, (Number(med.estoque_satelite) || 0) - Number(transfer.quantidade))
+            estoque_atual: (Number(med.estoque_atual) || 0) + Number(transfer.quantidade)
           });
         }
         if (lote) {
+          const novaQtdAtual = (Number(lote.quantidade_atual) || 0) + Number(transfer.quantidade);
           await db.entities.Lote.update(lote.id, {
-            quantidade_atual: (Number(lote.quantidade_atual) || 0) + Number(transfer.quantidade),
-            quantidade_satelite: Math.max(0, (Number(lote.quantidade_satelite) || 0) - Number(transfer.quantidade)),
-            status: "disponivel"
+            quantidade_atual: novaQtdAtual,
+            status: novaQtdAtual > 0 ? "disponivel" : lote.status
           });
         }
         await db.entities.Saida.create({
@@ -195,6 +194,11 @@ export function TransferenciaAcceptModal({ activeSection }) {
         if (med) {
           await db.entities.Medicamento.update(med.id, {
             estoque_satelite: (Number(med.estoque_satelite) || 0) + Number(transfer.quantidade)
+          });
+        }
+        if (lote) {
+          await db.entities.Lote.update(lote.id, {
+            quantidade_satelite: (Number(lote.quantidade_satelite) || 0) + Number(transfer.quantidade)
           });
         }
       }

@@ -121,11 +121,23 @@ export default function TransferenciaEstoque() {
         });
 
       } else {
-        if ((med.estoque_satelite || 0) < qtd) {
-          throw new Error("Estoque insuficiente na satélite");
+        // direcao === "para_estoque" (Devolução Satélite -> Central)
+        const qtdSatDisponivel = Number(lote.quantidade_satelite) || 0;
+        if (qtdSatDisponivel < qtd) {
+          throw new Error(`Estoque insuficiente no lote '${lote.numero_lote}' na Farmácia Satélite (Disponível no lote: ${qtdSatDisponivel}, Solicitado: ${qtd})`);
         }
+        if ((Number(med.estoque_satelite) || 0) < qtd) {
+          throw new Error(`Estoque total insuficiente na Satélite (Disponível: ${med.estoque_satelite || 0})`);
+        }
+
+        // Debita do lote físico da Satélite
+        await db.entities.Lote.update(lote.id, {
+          quantidade_satelite: Math.max(0, qtdSatDisponivel - qtd)
+        });
+
+        // Debita do estoque do medicamento na Satélite
         await db.entities.Medicamento.update(med.id, {
-          estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd)
+          estoque_satelite: Math.max(0, (Number(med.estoque_satelite) || 0) - qtd)
         });
 
         await db.entities.TransferenciaPendente.create({
@@ -223,14 +235,20 @@ export default function TransferenciaEstoque() {
             const novoQtdLote = Math.max(0, (Number(freshLote.quantidade_atual) || 0) - qtd);
             await db.entities.Lote.update(freshLote.id, {
               quantidade_atual: novoQtdLote,
+              quantidade_satelite: (Number(freshLote.quantidade_satelite) || 0) + qtd,
               status: novoQtdLote > 0 ? freshLote.status : "esgotado"
             });
           }
         } else {
-          // Estava pendente: a Satélite havia sido debitada na criação, então restaura o estoque da Satélite
+          // Estava pendente: a Satélite havia sido debitada na criação, então restaura o estoque da Satélite (lote + med)
           if (freshMed) {
             await db.entities.Medicamento.update(freshMed.id, {
               estoque_satelite: (Number(freshMed.estoque_satelite) || 0) + qtd
+            });
+          }
+          if (freshLote) {
+            await db.entities.Lote.update(freshLote.id, {
+              quantidade_satelite: (Number(freshLote.quantidade_satelite) || 0) + qtd
             });
           }
         }
@@ -260,11 +278,16 @@ export default function TransferenciaEstoque() {
     }
   });
 
+  const isDevolucaoSat = transferenciaForm.direcao === "para_estoque";
+
   const activeMedLotes = lotes
-    .filter(l =>
-      l.medicamento_id === transferenciaForm.medicamento_id &&
-      ((transferenciaForm.direcao === "para_satelite" || transferenciaForm.direcao === "para_carrinho_parada") ? l.quantidade_atual > 0 : true)
-    )
+    .filter(l => {
+      if (String(l.medicamento_id) !== String(transferenciaForm.medicamento_id)) return false;
+      if (isDevolucaoSat) {
+        return (Number(l.quantidade_satelite) || 0) > 0;
+      }
+      return (Number(l.quantidade_atual) || 0) > 0;
+    })
     .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
 
   const selectedTransferLote = lotes.find(l => l.id === transferenciaForm.lote_id);
@@ -308,7 +331,7 @@ export default function TransferenciaEstoque() {
               className={transferenciaForm.direcao === "para_estoque" ? "bg-blue-600 text-white w-full shadow-sm" : "w-full text-slate-600 dark:text-slate-300"}
               onClick={() => handleTransferenciaChange("direcao", "para_estoque")}
             >
-              Para Estoque Geral
+              Para Estoque Geral (Devolução)
             </Button>
           </div>
 
@@ -328,23 +351,32 @@ export default function TransferenciaEstoque() {
           </div>
 
           <div className="space-y-2">
-            <Label>{transferenciaForm.direcao === "para_satelite" ? "Lote de Origem" : "Lote de Destino"}</Label>
+            <Label>{isDevolucaoSat ? "Lote de Origem na Farmácia Satélite" : "Lote de Origem (Almoxarifado Central)"}</Label>
             <Select
               value={transferenciaForm.lote_id}
               onValueChange={(val) => handleTransferenciaChange("lote_id", val)}
               disabled={!transferenciaForm.medicamento_id || activeMedLotes.length === 0}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione o lote" />
+                <SelectValue placeholder={activeMedLotes.length === 0 ? "Nenhum lote com saldo disponível" : "Selecione o lote"} />
               </SelectTrigger>
               <SelectContent>
-                {activeMedLotes.map((l, index) => (
-                  <SelectItem key={l.id} value={l.id} className={index === 0 ? "font-bold text-amber-700 bg-amber-50" : ""}>
-                    {index === 0 ? "⭐ " : ""}{l.numero_lote} (Estoque atual: {l.quantidade_atual}) - Val: {safeFormatDate(l.data_validade)} {index === 0 ? "(Vence Primeiro)" : ""}
-                  </SelectItem>
-                ))}
+                {activeMedLotes.map((l, index) => {
+                  const saldoDisp = isDevolucaoSat ? (Number(l.quantidade_satelite) || 0) : (Number(l.quantidade_atual) || 0);
+                  const localStr = isDevolucaoSat ? "Satélite" : "Central";
+                  return (
+                    <SelectItem key={l.id} value={l.id} className={index === 0 ? "font-bold text-amber-700 bg-amber-50" : ""}>
+                      {index === 0 ? "⭐ " : ""}{l.numero_lote} ({localStr}: {saldoDisp} un) - Val: {safeFormatDate(l.data_validade)} {index === 0 ? "(Vence Primeiro)" : ""}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
+            {isDevolucaoSat && activeMedLotes.length === 0 && transferenciaForm.medicamento_id && (
+              <p className="text-xs text-red-500 font-semibold mt-1">
+                ⚠️ Nenhum lote deste medicamento possui saldo físico disponível na Farmácia Satélite para devolver.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -352,14 +384,15 @@ export default function TransferenciaEstoque() {
             <Input
               type="number"
               min="1"
-              max={transferenciaForm.direcao === "para_satelite" ? selectedTransferLote?.quantidade_atual : selectedMed?.estoque_satelite}
+              max={isDevolucaoSat ? (Number(selectedTransferLote?.quantidade_satelite) || Number(selectedMed?.estoque_satelite) || 0) : (Number(selectedTransferLote?.quantidade_atual) || 0)}
               value={transferenciaForm.quantidade}
               onChange={(e) => handleTransferenciaChange("quantidade", e.target.value)}
               placeholder="Ex: 10"
             />
             {transferenciaForm.medicamento_id && (
               <p className="text-xs text-slate-500 mt-1">
-                Disponível: {transferenciaForm.direcao === "para_satelite" ? selectedTransferLote?.quantidade_atual || 0 : selectedMed?.estoque_satelite || 0}
+                Disponível no lote: {isDevolucaoSat ? (Number(selectedTransferLote?.quantidade_satelite) || 0) : (Number(selectedTransferLote?.quantidade_atual) || 0)} un
+                {isDevolucaoSat && ` (Total no Posto Satélite: ${selectedMed?.estoque_satelite || 0} un)`}
               </p>
             )}
           </div>

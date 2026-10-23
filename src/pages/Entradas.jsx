@@ -144,14 +144,18 @@ export default function Entradas({ isTab = false }) {
 
         const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
 
+        const qtdNum = Number(data.quantidade) || 0;
         let finalLoteId;
         if (loteParam) {
           console.log("Lote existente encontrado:", loteParam);
           // Atualizar quantidade do lote existente e volume se informado
-          const novaQtd = (Number(loteParam.quantidade_atual) || 0) + Number(data.quantidade);
+          const novaQtd = (Number(loteParam.quantidade_atual) || 0) + qtdNum;
+          const novaQtdInicial = (Number(loteParam.quantidade_inicial) || 0) + qtdNum;
           await db.entities.Lote.update(loteParam.id, {
             quantidade_atual: novaQtd,
-            status: novaQtd > 0 ? "disponivel" : loteParam.status,
+            quantidade_inicial: novaQtdInicial,
+            data_validade: data.data_validade || loteParam.data_validade,
+            status: "disponivel",
             volume_frasco_ml: volFrasco || loteParam.volume_frasco_ml || null,
           });
           finalLoteId = loteParam.id;
@@ -162,8 +166,9 @@ export default function Entradas({ isTab = false }) {
             medicamento_id: data.medicamento_id,
             numero_lote: (data.numero_lote || "").trim(),
             data_validade: data.data_validade,
-            quantidade_inicial: Number(data.quantidade),
-            quantidade_atual: Number(data.quantidade),
+            quantidade_inicial: qtdNum,
+            quantidade_atual: qtdNum,
+            quantidade_satelite: 0,
             volume_frasco_ml: volFrasco,
             status: "disponivel",
           });
@@ -190,7 +195,7 @@ export default function Entradas({ isTab = false }) {
           numero_lote: data.numero_lote,
           data_validade: data.data_validade,
           data_entrada: data.data_entrada,
-          quantidade: data.quantidade,
+          quantidade: qtdNum,
           volume_frasco_ml: volFrasco,
           fornecedor_id: data.fornecedor_id,
           fornecedor_nome: data.fornecedor_nome,
@@ -204,18 +209,19 @@ export default function Entradas({ isTab = false }) {
         console.log("Entrada criada com sucesso:", entrada);
 
         // 3. Atualizar estoque do medicamento (e volume cadastrado se solicitado)
-        const existingMeds = await db.entities.Medicamento.list();
-        const medicamento = existingMeds.find(m => m.id === data.medicamento_id);
-        if (medicamento) {
-          console.log("Atualizando estoque do medicamento:", medicamento.nome);
+        const med = await db.entities.Medicamento.get(data.medicamento_id).catch(() => null)
+          || (await db.entities.Medicamento.list()).find(m => String(m.id) === String(data.medicamento_id));
+        if (med) {
+          console.log("Atualizando estoque do medicamento:", med.nome);
+          const novoEstoque = (Number(med.estoque_atual) || 0) + qtdNum;
           const medUpdate = {
-            estoque_atual: (medicamento.estoque_atual || 0) + data.quantidade,
+            estoque_atual: novoEstoque,
           };
           if (data.atualizar_cadastro_med && volFrasco) {
             medUpdate.volume_frasco_ml = volFrasco;
             medUpdate.is_liquido = true;
           }
-          await db.entities.Medicamento.update(medicamento.id, medUpdate);
+          await db.entities.Medicamento.update(med.id, medUpdate);
         }
 
         return entrada;
@@ -342,18 +348,23 @@ export default function Entradas({ isTab = false }) {
 
   const deleteEntradaMutation = useMutation({
     mutationFn: async (entrada) => {
+      const qtdEntrada = Number(entrada.quantidade) || 0;
       // 1. Reverter estoque do medicamento
-      const medicamento = medicamentos.find(m => m.id === entrada.medicamento_id);
-      if (medicamento) {
-        await db.entities.Medicamento.update(medicamento.id, {
-          estoque_atual: Math.max(0, (medicamento.estoque_atual || 0) - entrada.quantidade),
+      const med = await db.entities.Medicamento.get(entrada.medicamento_id).catch(() => null)
+        || medicamentos.find(m => String(m.id) === String(entrada.medicamento_id));
+      if (med) {
+        await db.entities.Medicamento.update(med.id, {
+          estoque_atual: Math.max(0, (Number(med.estoque_atual) || 0) - qtdEntrada),
         });
       }
 
       // 2. Reverter quantidade do lote
-      const lote = lotes.find(l => l.medicamento_id === entrada.medicamento_id && l.numero_lote === entrada.numero_lote);
+      const lote = lotes.find(l => 
+        (entrada.lote_id && String(l.id) === String(entrada.lote_id)) ||
+        (String(l.medicamento_id) === String(entrada.medicamento_id) && String(l.numero_lote || '').trim().toUpperCase() === String(entrada.numero_lote || '').trim().toUpperCase())
+      );
       if (lote) {
-        const novaQuantidade = Math.max(0, (lote.quantidade_atual || 0) - entrada.quantidade);
+        const novaQuantidade = Math.max(0, (Number(lote.quantidade_atual) || 0) - qtdEntrada);
         await db.entities.Lote.update(lote.id, {
           quantidade_atual: novaQuantidade,
           status: novaQuantidade <= 0 ? "esgotado" : lote.status,
