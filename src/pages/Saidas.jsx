@@ -179,6 +179,16 @@ export default function Saidas({ isTab = false }) {
             estoque_satelite: Math.max(0, (medicamento.estoque_satelite || 0) - saidaData.quantidade),
           });
         }
+
+        // 4. Atualizar quantidade_satelite do lote correspondente se houver lote vinculado
+        const loteId = saidaData.lote_id;
+        if (loteId) {
+          const loteObj = (lotes || []).find(l => String(l.id) === String(loteId));
+          if (loteObj) {
+            const novaQtdSat = Math.max(0, (Number(loteObj.quantidade_satelite) || 0) - saidaData.quantidade);
+            await db.entities.Lote.update(loteId, { quantidade_satelite: novaQtdSat });
+          }
+        }
       }
       return createdSaidas;
     },

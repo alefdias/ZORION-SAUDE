@@ -943,6 +943,38 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               sqlBatch.push(
                 `UPDATE "Medicamento" SET "estoque_satelite" = COALESCE("estoque_satelite", 0) + ${qtdRealRecebida} WHERE "id" = ${esc(item.medicamento_id)};`
               );
+
+              // Atualiza quantidade_satelite no Lote físico correspondente
+              const alocs = Array.isArray(item.alocacoes_lote) && item.alocacoes_lote.length > 0
+                ? item.alocacoes_lote
+                : (item.lote_id ? [{ lote_id: item.lote_id, quantidade: qtdRealRecebida }] : []);
+
+              let qtdAlocadaLotes = 0;
+              for (const aloc of alocs) {
+                const lId = aloc.lote_id;
+                const qLote = Number(aloc.quantidade) || 0;
+                if (lId && qLote > 0) {
+                  qtdAlocadaLotes += qLote;
+                  sqlBatch.push(
+                    `UPDATE "Lote" SET "quantidade_satelite" = COALESCE("quantidade_satelite", 0) + ${qLote} WHERE "id" = ${esc(lId)};`
+                  );
+                }
+              }
+
+              // Se veio sem lote ou sobrou quantidade não alocada a lote específico, vincula ao lote existente mais recente do medicamento
+              const sobraSemLote = qtdRealRecebida - qtdAlocadaLotes;
+              if (sobraSemLote > 0) {
+                const medLotes = (lotes || []).filter(l => (l.medicamento_id === item.medicamento_id || l.medicamentoId === item.medicamento_id) && l.status !== "Inativo");
+                if (medLotes.length > 0) {
+                  // Pega lote com saldo ou mais recente por validade
+                  const lotePadrao = medLotes.find(l => (Number(l.quantidade_satelite) || 0) > 0) || medLotes[medLotes.length - 1] || medLotes[0];
+                  if (lotePadrao && lotePadrao.id) {
+                    sqlBatch.push(
+                      `UPDATE "Lote" SET "quantidade_satelite" = COALESCE("quantidade_satelite", 0) + ${sobraSemLote} WHERE "id" = ${esc(lotePadrao.id)};`
+                    );
+                  }
+                }
+              }
             }
 
             // Se houve divergência (chegou menos), devolve sobra para Central

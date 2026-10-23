@@ -1,4 +1,4 @@
-import { safeParseISO } from "./dateUtils";
+import { safeParseISO } from "./dateUtils.js";
 
 /**
  * Normaliza strings para comparação fonética/textual consistente
@@ -73,11 +73,12 @@ export function calcularLotesSatelite({
     return [];
   }
 
-  // PRIORIDADE 1: Se o lote já possui quantidade_satelite gravada explicitamente (número limpo direto)
-  const temSaldoGravadoDireto = lotesDoMed.some((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0);
-  if (temSaldoGravadoDireto) {
-    return lotesDoMed
-      .filter((l) => Number(l.quantidade_satelite || 0) > 0)
+  // PRIORIDADE 1: Se os lotes possuem quantidade_satelite gravada explicitamente E a soma bate com o saldo da Satélite
+  const lotesGravados = lotesDoMed.filter((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0);
+  const somaGravada = lotesGravados.reduce((s, l) => s + Number(l.quantidade_satelite || 0), 0);
+  
+  if (lotesGravados.length > 0 && somaGravada === saldoSat) {
+    return lotesGravados
       .map((l) => ({
         ...l,
         saldoSatelite: Number(l.quantidade_satelite || 0),
@@ -237,12 +238,49 @@ export function calcularLotesSatelite({
   });
 
   // 6. Filtra estritamente lotes que possuem saldo comprovado na Satélite
-  const lotesComSaldo = lotesDoMed
+  let lotesComSaldo = lotesDoMed
     .map((l) => ({
       ...l,
       saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
     }))
     .filter((l) => l.saldoSatelite > 0);
+
+  // Reconciliação inteligente: Garante que o saldo total dos lotes bata 100% com o saldoTotalSat
+  const somaLotes = lotesComSaldo.reduce((s, l) => s + l.saldoSatelite, 0);
+
+  if (somaLotes < saldoSat) {
+    const diff = saldoSat - somaLotes;
+    if (lotesComSaldo.length > 0) {
+      // Acrescenta a diferença não alocada ao lote com validade mais distante ou com maior saldo
+      lotesComSaldo[lotesComSaldo.length - 1].saldoSatelite += diff;
+    } else {
+      // Se não havia lote com histórico comprovado, utiliza os lotes cadastrados do medicamento
+      // ordenados por FEFO para não deixar o saldo órfão sem lote na Satélite
+      const lotesCandidatos = [...lotesDoMed].sort((a, b) => {
+        const da = safeParseISO(a.data_validade);
+        const db = safeParseISO(b.data_validade);
+        if (!da) return 1;
+        if (!db) return -1;
+        return da - db;
+      });
+      const loteEscolhido = lotesCandidatos.find(l => (Number(l.quantidade_satelite) || 0) > 0) || lotesCandidatos[0];
+      if (loteEscolhido) {
+        lotesComSaldo = [{
+          ...loteEscolhido,
+          saldoSatelite: saldoSat
+        }];
+      }
+    }
+  } else if (somaLotes > saldoSat) {
+    // Ajusta proporcionalmente para não exceder o saldo total
+    let excesso = somaLotes - saldoSat;
+    for (let i = lotesComSaldo.length - 1; i >= 0 && excesso > 0; i--) {
+      const deduzir = Math.min(lotesComSaldo[i].saldoSatelite, excesso);
+      lotesComSaldo[i].saldoSatelite -= deduzir;
+      excesso -= deduzir;
+    }
+    lotesComSaldo = lotesComSaldo.filter((l) => l.saldoSatelite > 0);
+  }
 
   // Ordena por validade (FEFO)
   lotesComSaldo.sort((a, b) => {
@@ -253,8 +291,5 @@ export function calcularLotesSatelite({
     return da - db;
   });
 
-  // CRUCIAL: Se não houver histórico de transferência para nenhum lote,
-  // NUNCA pegar lotes da Central que têm quantidade na Central!
-  // Retorna vazio caso não haja lote com entrada comprovada.
   return lotesComSaldo;
 }
