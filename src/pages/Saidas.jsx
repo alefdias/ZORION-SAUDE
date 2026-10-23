@@ -138,8 +138,8 @@ export default function Saidas({ isTab = false }) {
         }
       } catch (e) {}
 
-      const pacNomeLimpo = commonData.paciente_nome.trim();
-      const alaNomeLimpa = commonData.ala_nome.trim();
+      const pacNomeLimpo = (commonData.paciente_nome || "").trim();
+      const alaNomeLimpa = (commonData.ala_nome || "").trim();
 
       for (const item of itens) {
         const saidaData = {
@@ -150,11 +150,11 @@ export default function Saidas({ isTab = false }) {
           numero_lote: item.numero_lote,
           quantidade: item.quantidade,
           paciente_id: commonData.paciente_id || null,
-          paciente_nome: pacNomeLimpo,
+          paciente_nome: pacNomeLimpo || null,
           ala_id: commonData.ala_id || null,
           ala_nome: alaNomeLimpa,
-          destino: commonData.destino || `Paciente: ${pacNomeLimpo} (${alaNomeLimpa})`,
-          motivo: commonData.motivo || `Dispensação Paciente: ${pacNomeLimpo}`,
+          destino: commonData.destino || (pacNomeLimpo ? `Paciente: ${pacNomeLimpo} (${alaNomeLimpa})` : `Dispensação Geral: ${alaNomeLimpa}`),
+          motivo: commonData.motivo || (pacNomeLimpo ? `Dispensação Paciente: ${pacNomeLimpo}` : `Dispensação Clínicos (${alaNomeLimpa})`),
           responsavel: commonData.responsavel || responsavel,
           responsavel_crf: commonData.responsavel_crf || responsavelCrf,
           usuario_nome: responsavel

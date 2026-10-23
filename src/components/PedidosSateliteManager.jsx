@@ -44,7 +44,8 @@ import {
   Trash2,
   Plus,
   Wand2,
-  Boxes
+  Boxes,
+  Save
 } from "lucide-react";
 
 export function PedidosSateliteManager({ mode = "satelite" }) {
@@ -1036,7 +1037,9 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
       const { newStatus, pedido } = variables;
       if (newStatus === "Cancelado") {
         toast.error(`Pedido ${pedido.codigo} cancelado com sucesso. A Farmácia Satélite foi notificada!`);
-      } else if (newStatus === "Em Separação") toast.info("Pedido marcado em separação.");
+      } else if (newStatus === "Em Separação") {
+        toast.success("Progresso salvo com sucesso! Você pode continuar a separação deste pedido a qualquer momento.");
+      }
       else if (newStatus === "Separado") toast.success("Separação finalizada! Saída gerada e registrada em Transferência de Estoque.");
       else if (newStatus === "Entregue") toast.success("Pedido enviado para a Farmácia Satélite!");
       else if (newStatus === "Concluido") toast.success("Recebimento confirmado! Estoque da Satélite atualizado com sucesso!");
@@ -2112,8 +2115,12 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
                           }}
                           className="gap-1.5 h-8 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                          {mode === "central" ? (p.status === "Pendente" || p.status === "Em Separação" ? "Separar / Processar" : "Ver Detalhes") : (p.status === "Separado" || p.status === "Entregue" ? "Conferir & Receber" : "Ver Detalhes")}
+                          {mode === "central" ? (
+                            p.status === "Em Separação" ? "⏳ Continuar Separação" :
+                            p.status === "Pendente" ? "Separar Pedido" : "Ver Detalhes"
+                          ) : (
+                            p.status === "Separado" || p.status === "Entregue" ? "Conferir & Receber" : "Ver Detalhes"
+                          )}
                         </Button>
                         {isAdm && (
                           <Button
@@ -3571,34 +3578,41 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
               Imprimir Pedido
             </Button>
 
-            {/* CENTRAL ACTIONS */}
-            {mode === "central" && pedido.status === "Pendente" && (
-              <Button
-                onClick={() => onUpdateStatus("Em Separação", itensState)}
-                disabled={isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
-              >
-                Iniciar Separação
-              </Button>
-            )}
-
+            {/* CENTRAL ACTIONS: Separar, Salvar Progresso ou Entregar à Satélite */}
             {mode === "central" && (pedido.status === "Pendente" || pedido.status === "Em Separação") && (
               <>
                 <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onUpdateStatus("Em Separação", itensState)}
+                  disabled={isPending}
+                  className="border-blue-400 text-blue-700 hover:bg-blue-50 font-bold gap-1.5 shadow-xs"
+                  title="Salva todos os lotes e quantidades já conferidos para continuar depois sem movimentar estoque ainda"
+                >
+                  <Save className="w-4 h-4 text-blue-600" />
+                  Salvar Progresso (Continuar Depois)
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => onUpdateStatus("Separado", itensState)}
                   disabled={isPending}
-                  variant="outline"
                   className="border-purple-300 text-purple-700 hover:bg-purple-50 font-bold"
+                  title="Marca o pedido como Separado na Farmácia Central"
                 >
                   Finalizar Separação
                 </Button>
+
                 <Button
+                  type="button"
                   onClick={() => onUpdateStatus("Entregue", itensState)}
                   disabled={isPending}
                   className="bg-orange-600 hover:bg-orange-700 text-white font-bold gap-1.5 shadow-sm"
+                  title="Finaliza a separação e despacha o pedido para entrega na Farmácia Satélite"
                 >
                   <Truck className="w-4 h-4" />
-                  Finalizar & Entregar à Farmácia
+                  Finalizar & Entregar à Farmácia Satélite
                 </Button>
               </>
             )}

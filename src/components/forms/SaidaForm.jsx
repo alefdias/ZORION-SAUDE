@@ -18,6 +18,7 @@ const getLocalDateString = () => {
 };
 
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
+import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
@@ -47,6 +48,31 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
         queryKey: ['transferencias_pendentes'],
         queryFn: () => db.entities.TransferenciaPendente.list(),
     });
+
+    // Lista de medicamentos presentes nesta saída (itens da lista + item sendo preenchido no momento)
+    const todosMedsDaSaida = useMemo(() => {
+        const ids = new Set([
+            ...form.itens.map(i => i.medicamento_id),
+            currentItem.medicamento_id
+        ].filter(Boolean));
+        return Array.from(ids).map(id => medicamentos.find(m => m.id === id)).filter(Boolean);
+    }, [form.itens, currentItem.medicamento_id, medicamentos]);
+
+    // Identifica se algum medicamento é Psicotrópico, Antibiótico ou Alta Vigilância (MAV)
+    const { exigePaciente, tipoControladoTexto, medControladoNome } = useMemo(() => {
+        for (const med of todosMedsDaSaida) {
+            if (isPsicotropico(med)) {
+                return { exigePaciente: true, tipoControladoTexto: "Psicotrópico (Portaria 344)", medControladoNome: med.nome };
+            }
+            if (isMedicamentoAntibiotico(med)) {
+                return { exigePaciente: true, tipoControladoTexto: "Antibiótico / Antimicrobiano", medControladoNome: med.nome };
+            }
+            if (isMav(med)) {
+                return { exigePaciente: true, tipoControladoTexto: "Alta Vigilância (MAV)", medControladoNome: med.nome };
+            }
+        }
+        return { exigePaciente: false, tipoControladoTexto: "", medControladoNome: "" };
+    }, [todosMedsDaSaida]);
 
     const { data: todasSaidas = [] } = useQuery({
         queryKey: ['saidas'],
@@ -266,21 +292,29 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
         }
 
         if (!form.ala_id || form.ala_id === "__none__" || !form.ala_nome || !form.ala_nome.trim()) {
-            toast.error("Por favor, selecione a Ala / Setor de Destino (obrigatória).");
+            toast.error("A Ala / Setor de Destino é obrigatória para qualquer dispensação.");
             return;
         }
 
         const nomePacienteLimpo = (form.paciente_nome || "").trim();
-        if (!nomePacienteLimpo || nomePacienteLimpo === "__nenhum__") {
-            toast.error("O Nome do Paciente é obrigatório. Não é permitido dispensar sem vincular o paciente.");
+        const semPaciente = !nomePacienteLimpo || nomePacienteLimpo === "__nenhum__" || nomePacienteLimpo.toLowerCase() === "sem paciente";
+
+        // Psicotrópico, Antibiótico e Alta Vigilância (MAV) exigem obrigatoriamente identificação do paciente
+        if (exigePaciente && semPaciente) {
+            toast.error(`O Nome do Paciente é OBRIGATÓRIO para dispensar ${tipoControladoTexto} (${medControladoNome || "medicamento controlado"}).`);
             return;
         }
 
-        // Tentar resolver paciente_id se não estiver preenchido
-        let finalPacId = form.paciente_id || "";
-        if (!finalPacId && nomePacienteLimpo) {
-            const pacEncontrado = pacientes.find(p => p.nome && p.nome.trim().toLowerCase() === nomePacienteLimpo.toLowerCase());
-            if (pacEncontrado) finalPacId = pacEncontrado.id;
+        // Tentar resolver paciente_id se houver nome informado
+        let finalPacId = null;
+        let finalPacNome = null;
+        if (!semPaciente) {
+            finalPacNome = nomePacienteLimpo;
+            finalPacId = form.paciente_id || "";
+            if (!finalPacId && finalPacNome) {
+                const pacEncontrado = pacientes.find(p => p.nome && p.nome.trim().toLowerCase() === finalPacNome.toLowerCase());
+                if (pacEncontrado) finalPacId = pacEncontrado.id;
+            }
         }
 
         onSave({
@@ -288,11 +322,11 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
             itens: finalItens,
             ala_id: form.ala_id,
             ala_nome: form.ala_nome,
-            destino: `Paciente: ${nomePacienteLimpo} (${form.ala_nome})`,
+            destino: finalPacNome ? `Paciente: ${finalPacNome} (${form.ala_nome})` : `Dispensação Geral: ${form.ala_nome}`,
             data_saida: form.data_saida,
-            paciente_id: finalPacId,
-            paciente_nome: nomePacienteLimpo,
-            motivo: form.motivo || `Dispensação Paciente: ${nomePacienteLimpo}`,
+            paciente_id: finalPacId || null,
+            paciente_nome: finalPacNome || null,
+            motivo: form.motivo || (finalPacNome ? `Dispensação Paciente: ${finalPacNome}` : `Dispensação Clínicos (${form.ala_nome})`),
             observacao: form.observacao
         });
     };
@@ -546,15 +580,21 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                             </Select>
                         </div>
 
-                        {/* Nome do Paciente (Obrigatório) */}
+                        {/* Nome do Paciente (Obrigatório para Psico/Anti/MAV, Opcional para Clínicos) */}
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
                                 <Label htmlFor="paciente_nome" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                                    Nome do Paciente <span className="text-rose-500 font-bold">*</span>
+                                    Nome do Paciente {exigePaciente && <span className="text-rose-500 font-bold">*</span>}
                                 </Label>
-                                <span className="text-[10px] text-rose-600 font-bold uppercase tracking-wider bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
-                                    Obrigatório
-                                </span>
+                                {exigePaciente ? (
+                                    <span className="text-[10px] text-rose-600 font-bold uppercase tracking-wider bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                        Obrigatório ({tipoControladoTexto})
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                        Opcional para Clínicos Gerais
+                                    </span>
+                                )}
                             </div>
                             
                             {form.ala_id ? (
@@ -562,7 +602,7 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                     const pacientesDaAla = pacientes
                                         .filter(p => (p.alaId === form.ala_id || p.alaNome === form.ala_nome) && p.status === "Ativo");
 
-                                    if (modoDigitarManual || pacientesDaAla.length === 0) {
+                                    if (modoDigitarManual || (pacientesDaAla.length === 0 && exigePaciente)) {
                                         return (
                                             <div className="space-y-1">
                                                 <Input
@@ -589,13 +629,18 @@ export default function SaidaForm({ open, onClose, onSave, initialData = null, i
                                     return (
                                         <div className="space-y-1">
                                             <Select 
-                                                value={form.paciente_id || form.paciente_nome || ""} 
+                                                value={form.paciente_id || form.paciente_nome || (!exigePaciente ? "__nenhum__" : "")} 
                                                 onValueChange={handlePacienteSelect}
                                             >
                                                 <SelectTrigger className="text-xs h-9 bg-white">
-                                                    <SelectValue placeholder="Selecione o paciente da ala..." />
+                                                    <SelectValue placeholder={!exigePaciente ? "Sem paciente específico (ou selecione da ala)..." : "Selecione o paciente da ala..."} />
                                                 </SelectTrigger>
                                                 <SelectContent>
+                                                    {!exigePaciente && (
+                                                        <SelectItem value="__nenhum__" className="text-slate-600 italic font-medium">
+                                                            🏢 Sem Paciente Específico (Uso Geral da Ala)
+                                                        </SelectItem>
+                                                    )}
                                                     {pacientesDaAla.map(p => (
                                                         <SelectItem key={p.id} value={p.id}>
                                                             {p.nome} {p.leito ? `(Leito: ${p.leito})` : ""}
