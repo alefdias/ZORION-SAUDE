@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -49,7 +50,10 @@ import {
   Sparkles, 
   History,
   UserCheck,
-  Droplet
+  Droplet,
+  Check,
+  ChevronDown,
+  Filter
 } from "lucide-react";
 import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
 import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
@@ -303,7 +307,30 @@ export default function PacientesMedicao() {
   const [activeCategory, setActiveCategory] = useState("todos"); // "todos", "com_prescricao", "sem_prescricao", "altas"
   const [periodoDias, setPeriodoDias] = useState(1);
   const [searchPatient, setSearchPatient] = useState("");
-  const [filterAla, setFilterAla] = useState("all");
+  const [filterAlas, setFilterAlas] = useState(["all"]);
+  const filterAla = filterAlas.length === 1 ? filterAlas[0] : (filterAlas.includes("all") ? "all" : filterAlas[0]);
+  const setFilterAla = (val) => setFilterAlas(val === "all" ? ["all"] : [val]);
+
+  const toggleAlaFilter = (alaId) => {
+    const aIdStr = String(alaId);
+    if (aIdStr === "all") {
+      setFilterAlas(["all"]);
+      return;
+    }
+    if (filterAlas.includes("all")) {
+      setFilterAlas([aIdStr]);
+    } else if (filterAlas.includes(aIdStr)) {
+      const updated = filterAlas.filter((id) => id !== aIdStr);
+      setFilterAlas(updated.length === 0 ? ["all"] : updated);
+    } else {
+      const updated = [...filterAlas, aIdStr];
+      if (updated.length >= alas.length) {
+        setFilterAlas(["all"]);
+      } else {
+        setFilterAlas(updated);
+      }
+    }
+  };
   const [searchPrescription, setSearchPrescription] = useState("");
 
   // Modais State
@@ -1866,6 +1893,19 @@ export default function PacientesMedicao() {
     const search = (searchPatient || "").trim().toLowerCase();
     const hojeStr = format(new Date(), "yyyy-MM-dd");
 
+    const checkMatchAla = (p) => {
+      if (filterAlas.includes("all") || filterAlas.length === 0) return true;
+      return filterAlas.some((aId) => {
+        const alaObj = alas.find((a) => String(a.id) === String(aId));
+        const pAlaIdStr = String(p.alaId || p.ala_id || "");
+        return (
+          pAlaIdStr === String(aId) ||
+          p.alaNome === aId ||
+          (alaObj && p.alaNome === alaObj.nome)
+        );
+      });
+    };
+
     if (activeCategory === "altas") {
       return (pacientes || []).filter(p => {
         if (p.status !== "Alta") return false;
@@ -1873,7 +1913,7 @@ export default function PacientesMedicao() {
         const termsP = qP ? qP.split(/\s+/).filter(Boolean) : [];
         const fullP = normalizeSearch(`${p.nome || ""} ${p.prontuario || ""} ${p.leito || ""} ${p.alaNome || ""}`);
         const matchSearch = termsP.length === 0 || termsP.every(t => fullP.includes(t));
-        const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
+        const matchAla = checkMatchAla(p);
         return matchSearch && matchAla;
       });
     }
@@ -1887,7 +1927,7 @@ export default function PacientesMedicao() {
         (p.leito?.toLowerCase().includes(search)) ||
         (p.alaNome?.toLowerCase().includes(search));
 
-      const matchAla = filterAla === "all" || p.alaId === filterAla || p.alaNome === filterAla;
+      const matchAla = checkMatchAla(p);
       if (!matchSearch || !matchAla) return false;
 
       const hasActive = (prescricoes || []).some(pr => isPrescricaoDoPaciente(pr, p) && isPrescricaoAtiva(pr, hojeStr));
@@ -1900,7 +1940,7 @@ export default function PacientesMedicao() {
       }
       return true; // "todos"
     });
-  }, [pacientes, prescricoes, activeCategory, searchPatient, filterAla]);
+  }, [pacientes, prescricoes, activeCategory, searchPatient, filterAlas, alas]);
 
   const filteredPatients = displayedPatients;
 
@@ -2188,26 +2228,135 @@ export default function PacientesMedicao() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-            <div className="w-full sm:w-[220px]">
-              <Select value={filterAla} onValueChange={setFilterAla}>
-                <SelectTrigger className="h-9.5 text-xs bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-lg">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                  <SelectValue placeholder="Filtrar por Ala..." />
-                </SelectTrigger>
-                <SelectContent className="text-xs">
-                  <SelectItem value="all">Todas as Alas / Setores</SelectItem>
-                  {alas.map(a => (
-                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Popover Multi-Alas */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "h-9.5 px-3 text-xs justify-between gap-2 rounded-lg font-medium border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 w-full sm:w-auto min-w-[200px] max-w-[320px]",
+                    !filterAlas.includes("all") && "border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-semibold"
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Building2 className={cn("w-3.5 h-3.5 shrink-0", !filterAlas.includes("all") ? "text-blue-600" : "text-slate-400")} />
+                    <span className="truncate">
+                      {filterAlas.includes("all") || filterAlas.length === 0
+                        ? "Todas as Alas / Setores"
+                        : filterAlas.length === 1
+                        ? (alas.find(a => String(a.id) === String(filterAlas[0]))?.nome || "1 ala selecionada")
+                        : `${filterAlas.length} alas selecionadas`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-auto">
+                    {!filterAlas.includes("all") && filterAlas.length > 0 && (
+                      <Badge className="h-5 px-1.5 text-[10px] bg-blue-600 text-white font-bold rounded-full">
+                        {filterAlas.length}
+                      </Badge>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-3 space-y-2.5 z-[10001] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl rounded-xl">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800 text-xs">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                    Filtrar por Ala
+                  </span>
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setFilterAlas(["all"])}
+                      className="text-blue-600 font-bold hover:underline"
+                    >
+                      Todas
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterAlas([])}
+                      className="text-slate-500 hover:underline"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
 
-            {(searchPatient || filterAla !== "all") && (
+                <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
+                  {/* Opção Todas as Alas */}
+                  <button
+                    type="button"
+                    onClick={() => setFilterAlas(["all"])}
+                    className={cn(
+                      "w-full flex items-center justify-between p-2 rounded-lg text-xs transition-colors text-left",
+                      filterAlas.includes("all")
+                        ? "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold"
+                        : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                        filterAlas.includes("all")
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800"
+                      )}>
+                        {filterAlas.includes("all") && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                      <span>Todas as Alas / Setores</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-mono font-bold bg-white dark:bg-slate-800 text-slate-600">
+                      {pacientes.filter(p => p.status !== "Alta").length}
+                    </Badge>
+                  </button>
+
+                  <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+                  {/* Cada Ala Individual */}
+                  {alas.map(a => {
+                    const aIdStr = String(a.id);
+                    const isChecked = !filterAlas.includes("all") && filterAlas.includes(aIdStr);
+                    const pacsCount = pacientes.filter(p => p.status !== "Alta" && (String(p.alaId || p.ala_id) === aIdStr || p.alaNome === a.nome)).length;
+
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleAlaFilter(aIdStr)}
+                        className={cn(
+                          "w-full flex items-center justify-between p-2 rounded-lg text-xs transition-colors text-left",
+                          isChecked
+                            ? "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold"
+                            : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <div className={cn(
+                            "w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0",
+                            isChecked
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800"
+                          )}>
+                            {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                          <span className="truncate">{a.nome}</span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] font-mono font-bold bg-white dark:bg-slate-800 text-slate-600 shrink-0">
+                          {pacsCount}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {(searchPatient || !filterAlas.includes("all")) && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setSearchPatient(""); setFilterAla("all"); }}
+                onClick={() => { setSearchPatient(""); setFilterAlas(["all"]); }}
                 className="h-9.5 px-2.5 text-xs text-slate-500 hover:text-slate-800 font-medium"
                 title="Limpar filtros"
               >
@@ -2217,6 +2366,45 @@ export default function PacientesMedicao() {
             )}
           </div>
         </div>
+
+        {/* Badges das alas selecionadas para visualização rápida e remoção com 1 clique */}
+        {!filterAlas.includes("all") && filterAlas.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-xs">
+            <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+              <Filter className="w-3 h-3 text-blue-600" />
+              Alas Selecionadas:
+            </span>
+            {filterAlas.map(aId => {
+              const alaObj = alas.find(a => String(a.id) === String(aId));
+              const nome = alaObj ? alaObj.nome : aId;
+              return (
+                <Badge
+                  key={aId}
+                  className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 text-[11px] font-semibold flex items-center gap-1 pl-2 pr-1 py-0.5 shadow-2xs"
+                >
+                  <span>{nome}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleAlaFilter(aId);
+                    }}
+                    className="hover:bg-blue-200/80 dark:hover:bg-blue-800 p-0.5 rounded-full transition-colors cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </Badge>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setFilterAlas(["all"])}
+              className="text-[11px] text-slate-400 hover:text-red-600 hover:underline font-medium ml-1 cursor-pointer"
+            >
+              Resetar para todas
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Batch Action Banner */}
@@ -2353,14 +2541,14 @@ export default function PacientesMedicao() {
                             : "Nenhum paciente cadastrado"}
                         </p>
                         <p className="text-xs text-slate-400 mt-0.5">
-                          {searchPatient || filterAla !== "all" 
+                          {searchPatient || !filterAlas.includes("all") 
                             ? "Tente ajustar os filtros ou termo de busca." 
                             : activeCategory === "altas"
                             ? "Altas hospitalares registradas aparecerão neste histórico."
                             : "Cadastre novos pacientes ou prescrições para iniciar."}
                         </p>
                       </div>
-                      {activeCategory !== "altas" && !searchPatient && filterAla === "all" && (
+                      {activeCategory !== "altas" && !searchPatient && filterAlas.includes("all") && (
                         <Button onClick={handleOpenNewPatient} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs gap-1.5 shadow-xs">
                           <Plus className="w-3.5 h-3.5" />
                           Cadastrar Paciente
