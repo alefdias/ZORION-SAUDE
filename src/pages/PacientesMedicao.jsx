@@ -387,6 +387,35 @@ export default function PacientesMedicao() {
   const [ajusteCicloModalOpen, setAjusteCicloModalOpen] = useState(false);
   const [ajusteCicloPatient, setAjusteCicloPatient] = useState(null);
 
+  // ── SEGURANÇA / CONTROLE DE ACESSO (FASE DE TESTES - SENHA 102030) ──────────
+  const [senhaBaixaModalOpen, setSenhaBaixaModalOpen] = useState(false);
+  const [senhaBaixaInput, setSenhaBaixaInput] = useState("");
+  const [senhaBaixaError, setSenhaBaixaError] = useState("");
+  const [baixaPendingAction, setBaixaPendingAction] = useState(null);
+
+  const executarComSenha102030 = (acao) => {
+    setSenhaBaixaInput("");
+    setSenhaBaixaError("");
+    setBaixaPendingAction(() => acao);
+    setSenhaBaixaModalOpen(true);
+  };
+
+  const handleConfirmarSenhaBaixa = () => {
+    if (senhaBaixaInput.trim() !== "102030") {
+      setSenhaBaixaError("ACESSO NEGADO: Senha de liberação incorreta! Tentativa registrada.");
+      toast.error("ACESSO NEGADO: Senha incorreta! Tentativa registrada no sistema.");
+      return;
+    }
+    setSenhaBaixaModalOpen(false);
+    setSenhaBaixaInput("");
+    setSenhaBaixaError("");
+    toast.success("Autenticação autorizada! Processando baixa...");
+    if (baixaPendingAction) {
+      baixaPendingAction();
+      setBaixaPendingAction(null);
+    }
+  };
+
   // Estados da Alta
   const [altaModalOpen, setAltaModalOpen] = useState(false);
   const [altaPacienteId, setAltaPacienteId] = useState(null);
@@ -3314,10 +3343,12 @@ export default function PacientesMedicao() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm"
               disabled={efetuandoBaixaLoteMutation.isPending || selectedPatientIds.length === 0}
               onClick={() => {
-                efetuandoBaixaLoteMutation.mutate({
-                  patientIds: selectedPatientIds,
-                  dias: batchBaixaDias,
-                  customQtds: customQtdsBaixa
+                executarComSenha102030(() => {
+                  efetuandoBaixaLoteMutation.mutate({
+                    patientIds: selectedPatientIds,
+                    dias: batchBaixaDias,
+                    customQtds: customQtdsBaixa
+                  });
                 });
               }}
             >
@@ -4111,7 +4142,11 @@ export default function PacientesMedicao() {
             <Button variant="outline" onClick={() => setBaixaModalOpen(false)}>Cancelar</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              onClick={() => efetuarBaixaMutation.mutate(calculoPrevisao.consolidadoMeds)}
+              onClick={() => {
+                executarComSenha102030(() => {
+                  efetuarBaixaMutation.mutate(calculoPrevisao.consolidadoMeds);
+                });
+              }}
               disabled={calculoPrevisao.consolidadoMeds.length === 0 || efetuarBaixaMutation.isPending}
             >
               Confirmar e Dar Baixa
@@ -5017,6 +5052,99 @@ export default function PacientesMedicao() {
                 ? "Transferindo..." 
                 : `Confirmar Transferência (${transferSelectedPatientIds.length})`
               }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL DE SENHA DE SEGURANÇA (FASE DE TESTES: SENHA 102030) ─────────── */}
+      <Dialog open={senhaBaixaModalOpen} onOpenChange={setSenhaBaixaModalOpen}>
+        <DialogContent className="sm:max-w-[480px] border-2 border-red-500 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden">
+          <div className="bg-red-600 dark:bg-red-950 p-5 text-white flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-xs">
+              <ShieldAlert className="w-7 h-7 text-white animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-black tracking-wide uppercase">
+                ACESSO RESTRITO • FASE DE TESTES
+              </h2>
+              <p className="text-xs text-red-100 font-medium">
+                Auditoria de Estoque da Farmácia Satélite
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1.5 font-medium">
+              <p className="font-bold flex items-center gap-1.5 text-amber-950 dark:text-amber-100">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                AVISO DE AUDITORIA E CONTROLE DE DISPENSAÇÃO:
+              </p>
+              <p>
+                O sistema de confirmação de baixa está em <strong>FASE DE HOMOLOGAÇÃO RESTRITA</strong>. A confirmação debitará o estoque físico e registrará logs auditáveis no banco de dados.
+              </p>
+              <p className="text-[11px] text-red-700 dark:text-red-300 font-bold">
+                ⚠️ Tentativas com senha incorreta serão bloqueadas e registradas.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-red-600" />
+                Para liberar a baixa, insira a senha autorizada:
+              </label>
+              <Input
+                type="password"
+                autoFocus
+                placeholder="Insira a senha de liberação..."
+                value={senhaBaixaInput}
+                onChange={(e) => {
+                  setSenhaBaixaInput(e.target.value);
+                  if (senhaBaixaError) setSenhaBaixaError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleConfirmarSenhaBaixa();
+                  }
+                }}
+                className={cn(
+                  "h-11 text-center font-mono text-lg tracking-widest font-black border-2",
+                  senhaBaixaError
+                    ? "border-red-500 bg-red-50/50 text-red-900 focus-visible:ring-red-400"
+                    : "border-slate-300 focus-visible:ring-indigo-500"
+                )}
+              />
+              {senhaBaixaError && (
+                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1 animate-bounce">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  {senhaBaixaError}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSenhaBaixaModalOpen(false);
+                setSenhaBaixaInput("");
+                setSenhaBaixaError("");
+                setBaixaPendingAction(null);
+              }}
+              className="font-bold text-xs"
+            >
+              Cancelar e Bloquear
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmarSenhaBaixa}
+              className="bg-red-600 hover:bg-red-700 text-white font-black text-xs gap-1.5 shadow-md px-5"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Liberar Baixa no Estoque
             </Button>
           </DialogFooter>
         </DialogContent>

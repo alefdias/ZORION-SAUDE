@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { format, addDays, parseISO, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { db } from "@/api/db";
@@ -77,9 +78,22 @@ function isLoteDoMedicamento(lote, item, medicamentos = []) {
   const itemCodigo = item.codigo ? String(item.codigo).trim() : (medObj?.codigo ? String(medObj.codigo).trim() : "");
   if (lCodigo && itemCodigo && lCodigo === itemCodigo) return true;
 
-  const lNome = (lote.medicamento_nome || "").trim().toLowerCase();
-  const itemNome = (item.medicamentoNome || medObj?.nome || "").trim().toLowerCase();
-  if (lNome && itemNome && lNome === itemNome) return true;
+  const normalize = (s) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .trim();
+
+  const lNome = normalize(lote.medicamento_nome);
+  const itemNome = normalize(item.medicamentoNome || medObj?.nome);
+  if (lNome && itemNome) {
+    if (lNome === itemNome) return true;
+    const cleanL = lNome.replace(/\b(comprimido|cp|frasco|ampola|gotas|mg|ml|mcg|g)\b/g, "").replace(/\s+/g, " ").trim();
+    const cleanItem = itemNome.replace(/\b(comprimido|cp|frasco|ampola|gotas|mg|ml|mcg|g)\b/g, "").replace(/\s+/g, " ").trim();
+    if (cleanL && cleanItem && cleanL === cleanItem) return true;
+  }
 
   return false;
 }
@@ -101,6 +115,11 @@ export function SeparacaoLoteModal({
   const [isPrinting, setIsPrinting] = useState(false);
   const [itensConsolidados, setItensConsolidados] = useState([]);
   const [expandedMeds, setExpandedMeds] = useState({});
+
+  // ── SEGURANÇA / CONTROLE DE ACESSO (FASE DE TESTES - SENHA 102030) ──────────
+  const [senhaModalOpen, setSenhaModalOpen] = useState(false);
+  const [senhaInput, setSenhaInput] = useState("");
+  const [senhaError, setSenhaError] = useState("");
 
   // Buscar todos os lotes do banco caso a prop venha vazia
   const { data: dbLotes = [] } = useQuery({
@@ -483,29 +502,35 @@ export function SeparacaoLoteModal({
     }));
   };
 
+  // Validação de Senha de Segurança para Liberação de Baixa (Fase de Testes: 102030)
+  const handleValidarSenhaEConfirmar = () => {
+    if (senhaInput.trim() !== "102030") {
+      setSenhaError("ACESSO NEGADO: Senha de liberação incorreta! Tentativa registrada.");
+      toast.error("ACESSO NEGADO: Senha incorreta!", {
+        description: "Operação travada. Verifique com a administração a senha de liberação.",
+      });
+      return;
+    }
+
+    setSenhaError("");
+    setSenhaModalOpen(false);
+    setSenhaInput("");
+    toast.success("Autenticação autorizada! Processando baixa de medicamentos...");
+    executarBaixaMutation.mutate();
+  };
+
   // Executar Impressão da Guia de Separação Consolidada com Isolamento Total
   const handleImprimirGuia = () => {
     setIsPrinting(true);
     document.body.classList.add("printing-separacao-lote");
 
-    // Ocultar qualquer print-area pai para garantia absoluta
-    const printAreaEl = document.getElementById("print-area");
-    if (printAreaEl) {
-      printAreaEl.setAttribute("data-prev-display", printAreaEl.style.display);
-      printAreaEl.style.setProperty("display", "none", "important");
-    }
-
     setTimeout(() => {
       window.print();
       setTimeout(() => {
         document.body.classList.remove("printing-separacao-lote");
-        if (printAreaEl) {
-          printAreaEl.style.display = printAreaEl.getAttribute("data-prev-display") || "";
-          printAreaEl.removeAttribute("data-prev-display");
-        }
         setIsPrinting(false);
-      }, 500);
-    }, 250);
+      }, 600);
+    }, 350);
   };
 
   // Mutação de Baixa em Lote dos itens filtrados
@@ -709,177 +734,220 @@ export function SeparacaoLoteModal({
   return (
     <>
       {/* ─── ESTILO DE IMPRESSÃO EXCLUSIVO PARA A GUIA DE SEPARAÇÃO CONSOLIDADA ────────── */}
-      {isPrinting && (
-        <style>{`
-          @media print {
-            body {
-              background: white !important;
-              color: black !important;
-            }
-            body > *:not(#print-guia-separacao) {
-              display: none !important;
-            }
-            body * {
-              visibility: hidden !important;
-            }
-            #print-guia-separacao, #print-guia-separacao * {
-              visibility: visible !important;
-            }
-            #print-guia-separacao {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              display: block !important;
-              background: white !important;
-              padding: 10mm !important;
-              color: black !important;
-              z-index: 999999 !important;
-            }
-            #print-area, [role="dialog"], header, nav, .sonner-toaster {
-              display: none !important;
-              visibility: hidden !important;
-            }
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 8mm;
           }
-        `}</style>
-      )}
+          body.printing-separacao-lote {
+            background-color: white !important;
+            color: black !important;
+          }
+          body.printing-separacao-lote > *:not(#print-guia-separacao) {
+            display: none !important;
+            visibility: hidden !important;
+          }
+          body.printing-separacao-lote #print-guia-separacao {
+            display: block !important;
+            visibility: visible !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+            color: black !important;
+            padding: 5mm !important;
+            margin: 0 !important;
+            z-index: 99999999 !important;
+          }
+          body.printing-separacao-lote #print-guia-separacao * {
+            visibility: visible !important;
+          }
+          body.printing-separacao-lote [role="dialog"],
+          body.printing-separacao-lote .dialog-overlay,
+          body.printing-separacao-lote #print-area,
+          body.printing-separacao-lote header,
+          body.printing-separacao-lote nav {
+            display: none !important;
+            visibility: hidden !important;
+          }
+          .page-break-avoid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}</style>
 
-      {/* ─── GUIA DE SEPARAÇÃO IMPRIMÍVEL (A4 CONSOLIDADA POR MEDICAMENTO) ──────────── */}
-      <div id="print-guia-separacao" className={isPrinting ? "block" : "hidden"}>
-        <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
-          <div>
-            <span className="text-xl font-black tracking-tight uppercase text-blue-950">
-              ZORION SAÚDE • FARMÁCIA SATÉLITE
-            </span>
-            <h1 className="text-lg font-black uppercase text-slate-900 mt-0.5">
-              {tituloGuiaImpressa}
-            </h1>
-            <p className="text-xs font-semibold text-slate-700 mt-0.5">
-              Ciclo: <strong>{dias} Dias</strong> | Cobertura:{" "}
-              <strong>
-                {format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}
-              </strong>
-            </p>
-          </div>
-          <div className="text-right text-xs text-slate-800 space-y-0.5">
-            <p>
-              Emissão: <strong>{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong>
-            </p>
-            <p>
-              Medicamentos: <strong>{itensFiltrados.length}</strong> | Pacientes Atendidos:{" "}
-              <strong>{totalPacientesAtendidos}</strong>
-            </p>
-            <p className="font-bold text-sm text-blue-900">
-              Total Geral a Retirar: <strong>{totalGeralUnidades} un</strong>
-            </p>
-          </div>
-        </div>
+      {/* ─── GUIA DE SEPARAÇÃO IMPRIMÍVEL (PORTAL DIRETO NO BODY) ────────────────── */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div id="print-guia-separacao" className={isPrinting ? "block" : "hidden"}>
+            <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
+              <div>
+                <span className="text-xl font-black tracking-tight uppercase text-blue-950">
+                  ZORION SAÚDE • FARMÁCIA SATÉLITE
+                </span>
+                <h1 className="text-lg font-black uppercase text-slate-900 mt-0.5">
+                  {tituloGuiaImpressa}
+                </h1>
+                <p className="text-xs font-semibold text-slate-700 mt-0.5">
+                  Ciclo: <strong>{dias} Dias</strong> | Cobertura:{" "}
+                  <strong>
+                    {format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}
+                  </strong>
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-800 space-y-0.5">
+                <p>
+                  Emissão: <strong>{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong>
+                </p>
+                <p>
+                  Medicamentos: <strong>{itensFiltrados.length}</strong> | Pacientes Atendidos:{" "}
+                  <strong>{totalPacientesAtendidos}</strong>
+                </p>
+                <p className="font-bold text-sm text-blue-900">
+                  Total Geral a Retirar: <strong>{totalGeralUnidades} un</strong>
+                </p>
+              </div>
+            </div>
 
-        <table className="w-full text-left border-collapse border border-slate-400 text-xs">
-          <thead>
-            <tr className="bg-slate-200 text-slate-900 font-bold uppercase text-[10px]">
-              <th className="border border-slate-400 p-2 text-center w-10">CONF.</th>
-              <th className="border border-slate-400 p-2 w-20">CÓDIGO</th>
-              <th className="border border-slate-400 p-2">MEDICAMENTO / APRESENTAÇÃO</th>
-              <th className="border border-slate-400 p-2 text-center w-24">PACIENTES</th>
-              <th className="border border-slate-400 p-2 text-center w-28 bg-slate-300">
-                TOTAL ({dias}d)
-              </th>
-              <th className="border border-slate-400 p-2">LOTE(S) & VALIDADE A RETIRAR</th>
-              <th className="border border-slate-400 p-2 text-center w-20">ESTOQUE SAT.</th>
-              <th className="border border-slate-400 p-2 w-28">VISTO</th>
-            </tr>
-          </thead>
-          <tbody>
-            {itensFiltrados.map((item, idx) => {
-              const medLotes = (allLotes || [])
-                .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
-                .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
-                .sort((a, b) => {
-                  const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
-                  const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
-                  return da - db;
-                });
-
-              // Montar descrição com número de lote e validade reais
-              const lotesDesc = (item.alocacoes || [])
-                .map((a) => {
-                  const loteObj =
-                    medLotes.find((l) => String(l.id) === String(a.loteId)) ||
-                    (allLotes || []).find((l) => String(l.id) === String(a.loteId));
-
-                  const num = loteObj?.numero_lote || a.numero_lote || (medLotes[0]?.numero_lote) || "S/ Lote";
-                  const rawVal = loteObj?.data_validade || a.data_validade || (medLotes[0]?.data_validade);
-                  const val = rawVal ? safeFormatDate(rawVal) : "-";
-                  const qtd = a.quantidade ?? item.qtdTotal;
-                  return `Lote: ${num} | Val: ${val} [${qtd} un]`;
-                })
-                .filter(Boolean)
-                .join(" • ");
-
-              const textoFinalLotes =
-                lotesDesc && !lotesDesc.includes("S/ Lote")
-                  ? lotesDesc
-                  : medLotes.length > 0
-                  ? `Lote: ${medLotes[0].numero_lote || "S/L"} | Val: ${safeFormatDate(medLotes[0].data_validade)} [${item.qtdTotal} un]`
-                  : (lotesDesc || "Sem lote cadastrado");
-
-              return (
-                <tr key={item.medicamentoId} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                  <td className="border border-slate-400 p-2 text-center">
-                    <div className="w-4 h-4 border-2 border-slate-700 rounded-xs mx-auto" />
-                  </td>
-                  <td className="border border-slate-400 p-2 font-mono text-[10px]">
-                    {item.codigo || "-"}
-                  </td>
-                  <td className="border border-slate-400 p-2 font-bold text-slate-900">
-                    {item.medicamentoNome} {item.concentracao ? `(${item.concentracao})` : ""}
-                    {item.isPsicotropico && (
-                      <span className="ml-1 text-[9px] font-bold text-purple-700 bg-purple-100 px-1 py-0.2 rounded border border-purple-200">
-                        P344
-                      </span>
-                    )}
-                  </td>
-                  <td className="border border-slate-400 p-2 text-center text-[11px] font-semibold text-slate-700">
-                    {item.pacientesAtendidos.length} pac.
-                  </td>
-                  <td className="border border-slate-400 p-2 text-center font-black text-sm font-mono bg-slate-100">
-                    {item.qtdTotal} un
-                  </td>
-                  <td className="border border-slate-400 p-2 font-mono text-[11px] font-semibold text-slate-900">
-                    {textoFinalLotes}
-                  </td>
-                  <td className="border border-slate-400 p-2 text-center font-mono text-[10px]">
-                    {item.estoqueSatelite} un
-                  </td>
-                  <td className="border border-slate-400 p-2 text-[9px] text-slate-400">
-                    ___________
-                  </td>
+            <table className="w-full text-left border-collapse border border-slate-700 text-xs">
+              <thead>
+                <tr className="bg-slate-200 text-slate-900 font-bold uppercase text-[10px]">
+                  <th className="border border-slate-700 p-2 text-center w-10">CONF.</th>
+                  <th className="border border-slate-700 p-2 w-20">CÓDIGO</th>
+                  <th className="border border-slate-700 p-2">MEDICAMENTO / APRESENTAÇÃO</th>
+                  <th className="border border-slate-700 p-2 text-center w-24">PACIENTES</th>
+                  <th className="border border-slate-700 p-2 text-center w-28 bg-slate-300">
+                    TOTAL ({dias}d)
+                  </th>
+                  <th className="border border-slate-700 p-2">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
+                  <th className="border border-slate-700 p-2 text-center w-20">ESTOQUE SAT.</th>
+                  <th className="border border-slate-700 p-2 w-28 text-center">VISTO</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {itensFiltrados.map((item, idx) => {
+                  const medLotes = (allLotes || [])
+                    .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+                    .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
+                    .sort((a, b) => {
+                      const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
+                      const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
+                      return da - db;
+                    });
 
-        {/* Rodapé de Assinaturas da Guia Consolidada */}
-        <div className="mt-8 pt-4 border-t-2 border-slate-900 grid grid-cols-3 gap-6 text-center text-xs">
-          <div>
-            <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-            <p className="font-bold text-slate-900">Separado por (Farmácia)</p>
-            <p className="text-[10px] text-slate-500">Data/Hora: ____/____/____ às ____:____</p>
-          </div>
-          <div>
-            <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-            <p className="font-bold text-slate-900">Conferido por (Farmacêutico RT)</p>
-            <p className="text-[10px] text-slate-500">CRF: __________________</p>
-          </div>
-          <div>
-            <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-            <p className="font-bold text-slate-900">Recebido no Posto (Enfermagem)</p>
-            <p className="text-[10px] text-slate-500">COREN: _________________</p>
-          </div>
-        </div>
-      </div>
+                  const alocsComLote = (item.alocacoes || []).filter(
+                    (a) => a.loteId || (a.numero_lote && a.numero_lote !== "Lote Geral" && a.numero_lote !== "S/ Lote")
+                  );
+
+                  return (
+                    <tr
+                      key={item.medicamentoId}
+                      className={`page-break-avoid ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
+                    >
+                      <td className="border border-slate-700 p-2 text-center">
+                        <div className="w-4 h-4 border-2 border-slate-900 rounded-xs mx-auto" />
+                      </td>
+                      <td className="border border-slate-700 p-2 font-mono text-[10px] font-bold">
+                        {item.codigo || "-"}
+                      </td>
+                      <td className="border border-slate-700 p-2 font-bold text-slate-900">
+                        <span className="text-xs uppercase">{item.medicamentoNome}</span>
+                        {item.concentracao &&
+                          !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
+                            <span className="text-[11px] font-bold text-indigo-900 ml-1">
+                              ({item.concentracao})
+                            </span>
+                          )}
+                        {item.isPsicotropico && (
+                          <span className="ml-1.5 text-[9px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
+                            PORTARIA 344
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-slate-700 p-2 text-center text-xs font-bold text-slate-800">
+                        {item.pacientesAtendidos.length} pac.
+                      </td>
+                      <td className="border border-slate-700 p-2 text-center font-black text-sm font-mono bg-slate-100 text-slate-950">
+                        {item.qtdTotal} un
+                      </td>
+                      <td className="border border-slate-700 p-2 font-mono text-[11px] font-semibold text-slate-900">
+                        {alocsComLote.length > 0 ? (
+                          <div className="space-y-1">
+                            {alocsComLote.map((a, aIdx) => {
+                              const lObj =
+                                (allLotes || []).find((l) => String(l.id) === String(a.loteId)) ||
+                                medLotes.find((l) => String(l.id) === String(a.loteId));
+
+                              const num = lObj?.numero_lote || a.numero_lote || medLotes[0]?.numero_lote || "S/ Lote";
+                              const rawVal = lObj?.data_validade || a.data_validade || medLotes[0]?.data_validade;
+                              const val = rawVal ? safeFormatDate(rawVal) : "-";
+                              const qtd = a.quantidade ?? item.qtdTotal;
+
+                              return (
+                                <div key={aIdx} className="flex items-center gap-1.5 whitespace-nowrap">
+                                  <span className="font-bold text-slate-950">LOTE: {num}</span>
+                                  <span className="text-slate-400">|</span>
+                                  <span className="font-black text-indigo-950">VAL: {val}</span>
+                                  <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[10px] font-black">
+                                    [{qtd} un]
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : medLotes.length > 0 ? (
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="font-bold text-slate-950">LOTE: {medLotes[0].numero_lote || "S/L"}</span>
+                            <span className="text-slate-400">|</span>
+                            <span className="font-black text-indigo-950">
+                              VAL: {safeFormatDate(medLotes[0].data_validade)}
+                            </span>
+                            <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[10px] font-black">
+                              [{item.qtdTotal} un]
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic text-[10px]">
+                            Lote Geral / Saldo da Satélite
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-slate-700 p-2 text-center font-mono text-xs font-bold text-slate-900">
+                        {item.estoqueSatelite} un
+                      </td>
+                      <td className="border border-slate-700 p-2 text-center text-[10px] text-slate-400">
+                        __________
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Rodapé de Assinaturas da Guia Consolidada */}
+            <div className="mt-8 pt-4 border-t-2 border-slate-900 grid grid-cols-3 gap-6 text-center text-xs page-break-avoid">
+              <div>
+                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
+                <p className="font-bold text-slate-900">Separado por (Farmácia)</p>
+                <p className="text-[10px] text-slate-500">Data/Hora: ____/____/____ às ____:____</p>
+              </div>
+              <div>
+                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
+                <p className="font-bold text-slate-900">Conferido por (Farmacêutico RT)</p>
+                <p className="text-[10px] text-slate-500">CRF: __________________</p>
+              </div>
+              <div>
+                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
+                <p className="font-bold text-slate-900">Recebido no Posto (Enfermagem)</p>
+                <p className="text-[10px] text-slate-500">COREN: _________________</p>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* ─── MODAL EM TELA: SEPARAÇÃO CONSOLIDADA POR MEDICAMENTO ────────────── */}
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1373,9 +1441,13 @@ export function SeparacaoLoteModal({
                 Cancelar
               </Button>
               <Button
-                onClick={() => executarBaixaMutation.mutate()}
+                onClick={() => {
+                  setSenhaInput("");
+                  setSenhaError("");
+                  setSenhaModalOpen(true);
+                }}
                 disabled={executarBaixaMutation.isPending || itensFiltrados.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm cursor-pointer"
               >
                 <PackageMinus className="w-4 h-4" />
                 {executarBaixaMutation.isPending
@@ -1383,6 +1455,100 @@ export function SeparacaoLoteModal({
                   : `Confirmar Baixa (${itensFiltrados.length} ${categoriaFiltro === "psicotropico" ? "Psicotrópicos" : categoriaFiltro === "clinico" ? "Clínicos" : "Medicamentos"})`}
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL DE SENHA DE SEGURANÇA (FASE DE TESTES: SENHA 102030) ─────────── */}
+      <Dialog open={senhaModalOpen} onOpenChange={setSenhaModalOpen}>
+        <DialogContent className="sm:max-w-[480px] border-2 border-red-500 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden">
+          {/* Header de Alerta Máximo */}
+          <div className="bg-red-600 dark:bg-red-950 p-5 text-white flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-xs">
+              <ShieldAlert className="w-7 h-7 text-white animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-black tracking-wide uppercase">
+                ACESSO RESTRITO • FASE DE TESTES
+              </h2>
+              <p className="text-xs text-red-100 font-medium">
+                Auditoria de Estoque da Farmácia Satélite
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1.5 font-medium">
+              <p className="font-bold flex items-center gap-1.5 text-amber-950 dark:text-amber-100">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                AVISO DE AUDITORIA E CONTROLE DE DISPENSAÇÃO:
+              </p>
+              <p>
+                O sistema de confirmação de baixa está em <strong>FASE DE HOMOLOGAÇÃO RESTRITA</strong>. A confirmação irá debitar o estoque real e registrar a movimentação na auditoria técnica.
+              </p>
+              <p className="text-[11px] text-red-700 dark:text-red-300 font-bold">
+                ⚠️ Tentativas com senha incorreta serão bloqueadas e registradas.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-red-600" />
+                Para liberar a baixa, insira a senha autorizada:
+              </label>
+              <Input
+                type="password"
+                autoFocus
+                placeholder="Insira a senha de liberação..."
+                value={senhaInput}
+                onChange={(e) => {
+                  setSenhaInput(e.target.value);
+                  if (senhaError) setSenhaError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleValidarSenhaEConfirmar();
+                  }
+                }}
+                className={cn(
+                  "h-11 text-center font-mono text-lg tracking-widest font-black border-2",
+                  senhaError
+                    ? "border-red-500 bg-red-50/50 text-red-900 focus-visible:ring-red-400"
+                    : "border-slate-300 focus-visible:ring-indigo-500"
+                )}
+              />
+              {senhaError && (
+                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1 animate-bounce">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  {senhaError}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSenhaModalOpen(false);
+                setSenhaInput("");
+                setSenhaError("");
+              }}
+              className="font-bold text-xs"
+            >
+              Cancelar e Bloquear
+            </Button>
+            <Button
+              type="button"
+              onClick={handleValidarSenhaEConfirmar}
+              disabled={executarBaixaMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white font-black text-xs gap-1.5 shadow-md px-5"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Liberar Baixa no Estoque
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
