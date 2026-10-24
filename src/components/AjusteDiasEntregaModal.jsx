@@ -322,16 +322,34 @@ export function AjusteDiasEntregaModal({
         return teveAlteracaoNaData(pr, dataFiltroReceita);
       })
       .map((pr) => {
-        const prMedId = String(pr.medicamentoId || pr.medicamento_id || "");
-        const prMedNome = pr.medicamentoNome || pr.medicamento_nome || "";
-        const prMedCodigo = pr.medicamentoCodigo || pr.medicamento_codigo || "";
+        const prMedId = String(pr.medicamentoId || pr.medicamento_id || "").trim();
+        const prMedNome = (pr.medicamentoNome || pr.medicamento_nome || "").trim();
+        const prMedConc = (pr.concentracao || "").trim().toLowerCase();
+        const prMedCodigo = (pr.medicamentoCodigo || pr.medicamento_codigo || "").trim();
 
-        const med = todosMedicamentos.find(
-          (m) =>
-            (m.id && String(m.id) === prMedId) ||
-            (m.codigo && prMedCodigo && m.codigo === prMedCodigo) ||
-            (m.nome && prMedNome && namesMatch(m.nome, prMedNome))
-        );
+        // 1. Busca estrita por ID (soberana)
+        let med = prMedId ? todosMedicamentos.find((m) => String(m.id).trim() === prMedId) : null;
+
+        // 2. Por código
+        if (!med && prMedCodigo) {
+          med = todosMedicamentos.find((m) => m.codigo && String(m.codigo).trim() === prMedCodigo);
+        }
+
+        // 3. Por nome E concentração
+        if (!med && prMedNome && prMedConc) {
+          med = todosMedicamentos.find(
+            (m) =>
+              m.nome &&
+              namesMatch(m.nome, prMedNome) &&
+              m.concentracao &&
+              m.concentracao.trim().toLowerCase() === prMedConc
+          );
+        }
+
+        // 4. Fallback por nome
+        if (!med && prMedNome) {
+          med = todosMedicamentos.find((m) => m.nome && namesMatch(m.nome, prMedNome));
+        }
 
         const medId = med?.id || prMedId;
         const medNome = med?.nome || prMedNome;
@@ -458,14 +476,15 @@ export function AjusteDiasEntregaModal({
 
         // Candidatos de lotes para este medicamento
         const lotesCandidatos = lotesEnriquecidos.filter((l) => {
-          const lMedId = String(l.medicamento_id || l.medicamentoId || "");
-          if (lMedId && (lMedId === String(medId) || lMedId === prMedId || (med?.id && lMedId === String(med.id)))) {
+          const lMedId = String(l.medicamento_id || l.medicamentoId || "").trim();
+          const targetId = String(med?.id || medId || prMedId || "").trim();
+          if (lMedId && targetId) {
+            return lMedId === targetId;
+          }
+          if (med?.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo) {
             return true;
           }
           if (l.medicamento_nome && (namesMatch(l.medicamento_nome, medNome) || namesMatch(l.medicamento_nome, prMedNome))) {
-            return true;
-          }
-          if (med?.codigo && l.medicamento_codigo && l.medicamento_codigo === med.codigo) {
             return true;
           }
           if (pr.lote_id && String(l.id) === String(pr.lote_id)) {

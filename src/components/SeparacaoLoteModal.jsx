@@ -67,12 +67,20 @@ import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
  */
 function isLoteDoMedicamento(lote, item, medicamentos = []) {
   if (!lote || !item) return false;
-  const lMedId = String(lote.medicamento_id || lote.medicamentoId || "");
-  const itemId = String(item.medicamentoId || "");
-  if (lMedId && itemId && lMedId === itemId) return true;
+  const lMedId = String(lote.medicamento_id || lote.medicamentoId || "").trim();
+  const itemId = String(item.medicamentoId || "").trim();
+  
+  // Se ambos têm ID, a correspondência por ID é soberana e estrita
+  if (lMedId && itemId) {
+    if (lMedId === itemId) return true;
+    const medObj = (medicamentos || []).find((m) => String(m.id).trim() === itemId);
+    if (medObj && String(medObj.id).trim() === lMedId) return true;
+    // Se ambos têm IDs e não batem, são medicamentos/dosagens diferentes!
+    return false;
+  }
 
-  const medObj = (medicamentos || []).find((m) => String(m.id) === itemId);
-  if (medObj && lMedId && String(medObj.id) === lMedId) return true;
+  const medObj = (medicamentos || []).find((m) => String(m.id).trim() === itemId);
+  if (medObj && lMedId && String(medObj.id).trim() === lMedId) return true;
 
   const lCodigo = lote.medicamento_codigo ? String(lote.medicamento_codigo).trim() : "";
   const itemCodigo = item.codigo ? String(item.codigo).trim() : (medObj?.codigo ? String(medObj.codigo).trim() : "");
@@ -89,10 +97,20 @@ function isLoteDoMedicamento(lote, item, medicamentos = []) {
   const lNome = normalize(lote.medicamento_nome);
   const itemNome = normalize(item.medicamentoNome || medObj?.nome);
   if (lNome && itemNome) {
-    if (lNome === itemNome) return true;
-    const cleanL = lNome.replace(/\b(comprimido|cp|frasco|ampola|gotas|mg|ml|mcg|g)\b/g, "").replace(/\s+/g, " ").trim();
-    const cleanItem = itemNome.replace(/\b(comprimido|cp|frasco|ampola|gotas|mg|ml|mcg|g)\b/g, "").replace(/\s+/g, " ").trim();
-    if (cleanL && cleanItem && cleanL === cleanItem) return true;
+    let nameMatches = lNome === itemNome;
+    if (!nameMatches) {
+      const cleanL = lNome.replace(/\b(comprimido|cp|frasco|ampola|gotas)\b/g, "").replace(/\s+/g, " ").trim();
+      const cleanItem = itemNome.replace(/\b(comprimido|cp|frasco|ampola|gotas)\b/g, "").replace(/\s+/g, " ").trim();
+      nameMatches = Boolean(cleanL && cleanItem && cleanL === cleanItem);
+    }
+    if (!nameMatches) return false;
+
+    // Se ambos tiverem concentração informada, ela DEVE bater para evitar misturar 500mg com 250mg ou suspensão
+    const lConc = normalize(lote.concentracao);
+    const itemConc = normalize(item.concentracao || medObj?.concentracao);
+    if (lConc && itemConc && lConc !== itemConc) return false;
+
+    return true;
   }
 
   return false;
@@ -120,6 +138,16 @@ export function SeparacaoLoteModal({
   const [senhaModalOpen, setSenhaModalOpen] = useState(false);
   const [senhaInput, setSenhaInput] = useState("");
   const [senhaError, setSenhaError] = useState("");
+
+  // Resetar filtro e busca ao abrir a modal, e atualizar estoque fresco
+  useEffect(() => {
+    if (open) {
+      setCategoriaFiltro("todos");
+      setSearchTerm("");
+      queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
+    }
+  }, [open, queryClient]);
 
   // Buscar todos os lotes do banco caso a prop venha vazia
   const { data: dbLotes = [] } = useQuery({
@@ -188,16 +216,40 @@ export function SeparacaoLoteModal({
         selectedPacs.find((p) => isPrescricaoDoPaciente(pr, p)) ||
         (pacientes || []).find((p) => isPrescricaoDoPaciente(pr, p));
 
-      const med = (medicamentos || []).find(
-        (m) =>
-          String(m.id) === String(pr.medicamentoId || pr.medicamento_id) ||
-          (pr.medicamentoCodigo && m.codigo && String(m.codigo).trim() === String(pr.medicamentoCodigo).trim()) ||
-          (m.nome && pr.medicamentoNome && m.nome.trim().toLowerCase() === pr.medicamentoNome.trim().toLowerCase())
-      );
+      const pMedId = String(pr.medicamentoId || pr.medicamento_id || pr.medicamentoid || "").trim();
+      const pCodigo = pr.medicamentoCodigo ? String(pr.medicamentoCodigo).trim() : "";
+      const pNome = (pr.medicamentoNome || "").trim().toLowerCase();
+      const pConc = (pr.concentracao || "").trim().toLowerCase();
 
-      const medId = String(med?.id || pr.medicamentoId || pr.medicamento_id || pr.medicamentoNome);
-      const medNome = pr.medicamentoNome || med?.nome || "Medicamento";
+      // 1. Busca estrita por ID exato do medicamento (PRIORIDADE MÁXIMA)
+      let med = pMedId ? (medicamentos || []).find((m) => String(m.id).trim() === pMedId) : null;
+
+      // 2. Busca por código cadastrado
+      if (!med && pCodigo) {
+        med = (medicamentos || []).find((m) => m.codigo && String(m.codigo).trim() === pCodigo);
+      }
+
+      // 3. Busca por NOME E CONCENTRAÇÃO exatas (evita que 500mg caia em 50mg/ml ou 250mg)
+      if (!med && pNome && pConc) {
+        med = (medicamentos || []).find(
+          (m) =>
+            m.nome &&
+            m.nome.trim().toLowerCase() === pNome &&
+            m.concentracao &&
+            m.concentracao.trim().toLowerCase() === pConc
+        );
+      }
+
+      // 4. Fallback por nome caso a prescrição não tenha concentração
+      if (!med && pNome) {
+        med = (medicamentos || []).find(
+          (m) => m.nome && m.nome.trim().toLowerCase() === pNome
+        );
+      }
+
       const concentracao = pr.concentracao || med?.concentracao || "";
+      const medNome = pr.medicamentoNome || med?.nome || "Medicamento";
+      const medId = med?.id ? String(med.id) : (pMedId || `${medNome}_${concentracao}`);
       const codigo = pr.medicamentoCodigo || med?.codigo || "";
       const psico = isPsicotropico(med || medNome);
 
@@ -524,13 +576,22 @@ export function SeparacaoLoteModal({
     setIsPrinting(true);
     document.body.classList.add("printing-separacao-lote");
 
+    const cleanup = () => {
+      document.body.classList.remove("printing-separacao-lote");
+      setIsPrinting(false);
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    window.addEventListener("afterprint", cleanup);
+
     setTimeout(() => {
       window.print();
-      setTimeout(() => {
-        document.body.classList.remove("printing-separacao-lote");
-        setIsPrinting(false);
-      }, 600);
-    }, 350);
+    }, 300);
+
+    // Timeout de segurança generoso caso o ambiente do Windows/Tauri não dispare afterprint
+    setTimeout(() => {
+      cleanup();
+    }, 15000);
   };
 
   // Mutação de Baixa em Lote dos itens filtrados
@@ -764,9 +825,11 @@ export function SeparacaoLoteModal({
           body.printing-separacao-lote #print-guia-separacao * {
             visibility: visible !important;
           }
+          body.printing-separacao-lote #root,
           body.printing-separacao-lote [role="dialog"],
           body.printing-separacao-lote .dialog-overlay,
           body.printing-separacao-lote #print-area,
+          body.printing-separacao-lote #print-area *,
           body.printing-separacao-lote header,
           body.printing-separacao-lote nav {
             display: none !important;
@@ -782,7 +845,7 @@ export function SeparacaoLoteModal({
       {/* ─── GUIA DE SEPARAÇÃO IMPRIMÍVEL (PORTAL DIRETO NO BODY) ────────────────── */}
       {typeof document !== "undefined" &&
         createPortal(
-          <div id="print-guia-separacao" className={isPrinting ? "block" : "hidden"}>
+          <div id="print-guia-separacao" className={cn(isPrinting ? "block" : "hidden", "print:!block")}>
             <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
               <div>
                 <span className="text-xl font-black tracking-tight uppercase text-blue-950">
@@ -1110,7 +1173,7 @@ export function SeparacaoLoteModal({
                     <TableBody className="text-xs divide-y divide-slate-100 dark:divide-slate-800">
                       {itensFiltrados.map((item) => {
                         const med = (medicamentos || []).find((m) => String(m.id) === String(item.medicamentoId));
-                        const estoqueSat = med ? Number(med.estoque_satelite) || 0 : 0;
+                        const estoqueSat = med ? (Number(med.estoque_satelite) || 0) : (Number(item.estoqueSatelite) || 0);
 
                         // Lotes disponíveis deste medicamento
                         const lotesSatComprovados = calcularLotesSatelite({
@@ -1230,7 +1293,7 @@ export function SeparacaoLoteModal({
                                           min="0"
                                           value={item.qtdTotal}
                                           onChange={(e) => handleUpdateQtdTotal(item.medicamentoId, e.target.value)}
-                                          className="w-20 h-8 text-center font-mono font-black text-sm bg-white dark:bg-slate-900 border-slate-300 text-indigo-900"
+                                          className="w-24 min-w-[5.5rem] h-8 px-1 text-center font-mono font-black text-sm bg-white dark:bg-slate-900 border-slate-300 text-indigo-900"
                                           title="Total somado de todos os pacientes (você pode editar antes da baixa)"
                                         />
                                         <span className="text-xs text-slate-600 font-bold">un</span>
@@ -1294,7 +1357,7 @@ export function SeparacaoLoteModal({
                                               e.target.value
                                             )
                                           }
-                                          className="w-16 h-7 text-center font-mono font-bold text-xs bg-white dark:bg-slate-900 border-slate-300"
+                                          className="w-24 min-w-[5.5rem] h-7 px-1 text-center font-mono font-bold text-xs bg-white dark:bg-slate-900 border-slate-300"
                                           title="Quantidade a retirar deste lote específico"
                                         />
                                         <span className="text-[10px] text-slate-500 font-mono">un</span>

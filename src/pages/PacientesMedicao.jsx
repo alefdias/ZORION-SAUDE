@@ -535,6 +535,7 @@ export default function PacientesMedicao() {
   const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
     queryKey: ['medicamentos'],
     queryFn: () => db.entities.Medicamento.list(),
+    refetchInterval: 3000,
   });
 
   // Mostra todos os medicamentos, independente do estoque (Central ou Satélite), conforme solicitado.
@@ -546,6 +547,7 @@ export default function PacientesMedicao() {
   const { data: lotes = [] } = useQuery({
     queryKey: ['lotes'],
     queryFn: () => db.entities.Lote.list(),
+    refetchInterval: 3000,
   });
 
   const { data: alas = [] } = useQuery({
@@ -3200,7 +3202,14 @@ export default function PacientesMedicao() {
                       <TableBody>
                         {activePrescs.map((pr) => {
                           const pac = selectedPacs.find(p => p.id === pr.pacienteId);
-                          const med = medicamentos.find(m => m.id === pr.medicamentoId);
+                          const pMedId = String(pr.medicamentoId || pr.medicamento_id || "").trim();
+                          const pCodigo = pr.medicamentoCodigo ? String(pr.medicamentoCodigo).trim() : "";
+                          const pNome = (pr.medicamentoNome || "").trim().toLowerCase();
+                          const pConc = (pr.concentracao || "").trim().toLowerCase();
+                          let med = pMedId ? medicamentos.find((m) => String(m.id).trim() === pMedId) : null;
+                          if (!med && pCodigo) med = medicamentos.find((m) => m.codigo && String(m.codigo).trim() === pCodigo);
+                          if (!med && pNome && pConc) med = medicamentos.find((m) => m.nome && m.nome.trim().toLowerCase() === pNome && m.concentracao && m.concentracao.trim().toLowerCase() === pConc);
+                          if (!med && pNome) med = medicamentos.find((m) => m.nome && m.nome.trim().toLowerCase() === pNome);
                           const targetEndStr = format(addDays(new Date(), batchBaixaDias - 1), "yyyy-MM-dd");
                           const cobAte = pr.coberto_ate ? pr.coberto_ate.split("T")[0] : null;
                           const jaCoberto = Boolean(cobAte && cobAte >= targetEndStr);
@@ -4458,7 +4467,13 @@ export default function PacientesMedicao() {
           : (alas.filter(a => printSelectedAlas.includes(String(a.id))).map(a => a.nome).join(" + ") || "Alas Selecionadas");
 
         return (
-          <div id="print-area" className="hidden print:block p-8 bg-white text-slate-900 font-sans">
+          <div
+            id="print-area"
+            className={cn(
+              "p-8 bg-white text-slate-900 font-sans",
+              separacaoModalOpen ? "hidden !important" : "hidden print:block"
+            )}
+          >
             <div className="border-b-2 border-blue-900 pb-4 mb-6 flex justify-between items-end">
               <div>
                 <h1 className="text-2xl font-black text-blue-950 uppercase tracking-tight">ZORION SAÚDE — PREVISÃO E SEPARAÇÃO DE MEDICAÇÃO FIXA</h1>
