@@ -799,11 +799,13 @@ export function SeparacaoLoteModal({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 8mm;
+            margin: 10mm 8mm 10mm 8mm;
           }
           body.printing-separacao-lote {
             background-color: white !important;
             color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           body.printing-separacao-lote > *:not(#print-guia-separacao) {
             display: none !important;
@@ -818,7 +820,7 @@ export function SeparacaoLoteModal({
             width: 100% !important;
             background: white !important;
             color: black !important;
-            padding: 5mm !important;
+            padding: 0 !important;
             margin: 0 !important;
             z-index: 99999999 !important;
           }
@@ -835,6 +837,26 @@ export function SeparacaoLoteModal({
             display: none !important;
             visibility: hidden !important;
           }
+
+          /* REPETIÇÃO DO CABEÇALHO DA TABELA EM TODAS AS FOLHAS (PÁGINA 1, 2, 3...) */
+          #print-guia-separacao table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          #print-guia-separacao thead {
+            display: table-header-group !important;
+          }
+          #print-guia-separacao thead tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          #print-guia-separacao tbody tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          #print-guia-separacao tfoot {
+            display: table-footer-group !important;
+          }
           .page-break-avoid {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
@@ -846,48 +868,52 @@ export function SeparacaoLoteModal({
       {typeof document !== "undefined" &&
         createPortal(
           <div id="print-guia-separacao" className={cn(isPrinting ? "block" : "hidden", "print:!block")}>
-            <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
+            {/* Header da Guia */}
+            <div className="border-b-2 border-slate-900 pb-3 mb-3 flex justify-between items-start">
               <div>
-                <span className="text-xl font-black tracking-tight uppercase text-blue-950">
-                  ZORION SAÚDE • FARMÁCIA SATÉLITE
+                <span className="text-xs font-black tracking-wider uppercase text-blue-900 block">
+                  ZORION HOSPITALAR • FARMÁCIA SATÉLITE
                 </span>
-                <h1 className="text-lg font-black uppercase text-slate-900 mt-0.5">
+                <h1 className="text-base font-black uppercase text-slate-900 mt-0.5 tracking-tight">
                   {tituloGuiaImpressa}
                 </h1>
-                <p className="text-xs font-semibold text-slate-700 mt-0.5">
-                  Ciclo: <strong>{dias} Dias</strong> | Cobertura:{" "}
-                  <strong>
-                    {format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}
-                  </strong>
-                </p>
+                <div className="flex items-center gap-3 text-xs font-medium text-slate-700 mt-1">
+                  <span>
+                    Ciclo: <strong className="text-slate-900">{dias} Dias</strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Cobertura: <strong className="text-slate-900">{format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong>
+                  </span>
+                </div>
               </div>
               <div className="text-right text-xs text-slate-800 space-y-0.5">
-                <p>
+                <p className="text-[11px] text-slate-600">
                   Emissão: <strong>{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong>
                 </p>
-                <p>
-                  Medicamentos: <strong>{itensFiltrados.length}</strong> | Pacientes Atendidos:{" "}
+                <p className="text-[11px]">
+                  Itens: <strong>{itensFiltrados.length}</strong> | Pacientes:{" "}
                   <strong>{totalPacientesAtendidos}</strong>
                 </p>
-                <p className="font-bold text-sm text-blue-900">
-                  Total Geral a Retirar: <strong>{totalGeralUnidades} un</strong>
-                </p>
+                <div className="mt-1 inline-block bg-slate-100 border border-slate-400 px-2 py-0.5 rounded font-black text-sm text-blue-950 font-mono">
+                  Total Geral: {totalGeralUnidades} un
+                </div>
               </div>
             </div>
 
+            {/* Tabela de Medicamentos */}
             <table className="w-full text-left border-collapse border border-slate-700 text-xs">
               <thead>
-                <tr className="bg-slate-200 text-slate-900 font-bold uppercase text-[10px]">
-                  <th className="border border-slate-700 p-2 text-center w-10">CONF.</th>
-                  <th className="border border-slate-700 p-2 w-20">CÓDIGO</th>
-                  <th className="border border-slate-700 p-2">MEDICAMENTO / APRESENTAÇÃO</th>
-                  <th className="border border-slate-700 p-2 text-center w-24">PACIENTES</th>
-                  <th className="border border-slate-700 p-2 text-center w-28 bg-slate-300">
+                <tr className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide">
+                  <th className="border border-slate-700 py-1.5 px-2 text-center w-10">CONF.</th>
+                  <th className="border border-slate-700 py-1.5 px-2.5">MEDICAMENTO / APRESENTAÇÃO</th>
+                  <th className="border border-slate-700 py-1.5 px-2 text-center w-20">PACIENTES</th>
+                  <th className="border border-slate-700 py-1.5 px-2 text-center w-28 bg-slate-300 text-slate-950">
                     TOTAL ({dias}d)
                   </th>
-                  <th className="border border-slate-700 p-2">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
-                  <th className="border border-slate-700 p-2 text-center w-20">ESTOQUE SAT.</th>
-                  <th className="border border-slate-700 p-2 w-28 text-center">VISTO</th>
+                  <th className="border border-slate-700 py-1.5 px-2.5">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
+                  <th className="border border-slate-700 py-1.5 px-2 text-center w-20">ESTOQUE SAT.</th>
+                  <th className="border border-slate-700 py-1.5 px-2 w-24 text-center">VISTO</th>
                 </tr>
               </thead>
               <tbody>
@@ -908,35 +934,39 @@ export function SeparacaoLoteModal({
                   return (
                     <tr
                       key={item.medicamentoId}
-                      className={`page-break-avoid ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
+                      className={`page-break-avoid ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
                     >
-                      <td className="border border-slate-700 p-2 text-center">
-                        <div className="w-4 h-4 border-2 border-slate-900 rounded-xs mx-auto" />
+                      <td className="border border-slate-700 py-1.5 px-2 text-center align-middle">
+                        <div className="w-4 h-4 border-2 border-slate-800 rounded-xs mx-auto bg-white" />
                       </td>
-                      <td className="border border-slate-700 p-2 font-mono text-[10px] font-bold">
-                        {item.codigo || "-"}
-                      </td>
-                      <td className="border border-slate-700 p-2 font-bold text-slate-900">
-                        <span className="text-xs uppercase">{item.medicamentoNome}</span>
-                        {item.concentracao &&
-                          !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
-                            <span className="text-[11px] font-bold text-indigo-900 ml-1">
-                              ({item.concentracao})
+                      <td className="border border-slate-700 py-1.5 px-2.5 font-bold text-slate-900 align-middle">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs uppercase font-extrabold text-slate-950">{item.medicamentoNome}</span>
+                          {item.concentracao &&
+                            !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
+                              <span className="text-[11px] font-bold text-indigo-900">
+                                ({item.concentracao})
+                              </span>
+                            )}
+                          {item.isPsicotropico && (
+                            <span className="text-[9px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
+                              PORTARIA 344
                             </span>
                           )}
-                        {item.isPsicotropico && (
-                          <span className="ml-1.5 text-[9px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
-                            PORTARIA 344
+                        </div>
+                        {item.codigo && (
+                          <span className="text-[9px] font-mono text-slate-500 font-semibold block mt-0.5">
+                            Cód: {item.codigo}
                           </span>
                         )}
                       </td>
-                      <td className="border border-slate-700 p-2 text-center text-xs font-bold text-slate-800">
+                      <td className="border border-slate-700 py-1.5 px-2 text-center text-xs font-bold text-slate-800 align-middle">
                         {item.pacientesAtendidos.length} pac.
                       </td>
-                      <td className="border border-slate-700 p-2 text-center font-black text-sm font-mono bg-slate-100 text-slate-950">
+                      <td className="border border-slate-700 py-1.5 px-2 text-center font-black text-sm font-mono bg-slate-100 text-slate-950 align-middle">
                         {item.qtdTotal} un
                       </td>
-                      <td className="border border-slate-700 p-2 font-mono text-[11px] font-semibold text-slate-900">
+                      <td className="border border-slate-700 py-1.5 px-2.5 font-mono text-[11px] font-semibold text-slate-900 align-middle">
                         {alocsComLote.length > 0 ? (
                           <div className="space-y-1">
                             {alocsComLote.map((a, aIdx) => {
@@ -954,7 +984,7 @@ export function SeparacaoLoteModal({
                                   <span className="font-bold text-slate-950">LOTE: {num}</span>
                                   <span className="text-slate-400">|</span>
                                   <span className="font-black text-indigo-950">VAL: {val}</span>
-                                  <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[10px] font-black">
+                                  <span className="text-slate-900 bg-slate-200 px-1.5 py-0.2 rounded text-[10px] font-black border border-slate-300">
                                     [{qtd} un]
                                   </span>
                                 </div>
@@ -968,7 +998,7 @@ export function SeparacaoLoteModal({
                             <span className="font-black text-indigo-950">
                               VAL: {safeFormatDate(medLotes[0].data_validade)}
                             </span>
-                            <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[10px] font-black">
+                            <span className="text-slate-900 bg-slate-200 px-1.5 py-0.2 rounded text-[10px] font-black border border-slate-300">
                               [{item.qtdTotal} un]
                             </span>
                           </div>
@@ -978,20 +1008,39 @@ export function SeparacaoLoteModal({
                           </span>
                         )}
                       </td>
-                      <td className="border border-slate-700 p-2 text-center font-mono text-xs font-bold text-slate-900">
+                      <td className="border border-slate-700 py-1.5 px-2 text-center font-mono text-xs font-bold text-slate-900 align-middle">
                         {item.estoqueSatelite} un
                       </td>
-                      <td className="border border-slate-700 p-2 text-center text-[10px] text-slate-400">
+                      <td className="border border-slate-700 py-1.5 px-2 text-center text-[10px] text-slate-400 align-middle">
                         __________
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="bg-slate-200 font-bold text-slate-950 text-xs">
+                  <td colSpan={2} className="border border-slate-700 py-1.5 px-2.5 text-right uppercase tracking-wider font-extrabold text-[11px]">
+                    Total Consolidado da Guia:
+                  </td>
+                  <td className="border border-slate-700 py-1.5 px-2 text-center font-extrabold">
+                    {totalPacientesAtendidos} pac.
+                  </td>
+                  <td className="border border-slate-700 py-1.5 px-2 text-center font-black font-mono text-sm bg-slate-300 text-slate-950">
+                    {totalGeralUnidades} un
+                  </td>
+                  <td colSpan={3} className="border border-slate-700 py-1.5 px-2.5 text-[10px] italic text-slate-600">
+                    Dispensação e controle de rastreabilidade por FEFO
+                  </td>
+                </tr>
+              </tfoot>
             </table>
 
             {/* Rodapé de Assinaturas da Guia Consolidada */}
-            <div className="mt-8 pt-4 border-t-2 border-slate-900 grid grid-cols-3 gap-6 text-center text-xs page-break-avoid">
+            <div
+              className="mt-6 pt-3 border-t-2 border-slate-800 grid grid-cols-3 gap-6 text-center text-xs page-break-avoid"
+              style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+            >
               <div>
                 <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
                 <p className="font-bold text-slate-900">Separado por (Farmácia)</p>
