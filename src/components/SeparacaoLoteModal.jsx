@@ -124,6 +124,8 @@ export function SeparacaoLoteModal({
   prescricoes = [],
   medicamentos = [],
   lotes = [],
+  alas = [],
+  filterAlas = [],
   onSuccess,
 }) {
   const queryClient = useQueryClient();
@@ -133,6 +135,13 @@ export function SeparacaoLoteModal({
   const [isPrinting, setIsPrinting] = useState(false);
   const [itensConsolidados, setItensConsolidados] = useState([]);
   const [expandedMeds, setExpandedMeds] = useState({});
+
+  // ── BUSCA DE ALAS CASO A PROP VENHA VAZIA ────────────────────────────────────
+  const { data: dbAlas = [] } = useQuery({
+    queryKey: ['alas'],
+    queryFn: () => (db.entities.Ala ? db.entities.Ala.list() : []),
+  });
+  const allAlas = useMemo(() => (alas && alas.length > 0 ? alas : dbAlas), [alas, dbAlas]);
 
   // ── SEGURANÇA / CONTROLE DE ACESSO (FASE DE TESTES - SENHA 102030) ──────────
   const [senhaModalOpen, setSenhaModalOpen] = useState(false);
@@ -792,6 +801,49 @@ export function SeparacaoLoteModal({
     return "GUIA DE SEPARAÇÃO CONSOLIDADA POR MEDICAMENTO (SOMA GERAL)";
   }, [categoriaFiltro]);
 
+  // Lista de nomes de Alas atendidas na impressão
+  const alasNomesTexto = useMemo(() => {
+    // 1. Se filterAlas veio específico e não é ['all']
+    if (filterAlas && filterAlas.length > 0 && !filterAlas.includes("all")) {
+      const nomes = filterAlas
+        .map((aid) => {
+          const found = allAlas.find((a) => String(a.id) === String(aid));
+          return found ? found.nome : null;
+        })
+        .filter(Boolean);
+      if (nomes.length > 0) return nomes.join(", ");
+    }
+
+    // 2. Extrai das alas dos pacientes selecionados
+    const setNomes = new Set();
+    (selectedPacs || []).forEach((p) => {
+      let nome = p.alaNome || p.ala_nome;
+      if (!nome && (p.alaId || p.ala_id)) {
+        const found = allAlas.find((a) => String(a.id) === String(p.alaId || p.ala_id));
+        if (found) nome = found.nome;
+      }
+      if (nome && nome.trim()) setNomes.add(nome.trim());
+    });
+
+    // 3. Fallback: extrai de itensFiltrados (pacientesAtendidos)
+    if (setNomes.size === 0) {
+      (itensFiltrados || []).forEach((item) => {
+        (item.pacientesAtendidos || []).forEach((pa) => {
+          let nome = pa.pac?.alaNome || pa.pac?.ala_nome;
+          if (!nome && (pa.pac?.alaId || pa.pac?.ala_id)) {
+            const found = allAlas.find((a) => String(a.id) === String(pa.pac?.alaId || pa.pac?.ala_id));
+            if (found) nome = found.nome;
+          }
+          if (nome && nome.trim()) setNomes.add(nome.trim());
+        });
+      });
+    }
+
+    const arr = Array.from(setNomes);
+    if (arr.length === 0) return "Todas as Alas / Geral";
+    return arr.join(", ");
+  }, [filterAlas, allAlas, selectedPacs, itensFiltrados]);
+
   // Paginação física explícita em páginas com tabelas fechadas (modelo Pedidos Central)
   const pageChunks = useMemo(() => {
     if (!itensFiltrados || itensFiltrados.length === 0) return [];
@@ -912,13 +964,30 @@ export function SeparacaoLoteModal({
                     <h1 className="text-base font-black uppercase text-slate-950 mt-0.5 tracking-tight">
                       {tituloGuiaImpressa}
                     </h1>
-                    <div className="flex items-center gap-3 text-xs font-medium text-slate-700 mt-0.5">
+
+                    {/* Linha Destacada de Ala(s) / Setores */}
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-950 border border-blue-400 px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-wide">
+                        ALA(S) / SETOR: {alasNomesTexto}
+                      </span>
+                      {selectedPacs.length === 1 && (
+                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-900 border border-slate-300 px-2 py-0.5 rounded text-[10px] font-bold">
+                          Paciente: <strong>{selectedPacs[0].nome}</strong> (Leito: {selectedPacs[0].leito || "S/L"})
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs font-medium text-slate-700 mt-1">
                       <span>
-                        Ciclo: <strong className="text-slate-900">{dias} Dias</strong>
+                        Ciclo: <strong className="text-slate-900">{dias} {dias === 1 ? "Dia" : "Dias"}</strong>
                       </span>
                       <span>•</span>
                       <span>
                         Cobertura: <strong className="text-slate-900">{format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong>
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Pacientes: <strong className="text-slate-900">{selectedPacs.length} selecionado(s)</strong>
                       </span>
                     </div>
                   </div>
@@ -943,7 +1012,7 @@ export function SeparacaoLoteModal({
                     <tr className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide border-b-2 border-slate-700">
                       <th className="border border-slate-700 py-1.5 px-1.5 text-center w-8">CONF.</th>
                       <th className="border border-slate-700 py-1.5 px-2">MEDICAMENTO / APRESENTAÇÃO</th>
-                      <th className="border border-slate-700 py-1.5 px-1 text-center w-16">PACIENTES</th>
+                      <th className="border border-slate-700 py-1.5 px-1 text-center w-28">PACIENTES / ALAS</th>
                       <th className="border border-slate-700 py-1.5 px-2 text-center w-24 bg-slate-300 text-slate-950">
                         TOTAL ({dias}d)
                       </th>
@@ -996,8 +1065,13 @@ export function SeparacaoLoteModal({
                               </span>
                             )}
                           </td>
-                          <td className="border border-slate-700 py-1 px-1 text-center text-[11px] font-bold text-slate-800 align-middle">
-                            {item.pacientesAtendidos.length} pac.
+                          <td className="border border-slate-700 py-1 px-1.5 text-center text-[10px] text-slate-800 align-middle">
+                            <span className="font-black text-[11px] block text-slate-950">
+                              {item.pacientesAtendidos.length} {item.pacientesAtendidos.length === 1 ? "paciente" : "pacientes"}
+                            </span>
+                            <div className="text-[9px] font-bold text-blue-900 bg-blue-50 border border-blue-200 rounded px-1 py-0.5 mt-0.5 inline-block max-w-[110px] truncate" title={item.pacientesAtendidos.map(pa => `${pa.pac?.nome || 'Pac'} (${pa.pac?.alaNome || 'Ala'} • L:${pa.pac?.leito || 'S/L'})`).join(', ')}>
+                              {Array.from(new Set(item.pacientesAtendidos.map(pa => pa.pac?.alaNome || pa.pac?.ala_nome).filter(Boolean))).join(', ') || alasNomesTexto}
+                            </div>
                           </td>
                           <td className="border border-slate-700 py-1 px-2 text-center font-black text-xs font-mono bg-slate-100 text-slate-950 align-middle">
                             {item.qtdTotal} un

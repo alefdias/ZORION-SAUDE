@@ -3122,6 +3122,8 @@ export default function PacientesMedicao() {
         prescricoes={prescricoes}
         medicamentos={medicamentos}
         lotes={lotes}
+        alas={alas}
+        filterAlas={filterAlas}
         onSuccess={() => {
           setSelectedPatientIds([]);
         }}
