@@ -799,13 +799,19 @@ export function SeparacaoLoteModal({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 10mm 8mm 10mm 8mm;
+            margin: 12mm 8mm 12mm 8mm;
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
           }
           body.printing-separacao-lote {
             background-color: white !important;
             color: black !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            height: auto !important;
+            overflow: visible !important;
           }
           body.printing-separacao-lote > *:not(#print-guia-separacao) {
             display: none !important;
@@ -814,15 +820,16 @@ export function SeparacaoLoteModal({
           body.printing-separacao-lote #print-guia-separacao {
             display: block !important;
             visibility: visible !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            position: static !important;
+            float: none !important;
             width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
             background: white !important;
             color: black !important;
             padding: 0 !important;
             margin: 0 !important;
-            z-index: 99999999 !important;
+            z-index: auto !important;
           }
           body.printing-separacao-lote #print-guia-separacao * {
             visibility: visible !important;
@@ -842,6 +849,7 @@ export function SeparacaoLoteModal({
           #print-guia-separacao table {
             width: 100% !important;
             border-collapse: collapse !important;
+            page-break-after: auto !important;
           }
           #print-guia-separacao thead {
             display: table-header-group !important;
@@ -850,7 +858,16 @@ export function SeparacaoLoteModal({
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
+          #print-guia-separacao tbody {
+            display: table-row-group !important;
+          }
           #print-guia-separacao tbody tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
+          }
+          #print-guia-separacao th,
+          #print-guia-separacao td {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
@@ -902,21 +919,27 @@ export function SeparacaoLoteModal({
             </div>
 
             {/* Tabela de Medicamentos */}
-            <table className="w-full text-left border-collapse border border-slate-700 text-xs">
-              <thead>
-                <tr className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide">
-                  <th className="border border-slate-700 py-1.5 px-2 text-center w-10">CONF.</th>
-                  <th className="border border-slate-700 py-1.5 px-2.5">MEDICAMENTO / APRESENTAÇÃO</th>
-                  <th className="border border-slate-700 py-1.5 px-2 text-center w-20">PACIENTES</th>
-                  <th className="border border-slate-700 py-1.5 px-2 text-center w-28 bg-slate-300 text-slate-950">
+            <table
+              className="w-full text-left border-collapse border border-slate-700 text-xs"
+              style={{ borderCollapse: "collapse", width: "100%", pageBreakAfter: "auto" }}
+            >
+              <thead style={{ display: "table-header-group" }}>
+                <tr
+                  className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide"
+                  style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                >
+                  <th className="border border-slate-700 py-1.5 px-1.5 text-center w-8">CONF.</th>
+                  <th className="border border-slate-700 py-1.5 px-2">MEDICAMENTO / APRESENTAÇÃO</th>
+                  <th className="border border-slate-700 py-1.5 px-1 text-center w-16">PACIENTES</th>
+                  <th className="border border-slate-700 py-1.5 px-2 text-center w-24 bg-slate-300 text-slate-950">
                     TOTAL ({dias}d)
                   </th>
-                  <th className="border border-slate-700 py-1.5 px-2.5">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
-                  <th className="border border-slate-700 py-1.5 px-2 text-center w-20">ESTOQUE SAT.</th>
-                  <th className="border border-slate-700 py-1.5 px-2 w-24 text-center">VISTO</th>
+                  <th className="border border-slate-700 py-1.5 px-2">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
+                  <th className="border border-slate-700 py-1.5 px-1 text-center w-20">ESTOQUE SAT.</th>
+                  <th className="border border-slate-700 py-1.5 px-1 w-20 text-center">VISTO</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody style={{ display: "table-row-group" }}>
                 {itensFiltrados.map((item, idx) => {
                   const medLotes = (allLotes || [])
                     .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
@@ -935,40 +958,56 @@ export function SeparacaoLoteModal({
                     <tr
                       key={item.medicamentoId}
                       className={`page-break-avoid ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
+                      style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
                     >
-                      <td className="border border-slate-700 py-1.5 px-2 text-center align-middle">
-                        <div className="w-4 h-4 border-2 border-slate-800 rounded-xs mx-auto bg-white" />
+                      <td
+                        className="border border-slate-700 py-1 px-1.5 text-center align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
+                        <div className="w-3.5 h-3.5 border-[1.5px] border-slate-800 rounded-xs mx-auto bg-white" />
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2.5 font-bold text-slate-900 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-2 font-bold text-slate-900 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-xs uppercase font-extrabold text-slate-950">{item.medicamentoNome}</span>
+                          <span className="text-[11px] uppercase font-bold text-slate-950">{item.medicamentoNome}</span>
                           {item.concentracao &&
                             !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
-                              <span className="text-[11px] font-bold text-indigo-900">
+                              <span className="text-[10px] font-bold text-indigo-900">
                                 ({item.concentracao})
                               </span>
                             )}
                           {item.isPsicotropico && (
-                            <span className="text-[9px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
+                            <span className="text-[8px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
                               PORTARIA 344
                             </span>
                           )}
                         </div>
                         {item.codigo && (
-                          <span className="text-[9px] font-mono text-slate-500 font-semibold block mt-0.5">
+                          <span className="text-[9px] font-mono text-slate-500 font-semibold block">
                             Cód: {item.codigo}
                           </span>
                         )}
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2 text-center text-xs font-bold text-slate-800 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-1 text-center text-[11px] font-bold text-slate-800 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         {item.pacientesAtendidos.length} pac.
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2 text-center font-black text-sm font-mono bg-slate-100 text-slate-950 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-2 text-center font-black text-xs font-mono bg-slate-100 text-slate-950 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         {item.qtdTotal} un
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2.5 font-mono text-[11px] font-semibold text-slate-900 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-2 font-mono text-[10px] font-semibold text-slate-900 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         {alocsComLote.length > 0 ? (
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             {alocsComLote.map((a, aIdx) => {
                               const lObj =
                                 (allLotes || []).find((l) => String(l.id) === String(a.loteId)) ||
@@ -980,11 +1019,11 @@ export function SeparacaoLoteModal({
                               const qtd = a.quantidade ?? item.qtdTotal;
 
                               return (
-                                <div key={aIdx} className="flex items-center gap-1.5 whitespace-nowrap">
+                                <div key={aIdx} className="flex items-center gap-1 whitespace-nowrap">
                                   <span className="font-bold text-slate-950">LOTE: {num}</span>
                                   <span className="text-slate-400">|</span>
                                   <span className="font-black text-indigo-950">VAL: {val}</span>
-                                  <span className="text-slate-900 bg-slate-200 px-1.5 py-0.2 rounded text-[10px] font-black border border-slate-300">
+                                  <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
                                     [{qtd} un]
                                   </span>
                                 </div>
@@ -992,13 +1031,13 @@ export function SeparacaoLoteModal({
                             })}
                           </div>
                         ) : medLotes.length > 0 ? (
-                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1 whitespace-nowrap">
                             <span className="font-bold text-slate-950">LOTE: {medLotes[0].numero_lote || "S/L"}</span>
                             <span className="text-slate-400">|</span>
                             <span className="font-black text-indigo-950">
                               VAL: {safeFormatDate(medLotes[0].data_validade)}
                             </span>
-                            <span className="text-slate-900 bg-slate-200 px-1.5 py-0.2 rounded text-[10px] font-black border border-slate-300">
+                            <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
                               [{item.qtdTotal} un]
                             </span>
                           </div>
@@ -1008,10 +1047,16 @@ export function SeparacaoLoteModal({
                           </span>
                         )}
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2 text-center font-mono text-xs font-bold text-slate-900 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-1 text-center font-mono text-[11px] font-bold text-slate-900 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         {item.estoqueSatelite} un
                       </td>
-                      <td className="border border-slate-700 py-1.5 px-2 text-center text-[10px] text-slate-400 align-middle">
+                      <td
+                        className="border border-slate-700 py-1 px-1 text-center text-[10px] text-slate-400 align-middle"
+                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                      >
                         __________
                       </td>
                     </tr>
