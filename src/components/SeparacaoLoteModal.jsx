@@ -792,6 +792,23 @@ export function SeparacaoLoteModal({
     return "GUIA DE SEPARAÇÃO CONSOLIDADA POR MEDICAMENTO (SOMA GERAL)";
   }, [categoriaFiltro]);
 
+  // Paginação física explícita em páginas com tabelas fechadas (modelo Pedidos Central)
+  const pageChunks = useMemo(() => {
+    if (!itensFiltrados || itensFiltrados.length === 0) return [];
+    if (itensFiltrados.length <= 11) return [itensFiltrados];
+
+    const total = itensFiltrados.length;
+    // Distribui de forma equilibrada (ex: 26 itens -> 2 páginas de 13)
+    const numPages = Math.ceil(total / 13);
+    const itemsPerPage = Math.ceil(total / numPages);
+
+    const chunks = [];
+    for (let i = 0; i < total; i += itemsPerPage) {
+      chunks.push(itensFiltrados.slice(i, i + itemsPerPage));
+    }
+    return chunks;
+  }, [itensFiltrados]);
+
   return (
     <>
       {/* ─── ESTILO DE IMPRESSÃO EXCLUSIVO PARA A GUIA DE SEPARAÇÃO CONSOLIDADA ────────── */}
@@ -799,84 +816,72 @@ export function SeparacaoLoteModal({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 12mm 8mm 12mm 8mm;
+            margin: 10mm 8mm 10mm 8mm;
           }
           html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-          }
-          body.printing-separacao-lote {
-            background-color: white !important;
-            color: black !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-            height: auto !important;
-            overflow: visible !important;
           }
           body.printing-separacao-lote > *:not(#print-guia-separacao) {
             display: none !important;
-            visibility: hidden !important;
           }
-          body.printing-separacao-lote #print-guia-separacao {
-            display: block !important;
-            visibility: visible !important;
-            position: static !important;
-            float: none !important;
-            width: 100% !important;
-            height: auto !important;
-            overflow: visible !important;
-            background: white !important;
-            color: black !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            z-index: auto !important;
-          }
-          body.printing-separacao-lote #print-guia-separacao * {
-            visibility: visible !important;
-          }
-          body.printing-separacao-lote #root,
-          body.printing-separacao-lote [role="dialog"],
-          body.printing-separacao-lote .dialog-overlay,
-          body.printing-separacao-lote #print-area,
-          body.printing-separacao-lote #print-area *,
-          body.printing-separacao-lote header,
-          body.printing-separacao-lote nav {
+          #root,
+          [role="dialog"],
+          [data-radix-portal],
+          [data-state],
+          .fixed,
+          .no-print,
+          #print-area,
+          #print-area *,
+          header,
+          nav,
+          aside,
+          footer,
+          button {
             display: none !important;
-            visibility: hidden !important;
           }
-
-          /* REPETIÇÃO DO CABEÇALHO DA TABELA EM TODAS AS FOLHAS (PÁGINA 1, 2, 3...) */
+          #print-guia-separacao {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            overflow: visible !important;
+          }
+          .sheet-page {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+          }
+          .sheet-page-break {
+            page-break-after: always !important;
+            break-after: page !important;
+          }
           #print-guia-separacao table {
             width: 100% !important;
             border-collapse: collapse !important;
-            page-break-after: auto !important;
           }
-          #print-guia-separacao thead {
-            display: table-header-group !important;
-          }
-          #print-guia-separacao thead tr {
-            break-inside: avoid !important;
+          #print-guia-separacao tr {
             page-break-inside: avoid !important;
-          }
-          #print-guia-separacao tbody {
-            display: table-row-group !important;
-          }
-          #print-guia-separacao tbody tr {
             break-inside: avoid !important;
-            page-break-inside: avoid !important;
-            page-break-after: auto !important;
           }
-          #print-guia-separacao th,
-          #print-guia-separacao td {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
-          #print-guia-separacao tfoot {
-            display: table-footer-group !important;
-          }
-          .page-break-avoid {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+        }
+        @media screen {
+          #print-guia-separacao {
+            display: none !important;
           }
         }
       `}</style>
@@ -885,223 +890,212 @@ export function SeparacaoLoteModal({
       {typeof document !== "undefined" &&
         createPortal(
           <div id="print-guia-separacao" className={cn(isPrinting ? "block" : "hidden", "print:!block")}>
-            {/* Header da Guia */}
-            <div className="border-b-2 border-slate-900 pb-3 mb-3 flex justify-between items-start">
-              <div>
-                <span className="text-xs font-black tracking-wider uppercase text-blue-900 block">
-                  ZORION HOSPITALAR • FARMÁCIA SATÉLITE
-                </span>
-                <h1 className="text-base font-black uppercase text-slate-900 mt-0.5 tracking-tight">
-                  {tituloGuiaImpressa}
-                </h1>
-                <div className="flex items-center gap-3 text-xs font-medium text-slate-700 mt-1">
-                  <span>
-                    Ciclo: <strong className="text-slate-900">{dias} Dias</strong>
-                  </span>
-                  <span>•</span>
-                  <span>
-                    Cobertura: <strong className="text-slate-900">{format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong>
-                  </span>
+            {pageChunks.map((chunk, pageIdx) => (
+              <div
+                key={pageIdx}
+                className={cn(
+                  "sheet-page bg-white text-slate-900 w-full",
+                  pageIdx < pageChunks.length - 1 && "sheet-page-break"
+                )}
+                style={{
+                  pageBreakAfter: pageIdx < pageChunks.length - 1 ? "always" : "auto",
+                  breakAfter: pageIdx < pageChunks.length - 1 ? "page" : "auto",
+                  paddingBottom: pageIdx < pageChunks.length - 1 ? "12mm" : "0",
+                }}
+              >
+                {/* Header Desta Folha */}
+                <div className="border-b-2 border-slate-900 pb-2.5 mb-3 flex justify-between items-start">
+                  <div>
+                    <span className="text-[11px] font-black tracking-wider uppercase text-blue-900 block">
+                      ZORION HOSPITALAR • FARMÁCIA SATÉLITE
+                    </span>
+                    <h1 className="text-base font-black uppercase text-slate-950 mt-0.5 tracking-tight">
+                      {tituloGuiaImpressa}
+                    </h1>
+                    <div className="flex items-center gap-3 text-xs font-medium text-slate-700 mt-0.5">
+                      <span>
+                        Ciclo: <strong className="text-slate-900">{dias} Dias</strong>
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Cobertura: <strong className="text-slate-900">{format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-slate-800 space-y-0.5">
+                    <p className="text-[11px] text-slate-600 font-mono">
+                      Emissão: <strong>{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong>
+                    </p>
+                    <div className="flex items-center justify-end gap-2 mt-1">
+                      <span className="bg-slate-100 border border-slate-400 px-2 py-0.5 rounded font-black text-xs text-blue-950 font-mono">
+                        Total: {totalGeralUnidades} un
+                      </span>
+                      <span className="bg-slate-900 text-white px-2 py-0.5 rounded font-bold text-xs font-mono">
+                        Folha {pageIdx + 1} de {pageChunks.length}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="text-right text-xs text-slate-800 space-y-0.5">
-                <p className="text-[11px] text-slate-600">
-                  Emissão: <strong>{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong>
-                </p>
-                <p className="text-[11px]">
-                  Itens: <strong>{itensFiltrados.length}</strong> | Pacientes:{" "}
-                  <strong>{totalPacientesAtendidos}</strong>
-                </p>
-                <div className="mt-1 inline-block bg-slate-100 border border-slate-400 px-2 py-0.5 rounded font-black text-sm text-blue-950 font-mono">
-                  Total Geral: {totalGeralUnidades} un
-                </div>
-              </div>
-            </div>
 
-            {/* Tabela de Medicamentos */}
-            <table
-              className="w-full text-left border-collapse border border-slate-700 text-xs"
-              style={{ borderCollapse: "collapse", width: "100%", pageBreakAfter: "auto" }}
-            >
-              <thead style={{ display: "table-header-group" }}>
-                <tr
-                  className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide"
-                  style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                >
-                  <th className="border border-slate-700 py-1.5 px-1.5 text-center w-8">CONF.</th>
-                  <th className="border border-slate-700 py-1.5 px-2">MEDICAMENTO / APRESENTAÇÃO</th>
-                  <th className="border border-slate-700 py-1.5 px-1 text-center w-16">PACIENTES</th>
-                  <th className="border border-slate-700 py-1.5 px-2 text-center w-24 bg-slate-300 text-slate-950">
-                    TOTAL ({dias}d)
-                  </th>
-                  <th className="border border-slate-700 py-1.5 px-2">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
-                  <th className="border border-slate-700 py-1.5 px-1 text-center w-20">ESTOQUE SAT.</th>
-                  <th className="border border-slate-700 py-1.5 px-1 w-20 text-center">VISTO</th>
-                </tr>
-              </thead>
-              <tbody style={{ display: "table-row-group" }}>
-                {itensFiltrados.map((item, idx) => {
-                  const medLotes = (allLotes || [])
-                    .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
-                    .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
-                    .sort((a, b) => {
-                      const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
-                      const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
-                      return da - db;
-                    });
+                {/* Tabela FECHADA Desta Folha */}
+                <table className="w-full text-left border-collapse border border-slate-700 text-xs mb-3">
+                  <thead>
+                    <tr className="bg-slate-200 text-slate-950 font-black uppercase text-[10px] tracking-wide border-b-2 border-slate-700">
+                      <th className="border border-slate-700 py-1.5 px-1.5 text-center w-8">CONF.</th>
+                      <th className="border border-slate-700 py-1.5 px-2">MEDICAMENTO / APRESENTAÇÃO</th>
+                      <th className="border border-slate-700 py-1.5 px-1 text-center w-16">PACIENTES</th>
+                      <th className="border border-slate-700 py-1.5 px-2 text-center w-24 bg-slate-300 text-slate-950">
+                        TOTAL ({dias}d)
+                      </th>
+                      <th className="border border-slate-700 py-1.5 px-2">LOTE(S) & VALIDADE A RETIRAR (FEFO)</th>
+                      <th className="border border-slate-700 py-1.5 px-1 text-center w-20">ESTOQUE SAT.</th>
+                      <th className="border border-slate-700 py-1.5 px-1 w-20 text-center">VISTO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chunk.map((item, idx) => {
+                      const medLotes = (allLotes || [])
+                        .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
+                        .filter((l) => !l.status || String(l.status).toLowerCase() !== "inativo")
+                        .sort((a, b) => {
+                          const da = a.data_validade ? new Date(a.data_validade).getTime() : 9999999999999;
+                          const db = b.data_validade ? new Date(b.data_validade).getTime() : 9999999999999;
+                          return da - db;
+                        });
 
-                  const alocsComLote = (item.alocacoes || []).filter(
-                    (a) => a.loteId || (a.numero_lote && a.numero_lote !== "Lote Geral" && a.numero_lote !== "S/ Lote")
-                  );
+                      const alocsComLote = (item.alocacoes || []).filter(
+                        (a) => a.loteId || (a.numero_lote && a.numero_lote !== "Lote Geral" && a.numero_lote !== "S/ Lote")
+                      );
 
-                  return (
-                    <tr
-                      key={item.medicamentoId}
-                      className={`page-break-avoid ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
-                      style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                    >
-                      <td
-                        className="border border-slate-700 py-1 px-1.5 text-center align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        <div className="w-3.5 h-3.5 border-[1.5px] border-slate-800 rounded-xs mx-auto bg-white" />
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-2 font-bold text-slate-900 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] uppercase font-bold text-slate-950">{item.medicamentoNome}</span>
-                          {item.concentracao &&
-                            !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
-                              <span className="text-[10px] font-bold text-indigo-900">
-                                ({item.concentracao})
+                      return (
+                        <tr
+                          key={item.medicamentoId}
+                          className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}
+                        >
+                          <td className="border border-slate-700 py-1 px-1.5 text-center align-middle">
+                            <div className="w-3.5 h-3.5 border-[1.5px] border-slate-800 rounded-xs mx-auto bg-white" />
+                          </td>
+                          <td className="border border-slate-700 py-1 px-2 font-bold text-slate-900 align-middle">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] uppercase font-bold text-slate-950">{item.medicamentoNome}</span>
+                              {item.concentracao &&
+                                !item.medicamentoNome.toLowerCase().includes(item.concentracao.toLowerCase()) && (
+                                  <span className="text-[10px] font-bold text-indigo-900">
+                                    ({item.concentracao})
+                                  </span>
+                                )}
+                              {item.isPsicotropico && (
+                                <span className="text-[8px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
+                                  PORTARIA 344
+                                </span>
+                              )}
+                            </div>
+                            {item.codigo && (
+                              <span className="text-[9px] font-mono text-slate-500 font-semibold block">
+                                Cód: {item.codigo}
                               </span>
                             )}
-                          {item.isPsicotropico && (
-                            <span className="text-[8px] font-black text-purple-900 bg-purple-100 px-1 py-0.2 rounded border border-purple-400">
-                              PORTARIA 344
-                            </span>
-                          )}
-                        </div>
-                        {item.codigo && (
-                          <span className="text-[9px] font-mono text-slate-500 font-semibold block">
-                            Cód: {item.codigo}
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-1 text-center text-[11px] font-bold text-slate-800 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        {item.pacientesAtendidos.length} pac.
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-2 text-center font-black text-xs font-mono bg-slate-100 text-slate-950 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        {item.qtdTotal} un
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-2 font-mono text-[10px] font-semibold text-slate-900 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        {alocsComLote.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {alocsComLote.map((a, aIdx) => {
-                              const lObj =
-                                (allLotes || []).find((l) => String(l.id) === String(a.loteId)) ||
-                                medLotes.find((l) => String(l.id) === String(a.loteId));
+                          </td>
+                          <td className="border border-slate-700 py-1 px-1 text-center text-[11px] font-bold text-slate-800 align-middle">
+                            {item.pacientesAtendidos.length} pac.
+                          </td>
+                          <td className="border border-slate-700 py-1 px-2 text-center font-black text-xs font-mono bg-slate-100 text-slate-950 align-middle">
+                            {item.qtdTotal} un
+                          </td>
+                          <td className="border border-slate-700 py-1 px-2 font-mono text-[10px] font-semibold text-slate-900 align-middle">
+                            {alocsComLote.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {alocsComLote.map((a, aIdx) => {
+                                  const lObj =
+                                    (allLotes || []).find((l) => String(l.id) === String(a.loteId)) ||
+                                    medLotes.find((l) => String(l.id) === String(a.loteId));
 
-                              const num = lObj?.numero_lote || a.numero_lote || medLotes[0]?.numero_lote || "S/ Lote";
-                              const rawVal = lObj?.data_validade || a.data_validade || medLotes[0]?.data_validade;
-                              const val = rawVal ? safeFormatDate(rawVal) : "-";
-                              const qtd = a.quantidade ?? item.qtdTotal;
+                                  const num = lObj?.numero_lote || a.numero_lote || medLotes[0]?.numero_lote || "S/ Lote";
+                                  const rawVal = lObj?.data_validade || a.data_validade || medLotes[0]?.data_validade;
+                                  const val = rawVal ? safeFormatDate(rawVal) : "-";
+                                  const qtd = a.quantidade ?? item.qtdTotal;
 
-                              return (
-                                <div key={aIdx} className="flex items-center gap-1 whitespace-nowrap">
-                                  <span className="font-bold text-slate-950">LOTE: {num}</span>
-                                  <span className="text-slate-400">|</span>
-                                  <span className="font-black text-indigo-950">VAL: {val}</span>
-                                  <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
-                                    [{qtd} un]
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : medLotes.length > 0 ? (
-                          <div className="flex items-center gap-1 whitespace-nowrap">
-                            <span className="font-bold text-slate-950">LOTE: {medLotes[0].numero_lote || "S/L"}</span>
-                            <span className="text-slate-400">|</span>
-                            <span className="font-black text-indigo-950">
-                              VAL: {safeFormatDate(medLotes[0].data_validade)}
-                            </span>
-                            <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
-                              [{item.qtdTotal} un]
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 italic text-[10px]">
-                            Lote Geral / Saldo da Satélite
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-1 text-center font-mono text-[11px] font-bold text-slate-900 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        {item.estoqueSatelite} un
-                      </td>
-                      <td
-                        className="border border-slate-700 py-1 px-1 text-center text-[10px] text-slate-400 align-middle"
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        __________
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-200 font-bold text-slate-950 text-xs">
-                  <td colSpan={2} className="border border-slate-700 py-1.5 px-2.5 text-right uppercase tracking-wider font-extrabold text-[11px]">
-                    Total Consolidado da Guia:
-                  </td>
-                  <td className="border border-slate-700 py-1.5 px-2 text-center font-extrabold">
-                    {totalPacientesAtendidos} pac.
-                  </td>
-                  <td className="border border-slate-700 py-1.5 px-2 text-center font-black font-mono text-sm bg-slate-300 text-slate-950">
-                    {totalGeralUnidades} un
-                  </td>
-                  <td colSpan={3} className="border border-slate-700 py-1.5 px-2.5 text-[10px] italic text-slate-600">
-                    Dispensação e controle de rastreabilidade por FEFO
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                                  return (
+                                    <div key={aIdx} className="flex items-center gap-1 whitespace-nowrap">
+                                      <span className="font-bold text-slate-950">LOTE: {num}</span>
+                                      <span className="text-slate-400">|</span>
+                                      <span className="font-black text-indigo-950">VAL: {val}</span>
+                                      <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
+                                        [{qtd} un]
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : medLotes.length > 0 ? (
+                              <div className="flex items-center gap-1 whitespace-nowrap">
+                                <span className="font-bold text-slate-950">LOTE: {medLotes[0].numero_lote || "S/L"}</span>
+                                <span className="text-slate-400">|</span>
+                                <span className="font-black text-indigo-950">
+                                  VAL: {safeFormatDate(medLotes[0].data_validade)}
+                                </span>
+                                <span className="text-slate-900 bg-slate-200 px-1 py-0.2 rounded text-[9px] font-black border border-slate-300">
+                                  [{item.qtdTotal} un]
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 italic text-[10px]">
+                                Lote Geral / Saldo da Satélite
+                              </span>
+                            )}
+                          </td>
+                          <td className="border border-slate-700 py-1 px-1 text-center font-mono text-[11px] font-bold text-slate-900 align-middle">
+                            {item.estoqueSatelite} un
+                          </td>
+                          <td className="border border-slate-700 py-1 px-1 text-center text-[10px] text-slate-400 align-middle">
+                            __________
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {pageIdx === pageChunks.length - 1 && (
+                    <tfoot>
+                      <tr className="bg-slate-200 font-bold text-slate-950 text-xs border-t-2 border-slate-700">
+                        <td colSpan={2} className="border border-slate-700 py-1.5 px-2 text-right uppercase tracking-wider font-extrabold text-[10px]">
+                          Total Consolidado da Guia:
+                        </td>
+                        <td className="border border-slate-700 py-1.5 px-1 text-center font-extrabold text-[11px]">
+                          {totalPacientesAtendidos} pac.
+                        </td>
+                        <td className="border border-slate-700 py-1.5 px-2 text-center font-black font-mono text-xs bg-slate-300 text-slate-950">
+                          {totalGeralUnidades} un
+                        </td>
+                        <td colSpan={3} className="border border-slate-700 py-1.5 px-2 text-[10px] italic text-slate-600">
+                          Dispensação e controle por FEFO
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
 
-            {/* Rodapé de Assinaturas da Guia Consolidada */}
-            <div
-              className="mt-6 pt-3 border-t-2 border-slate-800 grid grid-cols-3 gap-6 text-center text-xs page-break-avoid"
-              style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-            >
-              <div>
-                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-                <p className="font-bold text-slate-900">Separado por (Farmácia)</p>
-                <p className="text-[10px] text-slate-500">Data/Hora: ____/____/____ às ____:____</p>
+                {/* Bloco de Assinaturas na Última Página */}
+                {pageIdx === pageChunks.length - 1 && (
+                  <div className="mt-4 pt-3 border-t-2 border-slate-800 grid grid-cols-3 gap-6 text-center text-xs">
+                    <div>
+                      <div className="border-b border-slate-700 w-44 mx-auto mb-1" />
+                      <p className="font-bold text-slate-900 text-[11px]">Separado por (Farmácia)</p>
+                      <p className="text-[9px] text-slate-500 font-mono">Data/Hora: ____/____ às ____:____</p>
+                    </div>
+                    <div>
+                      <div className="border-b border-slate-700 w-44 mx-auto mb-1" />
+                      <p className="font-bold text-slate-900 text-[11px]">Conferido por (Farmacêutico RT)</p>
+                      <p className="text-[9px] text-slate-500 font-mono">CRF: __________________</p>
+                    </div>
+                    <div>
+                      <div className="border-b border-slate-700 w-44 mx-auto mb-1" />
+                      <p className="font-bold text-slate-900 text-[11px]">Recebido no Posto (Enfermagem)</p>
+                      <p className="text-[9px] text-slate-500 font-mono">COREN: _________________</p>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-                <p className="font-bold text-slate-900">Conferido por (Farmacêutico RT)</p>
-                <p className="text-[10px] text-slate-500">CRF: __________________</p>
-              </div>
-              <div>
-                <div className="border-b border-slate-700 w-48 mx-auto mb-1" />
-                <p className="font-bold text-slate-900">Recebido no Posto (Enfermagem)</p>
-                <p className="text-[10px] text-slate-500">COREN: _________________</p>
-              </div>
-            </div>
+            ))}
           </div>,
           document.body
         )}

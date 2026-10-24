@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Preview da Guia de Separação Consolidada (A4 Paginada)</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 10mm 8mm 10mm 8mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .page-sheet {
+      background: #ffffff;
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto 30px auto;
+      padding: 12mm 10mm;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      page-break-after: always;
+      break-after: page;
+      position: relative;
+    }
+    @media print {
+      body {
+        background: transparent !important;
+        padding: 0 !important;
+      }
+      .page-sheet {
+        width: 100% !important;
+        min-height: auto !important;
+        margin: 0 !important;
+        padding: 0 0 10mm 0 !important;
+        box-shadow: none !important;
+      }
+    }
+    .header-bar {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .hospital-title {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #1e3a8a;
+      display: block;
+    }
+    .main-title {
+      font-size: 15px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #0f172a;
+      margin: 2px 0 0 0;
+      letter-spacing: -0.02em;
+    }
+    .sub-info {
+      font-size: 11px;
+      color: #334155;
+      margin-top: 3px;
+    }
+    .badge-page {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .badge-total {
+      background: #f1f5f9;
+      border: 1px solid #94a3b8;
+      color: #0f172a;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 900;
+      font-family: monospace;
+      margin-right: 6px;
+    }
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1.5px solid #334155;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+    table.data-table th {
+      background: #e2e8f0;
+      color: #0f172a;
+      font-weight: 900;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.05em;
+      padding: 6px 8px;
+      border: 1px solid #334155;
+      border-bottom: 2px solid #0f172a;
+    }
+    table.data-table td {
+      padding: 4px 6px;
+      border: 1px solid #334155;
+      vertical-align: middle;
+    }
+    .check-box {
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid #0f172a;
+      border-radius: 2px;
+      margin: 0 auto;
+      background: #ffffff;
+    }
+    .badge-p344 {
+      font-size: 8px;
+      font-weight: 900;
+      color: #581c87;
+      background: #f3e8ff;
+      border: 1px solid #c084fc;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-left: 4px;
+    }
+    .badge-lote-qtd {
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-weight: 900;
+      font-size: 9px;
+    }
+    .signatures-block {
+      margin-top: 18px;
+      padding-top: 12px;
+      border-top: 2px solid #0f172a;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      text-align: center;
+      font-size: 11px;
+    }
+    .sign-line {
+      border-bottom: 1px solid #475569;
+      width: 80%;
+      margin: 0 auto 4px auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== FOLHA 1 DE 2 (TABELA FECHADA) ==================== -->
+  <div class="page-sheet">
+    <div class="header-bar">
+      <div>
+        <span class="hospital-title">ZORION HOSPITALAR • FARMÁCIA SATÉLITE</span>
+        <h1 class="main-title">GUIA CONSOLIDADA DE SEPARAÇÃO POR MEDICAMENTO (FEFO)</h1>
+        <div class="sub-info">
+          Ciclo: <strong>8 Dias</strong> • Cobertura: <strong>24/10/2026 a 31/10/2026</strong> • Setores: <strong>Todas as Alas (181 pac.)</strong>
+        </div>
+      </div>
+      <div style="text-align: right; font-family: monospace; font-size: 10px;">
+        <div>Emissão: <strong>24/10/2026 19:40</strong></div>
+        <div style="margin-top: 4px;">
+          <span class="badge-total">Total: 2004 un</span>
+          <span class="badge-page">Folha 1 de 2</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABELA FECHADA DA FOLHA 1 -->
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 32px; text-align: center;">Conf.</th>
+          <th style="text-align: left;">Medicamento / Apresentação</th>
+          <th style="width: 60px; text-align: center;">Pacientes</th>
+          <th style="width: 90px; text-align: center; background: #cbd5e1;">Total (8d)</th>
+          <th style="text-align: left;">Lote(s) & Validade a Retirar (FEFO)</th>
+          <th style="width: 70px; text-align: center;">Est. Sat.</th>
+          <th style="width: 65px; text-align: center;">Visto</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>ÁCIDO VALPRÓICO (500 MG)</strong></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: 40906656</strong> | VAL: 31/01/2027 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">872 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>AMITRIPTILINA, CLORIDRATO (25 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: B25C1679</strong> | VAL: 30/04/2027 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">450 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>ANLODIPINA, BESILATO (5 MG)</strong></td>
+          <td style="text-align: center;">10 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">144 un</td>
+          <td><strong>LOTE: B25H2825</strong> | VAL: 31/03/2027 <span class="badge-lote-qtd">[144 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">510 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>ARIPIPRAZOL (15 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">4 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">32 un</td>
+          <td><strong>LOTE: 25D25D</strong> | VAL: 31/03/2028 <span class="badge-lote-qtd">[32 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">264 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>ATENOLOL (25 MG)</strong></td>
+          <td style="text-align: center;">2 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">24 un</td>
+          <td><strong>LOTE: PH4089</strong> | VAL: 31/12/2026 <span class="badge-lote-qtd">[24 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">460 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>ATORVASTATINA (20 MG)</strong></td>
+          <td style="text-align: center;">3 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">32 un</td>
+          <td><strong>LOTE: 4Q4115</strong> | VAL: 28/08/2027 <span class="badge-lote-qtd">[32 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">148 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BACLOFENO (10 MG)</strong></td>
+          <td style="text-align: center;">5 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">80 un</td>
+          <td><strong>LOTE: 2717247</strong> | VAL: 31/03/2027 <span class="badge-lote-qtd">[80 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">286 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BENZILPENICILINA BENZATINA (1.200.000 UI)</strong></td>
+          <td style="text-align: center;">2 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">4 un</td>
+          <td><strong>LOTE: 2505887</strong> | VAL: 30/04/2027 <span class="badge-lote-qtd">[4 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">10 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BIPERIDENO, CLORIDRATO (2 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">28 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">344 un</td>
+          <td><strong>LOTE: 50029082</strong> | VAL: 30/06/2028 <span class="badge-lote-qtd">[344 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">509 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BISACODIL (5 MG)</strong></td>
+          <td style="text-align: center;">2 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">2 un</td>
+          <td><strong>LOTE: 2602760</strong> | VAL: 31/01/2028 <span class="badge-lote-qtd">[2 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">9 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BROMAZEPAM (3 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">2 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">24 un</td>
+          <td><strong>LOTE: 2447041</strong> | VAL: 30/11/2026 <span class="badge-lote-qtd">[24 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">432 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>BROMOPRIDA (10 MG)</strong></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: 4M0323</strong> | VAL: 31/10/2026 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">290 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CARBAMAZEPINA (200 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: 31224510</strong> | VAL: 28/02/2027 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">872 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+      </tbody>
+    </table>
+    <!-- TABELA FECHADA COM SUCESSO AQUI! NENHUMA LINHA FICA ABERTA NA BORDA DO PAPEL -->
+
+    <div style="font-size: 10px; color: #64748b; text-align: right; font-style: italic;">
+      Continua na Folha 2 de 2 ➔
+    </div>
+  </div>
+
+
+  <!-- ==================== FOLHA 2 DE 2 (TABELA FECHADA + ASSINATURAS) ==================== -->
+  <div class="page-sheet">
+    <div class="header-bar">
+      <div>
+        <span class="hospital-title">ZORION HOSPITALAR • FARMÁCIA SATÉLITE</span>
+        <h1 class="main-title">GUIA CONSOLIDADA DE SEPARAÇÃO POR MEDICAMENTO (FEFO)</h1>
+        <div class="sub-info">
+          Ciclo: <strong>8 Dias</strong> • Cobertura: <strong>24/10/2026 a 31/10/2026</strong> • Setores: <strong>Todas as Alas (181 pac.)</strong>
+        </div>
+      </div>
+      <div style="text-align: right; font-family: monospace; font-size: 10px;">
+        <div>Emissão: <strong>24/10/2026 19:40</strong></div>
+        <div style="margin-top: 4px;">
+          <span class="badge-total">Total: 2004 un</span>
+          <span class="badge-page">Folha 2 de 2</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABELA FECHADA DA FOLHA 2 -->
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 32px; text-align: center;">Conf.</th>
+          <th style="text-align: left;">Medicamento / Apresentação</th>
+          <th style="width: 60px; text-align: center;">Pacientes</th>
+          <th style="width: 90px; text-align: center; background: #cbd5e1;">Total (8d)</th>
+          <th style="text-align: left;">Lote(s) & Validade a Retirar (FEFO)</th>
+          <th style="width: 70px; text-align: center;">Est. Sat.</th>
+          <th style="width: 65px; text-align: center;">Visto</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CARBONATO DE LÍTIO (300 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: 50405243</strong> | VAL: 30/11/2027 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">982 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CITALOPRAM (20 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">7 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">60 un</td>
+          <td><strong>LOTE: DFG8388A</strong> | VAL: 30/11/2027 <span class="badge-lote-qtd">[60 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">396 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CLONAZEPAM (2 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">12 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">184 un</td>
+          <td><strong>LOTE: 5F5765</strong> | VAL: 30/10/2027 <span class="badge-lote-qtd">[184 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">552 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CLONAZEPAM (0,5 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">5 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">128 un</td>
+          <td><strong>LOTE: 2601506</strong> | VAL: 28/02/2028 <span class="badge-lote-qtd">[128 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">896 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CLORPROMAZINA, CLORIDRATO (25 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">4 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">112 un</td>
+          <td><strong>LOTE: 50031486</strong> | VAL: 31/08/2027 <span class="badge-lote-qtd">[112 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">788 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>CLORPROMAZINA, CLORIDRATO (100 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">6 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">104 un</td>
+          <td><strong>LOTE: 2532988</strong> | VAL: 31/08/2027 <span class="badge-lote-qtd">[104 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">686 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>DIAZEPAM (10 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">5 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">104 un</td>
+          <td><strong>LOTE: 30408525</strong> | VAL: 31/10/2027 <span class="badge-lote-qtd">[104 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">117 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>DULOXETINA (30 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">16 un</td>
+          <td><strong>LOTE: 2556340</strong> | VAL: 30/12/2027 <span class="badge-lote-qtd">[16 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">446 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>HALOPERIDOL (5 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">3 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">32 un</td>
+          <td><strong>LOTE: 50021613</strong> | VAL: 30/11/2026 <span class="badge-lote-qtd">[32 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">661 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>LEVOMEPROMAZINA, MALEATO (25 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">4 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">104 un</td>
+          <td><strong>LOTE: 50021606</strong> | VAL: 30/11/2026 <span class="badge-lote-qtd">[104 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">937 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>LEVOMEPROMAZINA, MALEATO (100 MG)</strong> <span class="badge-p344">PORTARIA 344</span></td>
+          <td style="text-align: center;">3 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">40 un</td>
+          <td><strong>LOTE: 50027383</strong> | VAL: 30/04/2027 <span class="badge-lote-qtd">[40 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">1435 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>NICOTINA GOMA (2 MG)</strong></td>
+          <td style="text-align: center;">2 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">128 un</td>
+          <td><strong>LOTE: 4992707</strong> | VAL: 30/11/2027 <span class="badge-lote-qtd">[128 un]</span></td>
+          <td style="text-align: center; font-weight: 700;">702 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><strong>POLIVITAMÍNICO (COMPRIMIDO)</strong></td>
+          <td style="text-align: center;">1 pac.</td>
+          <td style="text-align: center; font-weight: 900; background: #f1f5f9; font-family: monospace;">8 un</td>
+          <td><em>Saldo Geral da Satélite</em></td>
+          <td style="text-align: center; font-weight: 700;">250 un</td>
+          <td style="text-align: center; color: #94a3b8;">_______</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr style="background: #e2e8f0; font-weight: 900; border-top: 2px solid #0f172a;">
+          <td colspan="2" style="text-align: right; text-transform: uppercase; padding: 6px 8px; font-size: 10px;">
+            Total Consolidado da Guia:
+          </td>
+          <td style="text-align: center; font-size: 11px;">88 pac.</td>
+          <td style="text-align: center; font-size: 12px; font-family: monospace; background: #cbd5e1;">2004 un</td>
+          <td colspan="3" style="font-size: 10px; font-style: italic; color: #475569; padding-left: 8px;">
+            Dispensação e rastreabilidade por critério FEFO
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    <!-- TABELA FECHADA COM SUCESSO AQUI! -->
+
+    <!-- BLOCO DE ASSINATURAS FECHANDO A GUIA -->
+    <div class="signatures-block">
+      <div>
+        <div class="sign-line"></div>
+        <strong>Separado por (Farmácia)</strong>
+        <div style="font-size: 9px; color: #64748b; font-family: monospace; margin-top: 2px;">Data/Hora: ____/____ às ____:____</div>
+      </div>
+      <div>
+        <div class="sign-line"></div>
+        <strong>Conferido por (Farmacêutico RT)</strong>
+        <div style="font-size: 9px; color: #64748b; font-family: monospace; margin-top: 2px;">CRF: __________________</div>
+      </div>
+      <div>
+        <div class="sign-line"></div>
+        <strong>Recebido no Posto (Enfermagem)</strong>
+        <div style="font-size: 9px; color: #64748b; font-family: monospace; margin-top: 2px;">COREN: _________________</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
