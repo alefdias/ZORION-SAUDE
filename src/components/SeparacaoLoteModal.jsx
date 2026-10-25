@@ -902,20 +902,48 @@ export function SeparacaoLoteModal({
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
           }
+          #print-separacao-sheet-portal .sheets-print-container {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
           #print-separacao-sheet-portal .sheet-wrapper {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             page-break-inside: auto !important;
             break-inside: auto !important;
-            margin-bottom: 0 !important;
           }
-          #print-separacao-sheet-portal .page-break {
+          #print-separacao-sheet-portal .sheet-wrapper-clinico {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            page-break-after: always !important;
+            break-after: page !important;
+          }
+          #print-separacao-sheet-portal .sheet-wrapper-psico {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             page-break-before: always !important;
             break-before: page !important;
+          }
+          #print-separacao-sheet-portal .page-break-divider {
+            page-break-before: always !important;
+            break-before: page !important;
+            page-break-after: always !important;
+            break-after: page !important;
             clear: both !important;
             display: block !important;
-            height: 0 !important;
+            height: 1px !important;
             margin: 0 !important;
             padding: 0 !important;
             border: none !important;
+            visibility: hidden !important;
           }
           #print-separacao-sheet-portal table {
             width: 100% !important;
@@ -957,8 +985,7 @@ export function SeparacaoLoteModal({
       {open && typeof document !== "undefined" && createPortal(
         <div id="print-separacao-sheet-portal">
           <PrintGuiaContent
-            itensFiltrados={itensFiltrados}
-            categoriaFiltro={categoriaFiltro}
+            itensConsolidados={itensConsolidados}
             alasNomesTexto={alasNomesTexto}
             selectedPacs={selectedPacs}
             dias={dias}
@@ -993,12 +1020,12 @@ export function SeparacaoLoteModal({
                   onClick={handleImprimirGuia}
                   variant="outline"
                   size="sm"
-                  disabled={itensFiltrados.length === 0}
+                  disabled={itensConsolidados.length === 0}
                   className="h-9 px-3 text-xs font-bold gap-1.5 border-indigo-200 bg-indigo-50/70 text-indigo-900 hover:bg-indigo-100 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-200 shadow-xs"
-                  title="Imprimir folha consolidada por medicamento para separar na prateleira"
+                  title="Imprimir folhas separadas: 1 Clínico + 1 Psicotrópico (Portaria 344) automático"
                 >
                   <Printer className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  Imprimir Folha de Separação (A4)
+                  Imprimir Guia de Separação (Clínico + Psicotrópico)
                 </Button>
               </div>
             </div>
@@ -1916,8 +1943,7 @@ function SingleDepotGuiaSheet({
 
 // ─── FOLHA FORMAL A4 DE GUIA DE SEPARAÇÃO (USADA NA IMPRESSÃO DA SATÉLITE) ────────
 function PrintGuiaContent({
-  itensFiltrados,
-  categoriaFiltro,
+  itensConsolidados,
   alasNomesTexto,
   selectedPacs,
   dias,
@@ -1926,44 +1952,73 @@ function PrintGuiaContent({
   allLotes,
   medicamentos,
 }) {
-  const clinicos = (itensFiltrados || []).filter((i) => !i.isPsicotropico);
-  const psicotropicos = (itensFiltrados || []).filter((i) => i.isPsicotropico);
+  const clinicos = (itensConsolidados || []).filter((i) => !i.isPsicotropico);
+  const psicotropicos = (itensConsolidados || []).filter((i) => i.isPsicotropico);
 
-  const showClinicos = (categoriaFiltro === "todos" || categoriaFiltro === "clinico") && clinicos.length > 0;
-  const showPsico = (categoriaFiltro === "todos" || categoriaFiltro === "psicotropico") && psicotropicos.length > 0;
+  const hasClinicos = clinicos.length > 0;
+  const hasPsico = psicotropicos.length > 0;
 
   return (
-    <div className="w-full space-y-6">
-      {showClinicos && (
-        <SingleDepotGuiaSheet
-          tipo="clinico"
-          itens={clinicos}
-          alasNomesTexto={alasNomesTexto}
-          selectedPacs={selectedPacs}
-          dias={dias}
-          hoje={hoje}
-          dataFimDate={dataFimDate}
-          allLotes={allLotes}
-          medicamentos={medicamentos}
+    <div className="sheets-print-container w-full">
+      {/* Folha 1: Depósito Clínico */}
+      {hasClinicos && (
+        <div
+          className={cn(
+            "sheet-wrapper",
+            hasPsico && "sheet-wrapper-clinico"
+          )}
+          style={hasPsico ? { pageBreakAfter: "always", breakAfter: "page" } : undefined}
+        >
+          <SingleDepotGuiaSheet
+            tipo="clinico"
+            itens={clinicos}
+            alasNomesTexto={alasNomesTexto}
+            selectedPacs={selectedPacs}
+            dias={dias}
+            hoje={hoje}
+            dataFimDate={dataFimDate}
+            allLotes={allLotes}
+            medicamentos={medicamentos}
+          />
+        </div>
+      )}
+
+      {/* Quebra física de página garantida entre Folha Clínica e Psicotrópicos */}
+      {hasClinicos && hasPsico && (
+        <div
+          className="page-break-divider"
+          style={{
+            pageBreakBefore: "always",
+            breakBefore: "page",
+            pageBreakAfter: "always",
+            breakAfter: "page",
+            height: "1px",
+            clear: "both",
+          }}
         />
       )}
 
-      {showClinicos && showPsico && (
-        <div className="page-break" />
-      )}
-
-      {showPsico && (
-        <SingleDepotGuiaSheet
-          tipo="psicotropico"
-          itens={psicotropicos}
-          alasNomesTexto={alasNomesTexto}
-          selectedPacs={selectedPacs}
-          dias={dias}
-          hoje={hoje}
-          dataFimDate={dataFimDate}
-          allLotes={allLotes}
-          medicamentos={medicamentos}
-        />
+      {/* Folha 2: Depósito Psicotrópicos (Portaria 344) */}
+      {hasPsico && (
+        <div
+          className={cn(
+            "sheet-wrapper",
+            hasClinicos && "sheet-wrapper-psico"
+          )}
+          style={hasClinicos ? { pageBreakBefore: "always", breakBefore: "page" } : undefined}
+        >
+          <SingleDepotGuiaSheet
+            tipo="psicotropico"
+            itens={psicotropicos}
+            alasNomesTexto={alasNomesTexto}
+            selectedPacs={selectedPacs}
+            dias={dias}
+            hoje={hoje}
+            dataFimDate={dataFimDate}
+            allLotes={allLotes}
+            medicamentos={medicamentos}
+          />
+        </div>
       )}
     </div>
   );
