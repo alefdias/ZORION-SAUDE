@@ -27,7 +27,9 @@ export const safeParseHorarios = (horarios) => {
 export const getDoseForHora = (horariosData, targetHora) => {
   const list = safeParseHorarios(horariosData);
   const found = list.find((h) => h && h.hora === targetHora);
-  return found?.dose ?? 0;
+  if (!found || found.dose === undefined || found.dose === null || found.dose === "") return 0;
+  const num = parseFloat(String(found.dose).replace(",", "."));
+  return isNaN(num) ? 0 : num;
 };
 
 export const parseDiasSemana = (dias) => {
@@ -146,20 +148,41 @@ export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")
 }
 
 export const calculatePrescQtdParaDias = (pr, diasCount) => {
-  const d08 = getDoseForHora(pr.horarios, "08:00");
-  const d14 = getDoseForHora(pr.horarios, "14:00");
-  const d22 = getDoseForHora(pr.horarios, "22:00");
-  const d06 = getDoseForHora(pr.horarios, "06:00");
-  const calculatedDaily = d08 + d14 + d22 + d06;
-  const dailyTotal = calculatedDaily > 0 ? calculatedDaily : parseFloat(pr.totalDiario) || 0;
+  if (!pr) return 0;
+  const numDias = Math.max(0, parseInt(diasCount, 10) || 0);
+  if (numDias === 0) return 0;
 
-  const horarioInicio = pr.horarioInicio || "08:00";
-  const dataInicioStr = pr.dataInicio;
+  // 1. Extração segura e puramente numérica das doses de horarios
+  const horariosList = safeParseHorarios(pr.horarios);
+  let calculatedDaily = 0;
+  if (horariosList.length > 0) {
+    calculatedDaily = horariosList.reduce((acc, h) => {
+      const val = parseFloat(String(h?.dose ?? 0).replace(",", "."));
+      return acc + (isNaN(val) ? 0 : val);
+    }, 0);
+  }
+
+  // Se não obteve de horarios, tenta colunas fixas dose08, dose14, dose22, dose06
+  if (calculatedDaily <= 0) {
+    const d08 = parseFloat(String(pr.dose08 ?? 0).replace(",", ".")) || 0;
+    const d14 = parseFloat(String(pr.dose14 ?? 0).replace(",", ".")) || 0;
+    const d22 = parseFloat(String(pr.dose22 ?? 0).replace(",", ".")) || 0;
+    const d06 = parseFloat(String(pr.dose06 ?? 0).replace(",", ".")) || 0;
+    calculatedDaily = d08 + d14 + d22 + d06;
+  }
+
+  // Fallback para totalDiario ou dose
+  const rawTotalDiario = parseFloat(String(pr.totalDiario ?? pr.total_diario ?? pr.dose ?? 0).replace(",", ".")) || 0;
+  const dailyTotal = calculatedDaily > 0 ? calculatedDaily : rawTotalDiario;
+
+  if (dailyTotal <= 0) return 0;
 
   let maxDataFim = null;
   if (pr.dataFim) {
-    const pFim = pr.dataFim.split("-");
-    maxDataFim = new Date(parseInt(pFim[0], 10), parseInt(pFim[1], 10) - 1, parseInt(pFim[2], 10), 23, 59, 59);
+    const pFim = String(pr.dataFim).split("T")[0].split("-");
+    if (pFim.length === 3) {
+      maxDataFim = new Date(parseInt(pFim[0], 10), parseInt(pFim[1], 10) - 1, parseInt(pFim[2], 10), 23, 59, 59);
+    }
   }
 
   const diasArr = parseDiasSemana(pr.diasSemana);
@@ -170,13 +193,15 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   const tipoFreq = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
   const intervalo = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
   let dataInicioDate = null;
-  if (dataInicioStr) {
-    const pIni = dataInicioStr.split("-");
-    dataInicioDate = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10));
-    dataInicioDate.setHours(0, 0, 0, 0);
+  if (pr.dataInicio) {
+    const pIni = String(pr.dataInicio).split("T")[0].split("-");
+    if (pIni.length === 3) {
+      dataInicioDate = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10));
+      dataInicioDate.setHours(0, 0, 0, 0);
+    }
   }
 
-  for (let i = 0; i < diasCount; i++) {
+  for (let i = 0; i < numDias; i++) {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
 
@@ -188,51 +213,23 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
     if (tipoFreq === "intervalo_dias") {
       if (dataInicioDate) {
         const diffDays = Math.round((d.getTime() - dataInicioDate.getTime()) / (1000 * 60 * 60 * 24));
-        isDiaDeAdministracao = diffDays >= 0 && diffDays % intervalo === 0;
+        isDiaDeAdministracao = diffDays >= 0 && (diffDays % intervalo === 0);
       } else {
-        isDiaDeAdministracao = i % intervalo === 0;
+        isDiaDeAdministracao = (i % intervalo === 0);
       }
     } else {
-      isDiaDeAdministracao = diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay());
+      isDiaDeAdministracao = (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay()));
     }
 
     if (isDiaDeAdministracao) {
-      const dStr = format(d, "yyyy-MM-dd");
-
-      if (dataInicioStr && dStr === dataInicioStr) {
-        let dosesDoDiaInicio = 0;
-        if (horarioInicio === "06:00") {
-          dosesDoDiaInicio = d06 + d08 + d14 + d22;
-        } else if (horarioInicio === "08:00") {
-          dosesDoDiaInicio = d08 + d14 + d22;
-        } else if (horarioInicio === "14:00") {
-          dosesDoDiaInicio = d14 + d22;
-        } else if (horarioInicio === "22:00") {
-          dosesDoDiaInicio = d22;
-        } else {
-          dosesDoDiaInicio = dailyTotal;
-        }
-        totalDoses += dosesDoDiaInicio;
-      } else if (pr.dataFim && dStr === pr.dataFim && (horarioInicio === "22:00" || horarioInicio === "14:00")) {
-        let dosesDoUltimoDia = 0;
-        if (horarioInicio === "22:00") {
-          dosesDoUltimoDia = d06 + d08 + d14;
-        } else if (horarioInicio === "14:00") {
-          dosesDoUltimoDia = d06 + d08;
-        } else {
-          dosesDoUltimoDia = dailyTotal;
-        }
-        totalDoses += dosesDoUltimoDia;
-      } else {
-        totalDoses += dailyTotal;
-      }
+      totalDoses += dailyTotal;
     }
   }
 
-  // Fallback: se por algum motivo a posologia der 0 mas totalDiario > 0
-  if (totalDoses <= 0 && dailyTotal > 0) {
-    totalDoses = dailyTotal * diasCount;
+  // Garantia: se for prescrição diária sem dataFim limitante, deve bater exatamente dailyTotal * numDias
+  if (totalDoses <= 0 && (!pr.dataFim || (maxDataFim && maxDataFim >= hoje))) {
+    totalDoses = dailyTotal * numDias;
   }
 
-  return Math.ceil(totalDoses);
+  return Math.ceil(Math.round(totalDoses * 1000) / 1000);
 };

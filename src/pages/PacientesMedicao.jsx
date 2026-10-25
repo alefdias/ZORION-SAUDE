@@ -63,6 +63,36 @@ import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
 import { AjusteDiasEntregaModal } from "@/components/AjusteDiasEntregaModal";
 import { SeparacaoLoteModal } from "@/components/SeparacaoLoteModal";
 
+import {
+  DIAS_SEMANA_MAP,
+  safeParseHorarios,
+  getDoseForHora,
+  parseDiasSemana,
+  formatDiasSemana,
+  formatFrequenciaPrescricao,
+  isMedicamentoAntibiotico,
+  calcularDataFim,
+  calcularDiasEntre,
+  isPrescricaoDoPaciente,
+  isPrescricaoAtiva,
+  calculatePrescQtdParaDias,
+} from "@/utils/prescricaoUtils";
+
+export {
+  DIAS_SEMANA_MAP,
+  safeParseHorarios,
+  getDoseForHora,
+  parseDiasSemana,
+  formatDiasSemana,
+  formatFrequenciaPrescricao,
+  isMedicamentoAntibiotico,
+  calcularDataFim,
+  calcularDiasEntre,
+  isPrescricaoDoPaciente,
+  isPrescricaoAtiva,
+  calculatePrescQtdParaDias,
+};
+
 const getLocalDateString = () => {
   const d = new Date();
   const year = d.getFullYear();
@@ -71,236 +101,6 @@ const getLocalDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
-const safeParseHorarios = (horarios) => {
-  if (!horarios) return [];
-  if (Array.isArray(horarios)) return horarios;
-  if (typeof horarios === 'string') {
-    try {
-      const parsed = JSON.parse(horarios);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
-
-const getDoseForHora = (horariosData, targetHora) => {
-  const list = safeParseHorarios(horariosData);
-  const found = list.find(h => h && h.hora === targetHora);
-  return found?.dose ?? 0;
-};
-
-export const DIAS_SEMANA_MAP = [
-  { id: 1, label: "Seg", full: "Segunda-feira" },
-  { id: 2, label: "Ter", full: "Terça-feira" },
-  { id: 3, label: "Qua", full: "Quarta-feira" },
-  { id: 4, label: "Qui", full: "Quinta-feira" },
-  { id: 5, label: "Sex", full: "Sexta-feira" },
-  { id: 6, label: "Sáb", full: "Sábado" },
-  { id: 0, label: "Dom", full: "Domingo" },
-];
-
-export const parseDiasSemana = (dias) => {
-  if (!dias) return [0, 1, 2, 3, 4, 5, 6];
-  if (Array.isArray(dias)) return dias.map(Number);
-  if (typeof dias === 'string') {
-    try {
-      const parsed = JSON.parse(dias);
-      if (Array.isArray(parsed)) return parsed.map(Number);
-    } catch {}
-    if (dias.includes(',')) return dias.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
-  }
-  return [0, 1, 2, 3, 4, 5, 6];
-};
-
-export const formatDiasSemana = (dias) => {
-  const arr = parseDiasSemana(dias);
-  if (arr.length === 0) return "Nenhum dia";
-  if (arr.length === 7) return "Todos os dias (Diário)";
-  
-  const order = [1, 2, 3, 4, 5, 6, 0];
-  const sorted = [...arr].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  const str = sorted.join(',');
-  if (str === "1,2,3,4,5") return "Seg a Sex";
-  if (str === "1,3,5") return "Seg, Qua, Sex";
-  if (str === "6,0" || str === "0,6") return "Fim de semana (Sáb/Dom)";
-  if (str === "1,2,3") return "Seg, Ter, Qua";
-
-  const labels = sorted.map(id => {
-    const found = DIAS_SEMANA_MAP.find(d => d.id === id);
-    return found ? found.label : "";
-  }).filter(Boolean);
-  
-  return labels.join(', ');
-};
-
-export const formatFrequenciaPrescricao = (pr) => {
-  if (!pr) return "";
-  const tipo = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
-  if (tipo === "intervalo_dias") {
-    const inter = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
-    if (inter === 1) return "Todos os dias (Diário)";
-    if (inter === 2) return "A cada 2 dias (Dia sim / Dia não)";
-    if (inter === 7) return "A cada 7 dias (Semanal)";
-    if (inter === 10) return "A cada 10 dias (Ex: Haldol Decanoato)";
-    if (inter === 14) return "A cada 14 dias (Quinzenal)";
-    if (inter === 15) return "A cada 15 dias";
-    if (inter === 21) return "A cada 21 dias (3 semanas)";
-    if (inter === 28) return "A cada 28 dias (4 semanas)";
-    if (inter === 30) return "A cada 30 dias (Mensal)";
-    return `A cada ${inter} dias`;
-  }
-  return formatDiasSemana(pr.diasSemana);
-};
-
-export function isMedicamentoAntibiotico(med) {
-  if (!med) return false;
-  if (med.antimicrobiano) return true;
-  const grupo = (med.grupo_terapeutico || "").toUpperCase();
-  if (grupo.includes("ANTIBI") || grupo.includes("ANTIMICROB")) return true;
-  const nome = (med.nome || "").toLowerCase();
-  return /amoxicilina|ampicilina|azitromicina|claritromicina|cefalexina|ceftriaxona|cefazolina|ciprofloxacino|levofloxacino|metronidazol|vancomicina|meropenem|piperacilina|gentamicina|amikacina|clindamicina|sulfametoxazol|ceftazidima|oxacilina|penicilina|polimixina|daptomicina|linezolida|ertapenem|colistina|tobramicina/i.test(nome);
-}
-
-export function calcularDataFim(inicioStr, diasQtd, horarioInicio = "08:00") {
-  if (!inicioStr || !diasQtd || parseInt(diasQtd, 10) <= 0) return "";
-  const parts = inicioStr.split("-");
-  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-  const diasNum = parseInt(diasQtd, 10);
-  
-  // Se iniciou à noite (22h) ou à tarde (14h), o paciente só toma parte das doses no 1º dia.
-  // Portanto, para completar todos os ciclos de 24h, o tratamento se estende até o próximo dia correspondente.
-  const diasAdicionar = (horarioInicio === "22:00" || horarioInicio === "14:00") ? diasNum : (diasNum - 1);
-  d.setDate(d.getDate() + diasAdicionar);
-  const ano = d.getFullYear();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
-}
-
-export function calcularDiasEntre(inicioStr, fimStr, horarioInicio = "08:00") {
-  if (!inicioStr || !fimStr) return "";
-  const p1 = inicioStr.split("-");
-  const p2 = fimStr.split("-");
-  const d1 = new Date(parseInt(p1[0], 10), parseInt(p1[1], 10) - 1, parseInt(p1[2], 10));
-  const d2 = new Date(parseInt(p2[0], 10), parseInt(p2[1], 10) - 1, parseInt(p2[2], 10));
-  const diffTime = d2.getTime() - d1.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  if (diffDays <= 0) return 1;
-  // Se iniciou à noite (22h) ou à tarde (14h), precisou de +1 dia de calendário para fechar o ciclo de 24h
-  if (horarioInicio === "22:00" || horarioInicio === "14:00") {
-    return Math.max(1, diffDays - 1);
-  }
-  return diffDays;
-}
-
-export function isPrescricaoDoPaciente(pr, pacienteIdOrObj) {
-  if (!pr || !pacienteIdOrObj) return false;
-  const targetId = typeof pacienteIdOrObj === "object" ? String(pacienteIdOrObj.id || "") : String(pacienteIdOrObj);
-  const targetProntuario = typeof pacienteIdOrObj === "object" ? (pacienteIdOrObj.prontuario || "") : "";
-  const targetNome = typeof pacienteIdOrObj === "object" ? (pacienteIdOrObj.nome || "") : "";
-
-  const pId = String(pr.pacienteId || pr.paciente_id || pr.pacienteid || "");
-  if (targetId && pId && pId !== "[object Object]" && pId === targetId) return true;
-  if (targetProntuario && pr.prontuario && String(pr.prontuario).trim() === String(targetProntuario).trim()) return true;
-  if (targetNome && pr.pacienteNome && String(pr.pacienteNome).trim().toLowerCase() === targetNome.trim().toLowerCase()) return true;
-  return false;
-}
-
-export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")) {
-  if (!pr) return false;
-  const status = (pr.status || "Ativa").trim().toLowerCase();
-  if (status !== "ativa") return false;
-  if (pr.dataFim && pr.dataFim < hojeStr) return false;
-  return true;
-}
-
-export const calculatePrescQtdParaDias = (pr, diasCount) => {
-  const d08 = getDoseForHora(pr.horarios, "08:00");
-  const d14 = getDoseForHora(pr.horarios, "14:00");
-  const d22 = getDoseForHora(pr.horarios, "22:00");
-  const d06 = getDoseForHora(pr.horarios, "06:00");
-  const calculatedDaily = d08 + d14 + d22 + d06;
-  const dailyTotal = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
-
-  const horarioInicio = pr.horarioInicio || "08:00";
-  const dataInicioStr = pr.dataInicio;
-
-  let maxDataFim = null;
-  if (pr.dataFim) {
-    const pFim = pr.dataFim.split("-");
-    maxDataFim = new Date(parseInt(pFim[0], 10), parseInt(pFim[1], 10) - 1, parseInt(pFim[2], 10), 23, 59, 59);
-  }
-
-  const diasArr = parseDiasSemana(pr.diasSemana);
-  let totalDoses = 0;
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-
-  const tipoFreq = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
-  const intervalo = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
-  let dataInicioDate = null;
-  if (dataInicioStr) {
-    const pIni = dataInicioStr.split("-");
-    dataInicioDate = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10));
-    dataInicioDate.setHours(0, 0, 0, 0);
-  }
-
-  for (let i = 0; i < diasCount; i++) {
-    const d = new Date(hoje);
-    d.setDate(hoje.getDate() + i);
-
-    if (maxDataFim && d > maxDataFim) {
-      break;
-    }
-
-    let isDiaDeAdministracao = false;
-    if (tipoFreq === "intervalo_dias") {
-      if (dataInicioDate) {
-        const diffDays = Math.round((d.getTime() - dataInicioDate.getTime()) / (1000 * 60 * 60 * 24));
-        isDiaDeAdministracao = diffDays >= 0 && (diffDays % intervalo === 0);
-      } else {
-        isDiaDeAdministracao = (i % intervalo === 0);
-      }
-    } else {
-      isDiaDeAdministracao = (diasArr.length === 7 || diasArr.length === 0 || diasArr.includes(d.getDay()));
-    }
-
-    if (isDiaDeAdministracao) {
-      const dStr = format(d, "yyyy-MM-dd");
-
-      // No dia exato de início da prescrição, apenas as doses a partir do horário de início são administradas
-      if (dataInicioStr && dStr === dataInicioStr) {
-        let dosesDoDiaInicio = 0;
-        if (horarioInicio === "06:00") {
-          dosesDoDiaInicio = d06 + d08 + d14 + d22;
-        } else if (horarioInicio === "08:00") {
-          dosesDoDiaInicio = d08 + d14 + d22;
-        } else if (horarioInicio === "14:00") {
-          dosesDoDiaInicio = d14 + d22;
-        } else if (horarioInicio === "22:00") {
-          dosesDoDiaInicio = d22;
-        } else {
-          dosesDoDiaInicio = dailyTotal;
-        }
-        totalDoses += dosesDoDiaInicio;
-      } else if (pr.dataFim && dStr === pr.dataFim && (horarioInicio === "22:00" || horarioInicio === "14:00")) {
-        // No último dia, se iniciou à noite ou tarde, toma apenas as doses restantes que fecham o ciclo durante o dia
-        let dosesDoUltimoDia = 0;
-        if (horarioInicio === "22:00") {
-          dosesDoUltimoDia = d06 + d08 + d14;
-        } else if (horarioInicio === "14:00") {
-          dosesDoUltimoDia = d06 + d08;
-        }
-        totalDoses += dosesDoUltimoDia;
-      } else {
-        totalDoses += dailyTotal;
-      }
-    }
-  }
-  return Math.round(totalDoses);
-};
 
 export default function PacientesMedicao() {
   const navigate = useNavigate();
@@ -1646,7 +1446,7 @@ export default function PacientesMedicao() {
     const hojeStr = format(new Date(), "yyyy-MM-dd");
     const ativas = prescricoes.filter(p => {
       if (!isPrescricaoAtiva(p, hojeStr)) return false;
-      const pac = pacientes.find(patient => patient.id === p.pacienteId);
+      const pac = pacientes.find(patient => isPrescricaoDoPaciente(p, patient) || String(patient.id) === String(p.pacienteId));
       return pac && pac.status !== "Alta";
     });
     
@@ -1656,46 +1456,62 @@ export default function PacientesMedicao() {
     const patientMap = {};
 
     ativas.forEach(p => {
-      const patient = pacientes.find(pac => pac.id === p.pacienteId) || {
+      const patient = pacientes.find(pac => isPrescricaoDoPaciente(p, pac) || String(pac.id) === String(p.pacienteId)) || {
         nome: p.pacienteNome || "Paciente",
         prontuario: p.prontuario || "-",
         alaNome: p.alaNome || "-",
         leito: p.leito || "-"
       };
 
-      const med = medicamentos.find(m => m.id === p.medicamentoId) || {
+      const pMedId = String(p.medicamentoId || p.medicamento_id || "").trim();
+      const pCodigo = p.medicamentoCodigo ? String(p.medicamentoCodigo).trim() : "";
+      const pNome = (p.medicamentoNome || "").trim().toLowerCase();
+
+      const med = (pMedId ? medicamentos.find(m => String(m.id).trim() === pMedId) : null) ||
+                  (pCodigo ? medicamentos.find(m => m.codigo && String(m.codigo).trim() === pCodigo) : null) ||
+                  (pNome ? medicamentos.find(m => m.nome && m.nome.trim().toLowerCase() === pNome) : null) || {
+        id: pMedId,
         nome: p.medicamentoNome || "Medicamento",
         codigo: p.medicamentoCodigo || "-",
         apresentacao: p.apresentacao || "-",
         concentracao: p.concentracao || "-",
-        estoque_atual: 0
+        estoque_satelite: 0
       };
 
-      const dailyDose = p.totalDiario || 0;
-      const periodDose = calculatePrescQtdParaDias(p, periodoDias);
+      const rawDaily = parseFloat(String(p.totalDiario ?? p.total_diario ?? 0).replace(",", ".")) || 0;
+      const d08 = getDoseForHora(p.horarios, "08:00");
+      const d14 = getDoseForHora(p.horarios, "14:00");
+      const d22 = getDoseForHora(p.horarios, "22:00");
+      const d06 = getDoseForHora(p.horarios, "06:00");
+      const sumH = d08 + d14 + d22 + d06;
+      const dailyDose = rawDaily > 0 ? rawDaily : (sumH > 0 ? sumH : 0);
+      const periodDose = Number(calculatePrescQtdParaDias(p, periodoDias)) || 0;
+
+      const medKey = String(med.id || pMedId || `${p.medicamentoNome}_${p.concentracao}`);
 
       // Group Meds
-      if (!medMap[p.medicamentoId]) {
-        medMap[p.medicamentoId] = {
-          medicamentoId: p.medicamentoId,
+      if (!medMap[medKey]) {
+        medMap[medKey] = {
+          medicamentoId: medKey,
           nome: med.nome,
           codigo: med.codigo,
           apresentacao: med.apresentacao,
-          concentracao: med.concentracao,
+          concentracao: med.concentracao || p.concentracao,
           estoqueAtual: Number(med.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdPeriodo: 0,
           pacientesSet: new Set()
         };
       }
-      medMap[p.medicamentoId].qtdDiaria += dailyDose;
-      medMap[p.medicamentoId].qtdPeriodo += periodDose;
-      medMap[p.medicamentoId].pacientesSet.add(patient.nome);
+      medMap[medKey].qtdDiaria = Math.round((medMap[medKey].qtdDiaria + dailyDose) * 100) / 100;
+      medMap[medKey].qtdPeriodo = Math.round((medMap[medKey].qtdPeriodo + periodDose) * 100) / 100;
+      medMap[medKey].pacientesSet.add(patient.nome);
 
       // Group Patients
-      if (!patientMap[p.pacienteId]) {
-        patientMap[p.pacienteId] = {
-          pacienteId: p.pacienteId,
+      const pKey = String(patient.id || p.pacienteId || patient.nome);
+      if (!patientMap[pKey]) {
+        patientMap[pKey] = {
+          pacienteId: pKey,
           nome: patient.nome,
           prontuario: patient.prontuario,
           alaNome: patient.alaNome,
@@ -1703,12 +1519,13 @@ export default function PacientesMedicao() {
           prescricoes: []
         };
       }
-      patientMap[p.pacienteId].prescricoes.push({
+      patientMap[pKey].prescricoes.push({
         ...p,
         medNome: med.nome,
         medCodigo: med.codigo,
-        medConcentracao: med.concentracao,
-        medApresentacao: med.apresentacao,
+        medConcentracao: med.concentracao || p.concentracao,
+        medApresentacao: med.apresentacao || p.apresentacao,
+        totalDiario: dailyDose,
         qtdPeriodo: periodDose
       });
     });
@@ -1744,15 +1561,18 @@ export default function PacientesMedicao() {
     const hojeStr = format(new Date(), "yyyy-MM-dd");
     const ativas = prescricoes.filter(p => {
       if (!isPrescricaoAtiva(p, hojeStr)) return false;
-      const pac = pacientes.find(patient => patient.id === p.pacienteId);
+      const pac = pacientes.find(patient => isPrescricaoDoPaciente(p, patient) || String(patient.id) === String(p.pacienteId));
       if (!pac || pac.status === "Alta") return false;
 
       // 1. Filtro de paciente por checklist: se printSelectedPatientIds tiver seleção, deve estar contido
       if (printSelectedPatientIds.length > 0) {
-        if (!printSelectedPatientIds.includes(p.pacienteId)) return false;
+        const matchSelected = printSelectedPatientIds.some(id => 
+          String(id) === String(p.pacienteId) || (pac && String(id) === String(pac.id))
+        );
+        if (!matchSelected) return false;
       } else if (!printSelectedAlas.includes("all") && printSelectedAlas.length > 0) {
         // Se nenhum paciente selecionado individualmente, filtra pelas alas marcadas
-        const pacAlaId = pac.alaId || pac.ala_id || "";
+        const pacAlaId = String(pac.alaId || pac.ala_id || "");
         const pacAlaNome = (pac.alaNome || pac.ala_nome || "").trim().toLowerCase();
         const matchAla = printSelectedAlas.some(aid => {
           const alaObj = alas.find(a => String(a.id) === String(aid));
@@ -1768,44 +1588,60 @@ export default function PacientesMedicao() {
     const patientMap = {};
 
     ativas.forEach(p => {
-      const patient = pacientes.find(pac => pac.id === p.pacienteId) || {
+      const patient = pacientes.find(pac => isPrescricaoDoPaciente(p, pac) || String(pac.id) === String(p.pacienteId)) || {
         nome: p.pacienteNome || "Paciente",
         prontuario: p.prontuario || "-",
         alaNome: p.alaNome || "-",
         leito: p.leito || "-"
       };
 
-      const med = medicamentos.find(m => m.id === p.medicamentoId) || {
+      const pMedId = String(p.medicamentoId || p.medicamento_id || "").trim();
+      const pCodigo = p.medicamentoCodigo ? String(p.medicamentoCodigo).trim() : "";
+      const pNome = (p.medicamentoNome || "").trim().toLowerCase();
+
+      const med = (pMedId ? medicamentos.find(m => String(m.id).trim() === pMedId) : null) ||
+                  (pCodigo ? medicamentos.find(m => m.codigo && String(m.codigo).trim() === pCodigo) : null) ||
+                  (pNome ? medicamentos.find(m => m.nome && m.nome.trim().toLowerCase() === pNome) : null) || {
+        id: pMedId,
         nome: p.medicamentoNome || "Medicamento",
         codigo: p.medicamentoCodigo || "-",
         apresentacao: p.apresentacao || "-",
         concentracao: p.concentracao || "-",
-        estoque_atual: 0
+        estoque_satelite: 0
       };
 
-      const dailyDose = p.totalDiario || 0;
-      const periodDose = calculatePrescQtdParaDias(p, printPeriodoDias);
+      const rawDaily = parseFloat(String(p.totalDiario ?? p.total_diario ?? 0).replace(",", ".")) || 0;
+      const d08 = getDoseForHora(p.horarios, "08:00");
+      const d14 = getDoseForHora(p.horarios, "14:00");
+      const d22 = getDoseForHora(p.horarios, "22:00");
+      const d06 = getDoseForHora(p.horarios, "06:00");
+      const sumH = d08 + d14 + d22 + d06;
+      const dailyDose = rawDaily > 0 ? rawDaily : (sumH > 0 ? sumH : 0);
+      const periodDose = Number(calculatePrescQtdParaDias(p, printPeriodoDias)) || 0;
 
-      if (!medMap[p.medicamentoId]) {
-        medMap[p.medicamentoId] = {
-          medicamentoId: p.medicamentoId,
+      const medKey = String(med.id || pMedId || `${p.medicamentoNome}_${p.concentracao}`);
+
+      if (!medMap[medKey]) {
+        medMap[medKey] = {
+          medicamentoId: medKey,
           nome: med.nome,
           codigo: med.codigo,
           apresentacao: med.apresentacao,
-          concentracao: med.concentracao,
+          concentracao: med.concentracao || p.concentracao,
           estoqueAtual: Number(med.estoque_satelite) || 0,
           qtdDiaria: 0,
           qtdPeriodo: 0,
           pacientesSet: new Set()
         };
       }
-      medMap[p.medicamentoId].qtdDiaria += dailyDose;
-      medMap[p.medicamentoId].qtdPeriodo += periodDose;
-      medMap[p.medicamentoId].pacientesSet.add(patient.nome);
+      medMap[medKey].qtdDiaria = Math.round((medMap[medKey].qtdDiaria + dailyDose) * 100) / 100;
+      medMap[medKey].qtdPeriodo = Math.round((medMap[medKey].qtdPeriodo + periodDose) * 100) / 100;
+      medMap[medKey].pacientesSet.add(patient.nome);
 
-      if (!patientMap[p.pacienteId]) {
-        patientMap[p.pacienteId] = {
-          pacienteId: p.pacienteId,
+      const pKey = String(patient.id || p.pacienteId || patient.nome);
+      if (!patientMap[pKey]) {
+        patientMap[pKey] = {
+          pacienteId: pKey,
           nome: patient.nome,
           prontuario: patient.prontuario,
           alaNome: patient.alaNome,
@@ -1813,12 +1649,13 @@ export default function PacientesMedicao() {
           prescricoes: []
         };
       }
-      patientMap[p.pacienteId].prescricoes.push({
+      patientMap[pKey].prescricoes.push({
         ...p,
         medNome: med.nome,
         medCodigo: med.codigo,
-        medConcentracao: med.concentracao,
-        medApresentacao: med.apresentacao,
+        medConcentracao: med.concentracao || p.concentracao,
+        medApresentacao: med.apresentacao || p.apresentacao,
+        totalDiario: dailyDose,
         qtdPeriodo: periodDose
       });
     });
@@ -1846,7 +1683,7 @@ export default function PacientesMedicao() {
     if (targetPatientIds && Array.isArray(targetPatientIds) && targetPatientIds.length > 0) {
       setPrintSelectedPatientIds(targetPatientIds);
       const relevantAlas = activePatients
-        .filter(p => targetPatientIds.includes(p.id) && p.alaId)
+        .filter(p => targetPatientIds.some(id => String(id) === String(p.id)) && p.alaId)
         .map(p => String(p.alaId));
       setPrintSelectedAlas(relevantAlas.length > 0 ? Array.from(new Set(relevantAlas)) : ["all"]);
     } else if (selectedPatientIds.length > 0) {
@@ -1854,7 +1691,7 @@ export default function PacientesMedicao() {
       setPrintSelectedAlas(["all"]);
     } else {
       const pacsComMed = activePatients
-        .filter(p => prescricoes.some(pr => pr.pacienteId === p.id && isPrescricaoAtiva(pr, hojeStr)))
+        .filter(p => prescricoes.some(pr => (isPrescricaoDoPaciente(pr, p) || String(pr.pacienteId) === String(p.id)) && isPrescricaoAtiva(pr, hojeStr)))
         .map(p => p.id);
       setPrintSelectedPatientIds(pacsComMed.length > 0 ? pacsComMed : activePatients.map(p => p.id));
       setPrintSelectedAlas(["all"]);
@@ -3203,7 +3040,7 @@ export default function PacientesMedicao() {
                       </TableHeader>
                       <TableBody>
                         {activePrescs.map((pr) => {
-                          const pac = selectedPacs.find(p => p.id === pr.pacienteId);
+                          const pac = selectedPacs.find(p => isPrescricaoDoPaciente(pr, p) || String(p.id) === String(pr.pacienteId));
                           const pMedId = String(pr.medicamentoId || pr.medicamento_id || "").trim();
                           const pCodigo = pr.medicamentoCodigo ? String(pr.medicamentoCodigo).trim() : "";
                           const pNome = (pr.medicamentoNome || "").trim().toLowerCase();

@@ -1,6 +1,6 @@
 [package]
 name = "zorion-saude"
-version = "3.2.46"
+version = "3.2.47"
 description = "A Tauri App"
 authors = ["you"]
 license = ""

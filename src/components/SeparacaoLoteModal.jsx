@@ -135,6 +135,7 @@ export function SeparacaoLoteModal({
   const [isPrinting, setIsPrinting] = useState(false);
   const [itensConsolidados, setItensConsolidados] = useState([]);
   const [expandedMeds, setExpandedMeds] = useState({});
+  const [descontarJaEntregue, setDescontarJaEntregue] = useState(false);
 
   // ── BUSCA DE ALAS CASO A PROP VENHA VAZIA ────────────────────────────────────
   const { data: dbAlas = [] } = useQuery({
@@ -267,22 +268,37 @@ export function SeparacaoLoteModal({
       // Já está 100% coberto se a prescrição já foi entregue até ou além da data fim deste ciclo
       const jaCoberto = Boolean(cobAte && cobAte >= dataFimStr);
 
+      // Dose diária robusta e puramente numérica
+      const rawDaily = parseFloat(String(pr.totalDiario ?? pr.total_diario ?? 0).replace(",", ".")) || 0;
+      const d08 = getDoseForHora(pr.horarios, "08:00");
+      const d14 = getDoseForHora(pr.horarios, "14:00");
+      const d22 = getDoseForHora(pr.horarios, "22:00");
+      const d06 = getDoseForHora(pr.horarios, "06:00");
+      const sumH = d08 + d14 + d22 + d06;
+      const doseDiaria = rawDaily > 0 ? rawDaily : (sumH > 0 ? sumH : (Number(pr.dose) || 0));
+
       let qtdSugerida = 0;
-      if (!jaCoberto) {
+      if (!descontarJaEntregue) {
+        // Modo Padrão: ciclo cheio solicitado (Dose Diária × Dias)
+        qtdSugerida = calculatePrescQtdParaDias(pr, dias);
+        if (qtdSugerida <= 0 && doseDiaria > 0) {
+          qtdSugerida = Math.ceil(doseDiaria * dias);
+        }
+      } else if (!jaCoberto) {
+        // Modo com Desconto de entregas já realizadas
         if (cobAte && cobAte >= hojeStr && cobAte < dataFimStr) {
           // Cobertura parcial: calcula apenas os dias faltantes entre cobAte e dataFimStr
           const diasFaltantes = differenceInCalendarDays(parseISO(dataFimStr), parseISO(cobAte));
           if (diasFaltantes > 0) {
             qtdSugerida = calculatePrescQtdParaDias(pr, diasFaltantes);
-            if (qtdSugerida <= 0 && Number(pr.totalDiario) > 0) {
-              qtdSugerida = Math.ceil(Number(pr.totalDiario) * diasFaltantes);
+            if (qtdSugerida <= 0 && doseDiaria > 0) {
+              qtdSugerida = Math.ceil(doseDiaria * diasFaltantes);
             }
           }
         } else {
-          // Cobertura total dos dias solicitados
           qtdSugerida = calculatePrescQtdParaDias(pr, dias);
-          if (qtdSugerida <= 0 && Number(pr.totalDiario) > 0) {
-            qtdSugerida = Math.ceil(Number(pr.totalDiario) * dias);
+          if (qtdSugerida <= 0 && doseDiaria > 0) {
+            qtdSugerida = Math.ceil(doseDiaria * dias);
           }
         }
       }
@@ -310,7 +326,7 @@ export function SeparacaoLoteModal({
         pr,
         pac,
         qtdIndividual: qtdSugerida,
-        doseDiaria: Number(pr.totalDiario) || 0,
+        doseDiaria,
         jaCoberto,
         cobertoAte: cobAte,
       });
@@ -401,7 +417,7 @@ export function SeparacaoLoteModal({
       });
 
     setItensConsolidados(listaConsolidada);
-  }, [open, dias, activePrescs, selectedPacs, pacientes, medicamentos, allLotes, transferencias, pedidosSatelite, saidas]);
+  }, [open, dias, activePrescs, selectedPacs, pacientes, medicamentos, allLotes, transferencias, pedidosSatelite, saidas, descontarJaEntregue]);
 
   // Contagens para os botões de filtro
   const contagensCategorias = useMemo(() => {
@@ -1056,6 +1072,34 @@ export function SeparacaoLoteModal({
                     <ShieldAlert className="w-3.5 h-3.5" />
                     Só Psicotrópico ({contagensCategorias.totalPsico})
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDescontarJaEntregue(!descontarJaEntregue)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border",
+                      descontarJaEntregue
+                        ? "bg-amber-100 border-amber-300 text-amber-900"
+                        : "bg-emerald-50 border-emerald-300 text-emerald-900"
+                    )}
+                    title={
+                      descontarJaEntregue
+                        ? "Abatendo períodos já cobertos neste ciclo. Clique para puxar o ciclo cheio."
+                        : `Calculando o ciclo cheio completo de ${dias} dias. Clique para descontar períodos já entregues.`
+                    }
+                  >
+                    {descontarJaEntregue ? (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-amber-700" />
+                        Descontando Entregues
+                      </>
+                    ) : (
+                      <>
+                        <CheckSquare className="w-3.5 h-3.5 text-emerald-700" />
+                        Ciclo Completo ({dias}d)
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -1223,7 +1267,7 @@ export function SeparacaoLoteModal({
                               {/* Quantidade Total a Separar (Soma de Todos) */}
                               <TableCell className="text-center">
                                 <div className="flex flex-col items-center gap-1">
-                                  {item.pacientesAtendidos.length > 0 && item.pacientesAtendidos.every(p => p.jaCoberto) ? (
+                                  {item.pacientesAtendidos.length > 0 && descontarJaEntregue && item.pacientesAtendidos.every(p => p.jaCoberto) ? (
                                     <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold gap-1 py-1">
                                       <Lock className="w-3 h-3 text-emerald-600" />
                                       Já Entregue no Ciclo
@@ -1386,7 +1430,7 @@ export function SeparacaoLoteModal({
                                               Leito: {pEntry.pac?.leito || "S/L"} • {pEntry.pac?.alaNome || "Geral"}
                                             </p>
                                           </div>
-                                          {pEntry.jaCoberto ? (
+                                          {descontarJaEntregue && pEntry.jaCoberto ? (
                                             <div className="text-right shrink-0">
                                               <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded text-[10px] border border-emerald-300">
                                                 <Lock className="w-3 h-3 text-emerald-600" />
@@ -1404,6 +1448,11 @@ export function SeparacaoLoteModal({
                                               <p className="text-[9px] text-slate-400 font-mono">
                                                 {pEntry.doseDiaria} un/dia
                                               </p>
+                                              {pEntry.jaCoberto && (
+                                                <p className="text-[8.5px] text-emerald-700 font-semibold">
+                                                  (Já entregue até {safeFormatDate(pEntry.cobertoAte)})
+                                                </p>
+                                              )}
                                             </div>
                                           )}
                                         </div>
