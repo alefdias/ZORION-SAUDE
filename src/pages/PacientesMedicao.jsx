@@ -5169,25 +5169,26 @@ export default function PacientesMedicao() {
         </DialogContent>
       </Dialog>
 
-      <style>{`
-        @media print {
-          @page { size: A4; margin: 10mm; }
-          body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background-color: white !important; }
-          ${altaReportData ? `
-            body:not(.printing-separacao-lote) * { visibility: hidden; }
-            body:not(.printing-separacao-lote) [role="dialog"], body:not(.printing-separacao-lote) [role="dialog"] * { visibility: visible !important; }
-            body:not(.printing-separacao-lote) [role="dialog"] { position: absolute; left:0; top:0; width: 100%; height: 100%; margin: 0; padding: 0; }
-          ` : `
-            body:not(.printing-separacao-lote) * { visibility: hidden; }
-            body:not(.printing-separacao-lote) [role="dialog"], body:not(.printing-separacao-lote) .dialog-overlay { display: none !important; visibility: hidden !important; }
-            body:not(.printing-separacao-lote) #print-area, body:not(.printing-separacao-lote) #print-area * { visibility: visible !important; }
-            body:not(.printing-separacao-lote) #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; }
-          `}
-          body.printing-separacao-lote #print-area, body.printing-separacao-lote #print-area * { display: none !important; visibility: hidden !important; }
-          .no-print, nav, header, footer, button { display: none !important; }
-          .page-break { break-inside: avoid; page-break-inside: avoid; }
-        }
-      `}</style>
+      {!separacaoModalOpen && (
+        <style>{`
+          @media print {
+            @page { size: A4; margin: 10mm; }
+            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background-color: white !important; }
+            ${altaReportData ? `
+              body * { visibility: hidden; }
+              [role="dialog"], [role="dialog"] * { visibility: visible !important; }
+              [role="dialog"] { position: absolute; left:0; top:0; width: 100%; height: 100%; margin: 0; padding: 0; }
+            ` : `
+              body * { visibility: hidden; }
+              [role="dialog"], .dialog-overlay { display: none !important; visibility: hidden !important; }
+              #print-area, #print-area * { visibility: visible !important; }
+              #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; }
+            `}
+            .no-print, nav, header, footer, button { display: none !important; }
+            .page-break { break-inside: avoid; page-break-inside: avoid; }
+          }
+        `}</style>
+      )}
     </div>
   );
 }
