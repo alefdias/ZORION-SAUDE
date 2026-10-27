@@ -863,17 +863,25 @@ export default function Estoque() {
       <style>{`
         @media print {
           @page {
-            size: A4;
-            margin: 10mm;
+            size: ${activeTab === "consolidado" ? "A4 landscape" : "A4"};
+            margin: ${activeTab === "consolidado" ? "8mm 6mm" : "10mm"};
           }
           body { 
             print-color-adjust: exact; 
             -webkit-print-color-adjust: exact; 
             background-color: white !important;
           }
-          .no-print, nav, header, footer, button, [data-state="closed"], [data-state="open"], aside { display: none !important; }
+          .no-print, nav, header, footer, button, aside, [data-radix-popper-content-wrapper], .sonner-toaster { display: none !important; }
           .print-only { display: block !important; }
           .p-6 { padding: 0 !important; }
+          
+          /* Evitar que containers cortem a tabela impressa */
+          html, body, #root, main, .space-y-6, .overflow-x-auto, .overflow-hidden, .overflow-y-auto, [class*="overflow-"] {
+            overflow: visible !important;
+            height: auto !important;
+            width: 100% !important;
+            max-width: none !important;
+          }
           
           .border-b-2.border-indigo-600 {
             border-bottom-color: #4f46e5 !important;
@@ -883,8 +891,9 @@ export default function Estoque() {
           .text-indigo-600 { color: #4f46e5 !important; }
           .text-indigo-700 { color: #4338ca !important; }
           
-          table { width: 100% !important; border-collapse: collapse !important; }
-          th, td { border: 1px solid #e2e8f0 !important; }
+          table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; }
+          tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+          th, td { border: 1px solid #cbd5e1 !important; }
           .bg-slate-100 { background-color: #f1f5f9 !important; }
         }
       `}</style>

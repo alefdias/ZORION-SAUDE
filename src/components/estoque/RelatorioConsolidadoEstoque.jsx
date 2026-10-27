@@ -32,7 +32,10 @@ import {
   Filter,
   Layers,
   ArrowUpDown,
+  FileText,
 } from "lucide-react";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -262,14 +265,86 @@ export default function RelatorioConsolidadoEstoque({
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = (expandirAntes = false) => {
+    if (expandirAntes && expandedMeds.size !== dadosFiltrados.length) {
+      setExpandedMeds(new Set(dadosFiltrados.map((m) => m.id)));
+      setTimeout(() => {
+        window.print();
+      }, 150);
+    } else {
+      window.print();
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      toast.loading("Gerando PDF em formato paisagem (A4)...");
+      const element = printRef.current;
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        ignoreElements: (node) => node.classList?.contains("no-print"),
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("l", "mm", "a4"); // Paisagem A4 (297mm x 210mm)
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`relatorio_consolidado_estoque_${format(new Date(), "yyyy-MM-dd")}.pdf`);
+      toast.dismiss();
+      toast.success("PDF exportado com sucesso em formato paisagem!");
+    } catch (err) {
+      console.error(err);
+      toast.dismiss();
+      toast.error("Erro ao gerar PDF: " + (err.message || err));
+    }
   };
 
   return (
-    <div className="space-y-6" ref={printRef}>
-      {/* ─── BANNER / HEADER DO RELATÓRIO ───────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white rounded-2xl p-6 shadow-xl border border-indigo-800/40">
+    <div className="space-y-6 print:space-y-3" ref={printRef}>
+      {/* ─── CABEÇALHO OFICIAL EXCLUSIVO PARA IMPRESSÃO ───────────────────────── */}
+      <div className="hidden print:block mb-3 pb-3 border-b-2 border-indigo-700 text-slate-800">
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black tracking-widest text-indigo-900 uppercase">ZORION SAÚDE</span>
+              <span className="text-[10px] text-slate-500 font-mono">| SISTEMA DE CONTROLE HOSPITALAR</span>
+            </div>
+            <h1 className="text-lg font-black text-slate-900 mt-0.5">
+              RELATÓRIO CONSOLIDADO DE ESTOQUE — CENTRAL vs SATÉLITE
+            </h1>
+            <p className="text-[11px] text-slate-600 font-medium">
+              Saldos integrados de medicamentos com detalhamento de lotes e datas de validade
+            </p>
+          </div>
+          <div className="text-right text-[10px] text-slate-600 font-mono space-y-0.5">
+            <p><strong>Emissão:</strong> {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
+            <p><strong>Medicamentos Listados:</strong> {dadosFiltrados.length}</p>
+            <p><strong>Filtro:</strong> {filterPadronizado === "padronizado" ? "Apenas Padronizados" : filterPadronizado === "nao_padronizado" ? "Não Padronizados" : "Todos"}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── BANNER / HEADER DO RELATÓRIO (TELA) ─────────────────────────────── */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white rounded-2xl p-6 shadow-xl border border-indigo-800/40 print:hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -307,15 +382,24 @@ export default function RelatorioConsolidadoEstoque({
               className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-xs font-semibold"
             >
               <Download className="w-3.5 h-3.5 mr-1.5" />
-              Exportar CSV
+              CSV
             </Button>
             <Button
-              onClick={handlePrint}
+              onClick={handleExportPDF}
+              variant="outline"
               size="sm"
-              className="bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs shadow-md"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-xs font-semibold"
+            >
+              <FileText className="w-3.5 h-3.5 mr-1.5" />
+              PDF Paisagem
+            </Button>
+            <Button
+              onClick={() => handlePrint(false)}
+              size="sm"
+              className="bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs shadow-md cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
-              Imprimir Relatório
+              Imprimir
             </Button>
           </div>
         </div>
@@ -694,6 +778,73 @@ export default function RelatorioConsolidadoEstoque({
           </table>
         </div>
       </div>
+
+      {/* ─── ESTILOS EXCLUSIVOS PARA IMPRESSÃO EM PAISAGEM (A4) ──────────────── */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape !important;
+            margin: 8mm 6mm !important;
+          }
+          body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            background: white !important;
+          }
+          .no-print, nav, header, footer, aside, button, input, select, .sonner-toaster, [data-radix-popper-content-wrapper] {
+            display: none !important;
+          }
+          /* Liberar todos os containers com overflow para que não haja corte horizontal nem vertical */
+          html, body, #root, main, .space-y-6, .overflow-x-auto, .overflow-hidden, .overflow-y-auto, [class*="overflow-"] {
+            overflow: visible !important;
+            height: auto !important;
+            width: 100% !important;
+            max-width: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          table {
+            width: 100% !important;
+            table-layout: auto !important;
+            border-collapse: collapse !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          th, td {
+            border: 1px solid #cbd5e1 !important;
+            padding: 3.5px 6px !important;
+            font-size: 9.5px !important;
+            line-height: 1.25 !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+            color: #0f172a !important;
+            font-weight: 700 !important;
+          }
+          /* Compactação dos cards de KPIs na impressão */
+          .grid.grid-cols-2.lg\\:grid-cols-4 {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 6px !important;
+            margin-bottom: 8px !important;
+          }
+          .grid.grid-cols-2.lg\\:grid-cols-4 > div {
+            padding: 6px 8px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+          }
+          .grid.grid-cols-2.lg\\:grid-cols-4 span.text-2xl {
+            font-size: 15px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

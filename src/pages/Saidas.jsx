@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { 
     Plus, Search, PackageMinus, Trash2, FileText, Printer, Edit, 
-    AlertTriangle, Settings2, Boxes,
+    AlertTriangle, Settings2, Boxes, RotateCcw,
     Calendar as CalendarIcon, User, Building2, ArrowDownRight, X, Sparkles, Clock, CheckCircle2, ShieldAlert
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +49,7 @@ export default function Saidas({ isTab = false }) {
   const [preselectedMedId, setPreselectedMedId] = useState(null);
   const [dateRange, setDateRange] = useState({ from: undefined, to: undefined });
   const [displayCount, setDisplayCount] = useState(50);
-  const [activeCategory, setActiveCategory] = useState("disponiveis_satelite"); // "disponiveis_satelite", "todos", "pacientes", "geral", "perdas"
+  const [activeCategory, setActiveCategory] = useState("todos"); // "todos" (Histórico Geral de Saídas por padrão), "disponiveis_satelite", "pacientes", "geral", "perdas"
 
   // Reset display count when filters change
   useEffect(() => {
@@ -1281,24 +1281,25 @@ export default function Saidas({ isTab = false }) {
                       )}
                       {visibleColumns.acoes && (
                         <TableCell className="text-center">
-                          <div className="flex justify-center items-center gap-1">
+                          <div className="flex justify-center items-center gap-1.5">
                             <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Editar saída"
-                              onClick={() => handleEdit(saida)}
-                              className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                              variant="outline"
+                              size="sm"
+                              title="Estornar dispensação e devolver itens ao estoque"
+                              onClick={() => setDeleteId(saida.id)}
+                              className="h-7 px-2 text-[11px] font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 hover:text-rose-800 gap-1 rounded-md cursor-pointer"
                             >
-                              <Edit className="w-3.5 h-3.5" />
+                              <RotateCcw className="w-3 h-3 text-rose-600" />
+                              Estornar
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              title="Excluir saída"
-                              onClick={() => setDeleteId(saida.id)}
-                              className="h-7 w-7 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                              title="Editar detalhes da saída"
+                              onClick={() => handleEdit(saida)}
+                              className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Edit className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         </TableCell>
@@ -1344,19 +1345,42 @@ export default function Saidas({ isTab = false }) {
       />
 
 
-      {/* Delete Confirmation */}
+      {/* Delete / Estorno Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl border-slate-200">
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja deletar esta saída? Esta ação reverterá o estoque e não poderá ser desfeita.
+            <AlertDialogTitle className="flex items-center gap-2 text-rose-700">
+              <RotateCcw className="w-5 h-5 text-rose-600" />
+              Estornar Saída / Devolver ao Estoque
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600 space-y-2">
+              <p>Tem certeza que deseja estornar esta dispensação?</p>
+              {(() => {
+                const saidaSel = saidas.find((s) => s.id === deleteId);
+                if (!saidaSel) return null;
+                return (
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-1 font-medium">
+                    <p><strong>Medicamento:</strong> {saidaSel.medicamento_nome}</p>
+                    <p><strong>Lote:</strong> {saidaSel.numero_lote || "S/ Lote"}</p>
+                    <p><strong>Quantidade a devolver:</strong> <span className="text-emerald-700 font-bold">+{saidaSel.quantidade} un</span></p>
+                    {saidaSel.paciente_nome && <p><strong>Paciente:</strong> {saidaSel.paciente_nome}</p>}
+                    <p><strong>Destino:</strong> {saidaSel.ala_nome || saidaSel.destino || "Geral"}</p>
+                  </div>
+                );
+              })()}
+              <p className="text-xs text-slate-500">
+                Esta ação cancelará o registro de saída e devolverá imediatamente a quantidade correspondente para o lote e o estoque.
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              Deletar
+            <AlertDialogCancel disabled={deleteSaidaMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteSaidaMutation.isPending}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+            >
+              {deleteSaidaMutation.isPending ? "Estornando..." : "Sim, Estornar Saída"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
