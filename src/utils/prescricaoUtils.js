@@ -147,7 +147,7 @@ export function isPrescricaoAtiva(pr, hojeStr = format(new Date(), "yyyy-MM-dd")
   return true;
 }
 
-export const calculatePrescQtdParaDias = (pr, diasCount) => {
+export const calculatePrescQtdParaDias = (pr, diasCount, dataReferencia = new Date()) => {
   if (!pr) return 0;
   const numDias = Math.max(0, parseInt(diasCount, 10) || 0);
   if (numDias === 0) return 0;
@@ -187,14 +187,25 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
 
   const diasArr = parseDiasSemana(pr.diasSemana);
   let totalDoses = 0;
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+
+  // Base de data de referência (padrão: hoje, mas ajustável para qualquer data retroativa ou futura)
+  let baseDate = new Date();
+  if (dataReferencia instanceof Date && !isNaN(dataReferencia.getTime())) {
+    baseDate = new Date(dataReferencia);
+  } else if (typeof dataReferencia === "string") {
+    const pRef = dataReferencia.split("T")[0].split("-");
+    if (pRef.length === 3) {
+      baseDate = new Date(parseInt(pRef[0], 10), parseInt(pRef[1], 10) - 1, parseInt(pRef[2], 10));
+    }
+  }
+  baseDate.setHours(0, 0, 0, 0);
 
   const tipoFreq = pr.tipoFrequencia || pr.tipo_frequencia || "diaria";
   const intervalo = Math.max(1, parseInt(pr.intervaloDias || pr.intervalo_dias, 10) || 1);
   let dataInicioDate = null;
-  if (pr.dataInicio) {
-    const pIni = String(pr.dataInicio).split("T")[0].split("-");
+  const rawIni = pr.dataInicio || pr.data_inicio;
+  if (rawIni) {
+    const pIni = String(rawIni).split("T")[0].split("-");
     if (pIni.length === 3) {
       dataInicioDate = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10));
       dataInicioDate.setHours(0, 0, 0, 0);
@@ -202,8 +213,14 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
   }
 
   for (let i = 0; i < numDias; i++) {
-    const d = new Date(hoje);
-    d.setDate(hoje.getDate() + i);
+    const d = new Date(baseDate);
+    d.setDate(baseDate.getDate() + i);
+
+    // Se o dia avaliado é ANTERIOR à data em que o medicamento foi prescrito/iniciado,
+    // o paciente ainda não tomava o remédio e a dose não deve ser contada!
+    if (dataInicioDate && d < dataInicioDate) {
+      continue;
+    }
 
     if (maxDataFim && d > maxDataFim) {
       break;
@@ -226,8 +243,9 @@ export const calculatePrescQtdParaDias = (pr, diasCount) => {
     }
   }
 
-  // Garantia: se for prescrição diária sem dataFim limitante, deve bater exatamente dailyTotal * numDias
-  if (totalDoses <= 0 && (!pr.dataFim || (maxDataFim && maxDataFim >= hoje))) {
+  // Garantia: se for prescrição diária sem limites de data (sem dataInicio e sem dataFim limitante),
+  // e não somou, aplica o cálculo simples
+  if (totalDoses <= 0 && !dataInicioDate && !pr.dataFim && (diasArr.length === 7 || diasArr.length === 0)) {
     totalDoses = dailyTotal * numDias;
   }
 

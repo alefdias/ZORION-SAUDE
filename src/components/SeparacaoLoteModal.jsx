@@ -57,6 +57,7 @@ import {
   isPrescricaoDoPaciente,
   isPrescricaoAtiva,
   calculatePrescQtdParaDias,
+  getDoseForHora,
 } from "@/utils/prescricaoUtils";
 import { isPsicotropico } from "@/utils/mavUtils";
 import { safeFormatDate } from "@/utils/dateUtils";
@@ -130,6 +131,7 @@ export function SeparacaoLoteModal({
 }) {
   const queryClient = useQueryClient();
   const [dias, setDias] = useState(8); // Padrão: 8 dias de ciclo
+  const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [categoriaFiltro, setCategoriaFiltro] = useState("todos"); // "todos" | "clinico" | "psicotropico"
   const [searchTerm, setSearchTerm] = useState("");
   const [isPrinting, setIsPrinting] = useState(false);
@@ -154,6 +156,7 @@ export function SeparacaoLoteModal({
     if (open) {
       setCategoriaFiltro("todos");
       setSearchTerm("");
+      setDataInicioPersonalizada(format(new Date(), "yyyy-MM-dd"));
       queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
       queryClient.invalidateQueries({ queryKey: ['lotes'] });
     }
@@ -187,11 +190,19 @@ export function SeparacaoLoteModal({
     queryFn: () => (db.entities.Saida ? db.entities.Saida.list() : []),
   });
 
-  // Data de referência do ciclo
+  // Data de referência do ciclo (permite selecionar ontem, anteontem ou qualquer data inicial)
   const hoje = useMemo(() => new Date(), []);
-  const hojeStr = useMemo(() => format(hoje, "yyyy-MM-dd"), [hoje]);
-  const dataInicioStr = hojeStr;
-  const dataFimDate = useMemo(() => addDays(hoje, Math.max(1, dias) - 1), [hoje, dias]);
+  const dataInicioDate = useMemo(() => {
+    if (!dataInicioPersonalizada) return new Date();
+    const parts = dataInicioPersonalizada.split("-");
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    return new Date();
+  }, [dataInicioPersonalizada]);
+
+  const dataInicioStr = useMemo(() => format(dataInicioDate, "yyyy-MM-dd"), [dataInicioDate]);
+  const dataFimDate = useMemo(() => addDays(dataInicioDate, Math.max(1, dias) - 1), [dataInicioDate, dias]);
   const dataFimStr = useMemo(() => format(dataFimDate, "yyyy-MM-dd"), [dataFimDate]);
 
   // Pacientes selecionados (compatível com id como número ou string)
@@ -201,19 +212,27 @@ export function SeparacaoLoteModal({
     );
   }, [pacientes, selectedPatientIds]);
 
-  // Prescrições ativas dos pacientes selecionados
+  // Prescrições ativas dos pacientes selecionados que cobrem este ciclo
   const activePrescs = useMemo(() => {
     return (prescricoes || []).filter((pr) => {
-      const ativa = isPrescricaoAtiva(pr, hojeStr);
-      if (!ativa) return false;
-
       const pertence =
         selectedPacs.some((p) => isPrescricaoDoPaciente(pr, p)) ||
         selectedPatientIds.some((id) => String(id) === String(pr.pacienteId || pr.paciente_id));
+      if (!pertence) return false;
 
-      return pertence;
+      const status = (pr.status || "Ativa").trim().toLowerCase();
+      if (status !== "ativa" && status !== "ativo" && status !== "em andamento") return false;
+
+      // Se a prescrição já encerrou antes da data de início deste ciclo, não inclui
+      if (pr.dataFim && pr.dataFim.split("T")[0] < dataInicioStr) return false;
+
+      // Se a prescrição só começa após a data final deste ciclo, não inclui
+      const pIni = (pr.dataInicio || pr.data_inicio)?.split("T")[0];
+      if (pIni && pIni > dataFimStr) return false;
+
+      return true;
     });
-  }, [prescricoes, selectedPacs, selectedPatientIds, hojeStr]);
+  }, [prescricoes, selectedPacs, selectedPatientIds, dataInicioStr, dataFimStr]);
 
   // Agrupamento Consolidado por Medicamento (Soma Tudo)
   useEffect(() => {
@@ -279,25 +298,26 @@ export function SeparacaoLoteModal({
 
       let qtdSugerida = 0;
       if (!descontarJaEntregue) {
-        // Modo Padrão: ciclo cheio solicitado (Dose Diária × Dias)
-        qtdSugerida = calculatePrescQtdParaDias(pr, dias);
-        if (qtdSugerida <= 0 && doseDiaria > 0) {
+        // Modo Padrão: ciclo solicitado a partir da data de início selecionada
+        qtdSugerida = calculatePrescQtdParaDias(pr, dias, dataInicioDate);
+        if (qtdSugerida <= 0 && doseDiaria > 0 && !pr.dataInicio && !pr.data_inicio) {
           qtdSugerida = Math.ceil(doseDiaria * dias);
         }
       } else if (!jaCoberto) {
         // Modo com Desconto de entregas já realizadas
-        if (cobAte && cobAte >= hojeStr && cobAte < dataFimStr) {
+        if (cobAte && cobAte >= dataInicioStr && cobAte < dataFimStr) {
           // Cobertura parcial: calcula apenas os dias faltantes entre cobAte e dataFimStr
           const diasFaltantes = differenceInCalendarDays(parseISO(dataFimStr), parseISO(cobAte));
           if (diasFaltantes > 0) {
-            qtdSugerida = calculatePrescQtdParaDias(pr, diasFaltantes);
-            if (qtdSugerida <= 0 && doseDiaria > 0) {
+            const dataInicioFaltante = addDays(parseISO(cobAte), 1);
+            qtdSugerida = calculatePrescQtdParaDias(pr, diasFaltantes, dataInicioFaltante);
+            if (qtdSugerida <= 0 && doseDiaria > 0 && !pr.dataInicio && !pr.data_inicio) {
               qtdSugerida = Math.ceil(doseDiaria * diasFaltantes);
             }
           }
         } else {
-          qtdSugerida = calculatePrescQtdParaDias(pr, dias);
-          if (qtdSugerida <= 0 && doseDiaria > 0) {
+          qtdSugerida = calculatePrescQtdParaDias(pr, dias, dataInicioDate);
+          if (qtdSugerida <= 0 && doseDiaria > 0 && !pr.dataInicio && !pr.data_inicio) {
             qtdSugerida = Math.ceil(doseDiaria * dias);
           }
         }
@@ -334,6 +354,7 @@ export function SeparacaoLoteModal({
 
     // Para cada medicamento consolidado, calcula as alocações de lote com lote e validade reais da Satélite
     const listaConsolidada = Array.from(map.values())
+      .filter((item) => item.qtdTotal > 0)
       .sort((a, b) => a.medicamentoNome.localeCompare(b.medicamentoNome))
       .map((item) => {
         // 1. Todos os lotes cadastrados deste medicamento (ordenados por FEFO)
@@ -690,7 +711,7 @@ export function SeparacaoLoteModal({
                 ala_id: pac?.alaId || pac?.ala_id || null,
                 ala_nome: pac ? pac.alaNome || pac.ala_nome || "Ala Geral" : "Geral",
                 motivo: `Separação Consolidada (${dias} ${dias === 1 ? "dia" : "dias"})`,
-                observacao: `Grade: ${pr.esquemaPosologico || "Posologia Fixa"} | Qt: ${qtdDesteLote} un | Lote: ${curLote.numeroLote} | Cobertura: ${format(hoje, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
+                observacao: `Grade: ${pr.esquemaPosologico || "Posologia Fixa"} | Qt: ${qtdDesteLote} un | Lote: ${curLote.numeroLote} | Cobertura: ${format(dataInicioDate, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
                 data_saida: todayDateStr,
                 created_at: nowStr,
                 responsavel: responsavel,
@@ -1035,6 +1056,17 @@ export function SeparacaoLoteModal({
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 bg-white dark:bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-xs">
                   <Calendar className="w-4 h-4 text-slate-500" />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Início:</span>
+                  <input
+                    type="date"
+                    value={dataInicioPersonalizada}
+                    onChange={(e) => setDataInicioPersonalizada(e.target.value)}
+                    className="h-7 text-xs font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-slate-900 dark:text-slate-100 cursor-pointer"
+                    title="Data de início do ciclo (permite selecionar ontem ou datas anteriores caso tenha esquecido de separar no dia)"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-xs">
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Ciclo:</span>
                   <Select value={String(dias)} onValueChange={(v) => setDias(Number(v))}>
                     <SelectTrigger className="w-[140px] h-7 text-xs font-bold border-none shadow-none focus:ring-0 p-0">
@@ -1053,7 +1085,7 @@ export function SeparacaoLoteModal({
                 <div className="text-xs text-slate-600 dark:text-slate-400 font-medium">
                   Cobertura:{" "}
                   <strong className="text-indigo-700 dark:text-indigo-400 font-mono">
-                    {format(hoje, "dd/MM")} a {format(dataFimDate, "dd/MM/yyyy")}
+                    {format(dataInicioDate, "dd/MM")} a {format(dataFimDate, "dd/MM/yyyy")}
                   </strong>
                 </div>
 
