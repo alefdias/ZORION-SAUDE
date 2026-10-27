@@ -1112,100 +1112,143 @@ export function MapaMensalDispensacao() {
         {(modoVisualizacao === "ambas" || modoVisualizacao === "q1") && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs print:border-none print:shadow-none print:m-0 print:p-0 page-break-after">
             
-            {/* Cabeçalho da Folha 1 (visível na tela e na impressão) */}
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-3.5 px-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center print:border-b-2 print:border-black print:p-1 print:mb-1">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight print:text-xs">
-                  Zorion Saúde • Mapa de Dispensação Diária — 1ª Quinzena (Dias 01 a 15)
-                </h3>
-                <p className="text-[11px] text-slate-500 print:text-[8px]">
-                  Mês de Referência: <strong>{mesesNomes[mes]} / {ano}</strong> • Ala: <strong className="uppercase text-blue-700 print:text-black">{nomeAlaSelecionada}</strong> • Categoria: <strong className="text-slate-800">{rotuloCategoria}</strong> • Folha 1 de 2
-                </p>
+            {/* Cabeçalho Hospitalar Oficial da Folha 1 */}
+            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 px-4 border-b border-slate-200 dark:border-slate-700 print:bg-white print:border-2 print:border-slate-800 print:rounded-lg print:p-2.5 print:mb-2">
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 print:border-b-2 print:border-slate-800 pb-2 mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-700 text-white font-black flex items-center justify-center text-sm print:bg-black print:text-white shadow-xs">
+                    ZS
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight print:text-xs">
+                      ZORION SAÚDE • FARMÁCIA HOSPITALAR & CLÍNICA
+                    </h3>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold print:text-[8.5px] print:text-black">
+                      MAPA DE DISPENSAÇÃO DIÁRIA DE MEDICAMENTOS • 1ª QUINZENA (DIAS 01 A 15)
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-black px-2.5 py-1 rounded bg-blue-100 text-blue-900 border border-blue-300 print:bg-slate-200 print:text-black print:border-slate-800 uppercase font-mono">
+                    FOLHA 1 DE 2
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-xs font-black text-blue-700 dark:text-blue-300 font-mono print:text-[9px]">
-                  Subtotal 1ª Q: {totaisFiltrados.q1} un
-                </span>
-                <span className="text-[10px] text-slate-400 block print:hidden">A4 Paisagem</span>
+
+              {/* Linha de Metadados / Setor / Período */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs print:text-[8.5px] text-slate-800 dark:text-slate-200 font-medium">
+                <div>
+                  <span className="text-slate-500 font-normal">Mês / Ano:</span>{" "}
+                  <strong className="uppercase">{mesesNomes[mes]} / {ano}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-normal">Ala / Setor:</span>{" "}
+                  <strong className="uppercase text-blue-800 dark:text-blue-300 print:text-black">{nomeAlaSelecionada}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-normal">Filtro:</span>{" "}
+                  <strong>{rotuloCategoria}</strong>
+                </div>
+                <div className="text-right font-mono">
+                  <span className="text-slate-500 font-normal">Subtotal 1ª Q:</span>{" "}
+                  <strong className="text-blue-800 dark:text-blue-300 print:text-black">{totaisFiltrados.q1} un</strong>
+                </div>
               </div>
             </div>
 
             {/* Tabela Quinzena 1 */}
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[11px] print:text-[8px]">
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
                 <thead>
-                  <tr className="bg-slate-100/80 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-100">
-                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-700">
+                  <tr className="bg-slate-100/90 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-200 print:border-slate-800">
+                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] print:min-w-0 print:max-w-none print:w-[27%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
                       Medicamento / Apresentação
                     </th>
-                    <th className="text-center py-2 px-1 w-12 font-bold text-slate-700">Cat.</th>
+                    <th className="text-center py-2 px-1 w-12 print:w-[4%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                      Cat.
+                    </th>
                     {diasQ1.map((d) => {
                       const dataDia = new Date(ano, mes, d);
                       const fds = isWeekend(dataDia);
+                      const diaSemanaNome = format(dataDia, "EEE", { locale: ptBR }).toUpperCase().slice(0, 3);
+
                       return (
                         <th
                           key={d}
                           className={cn(
-                            "text-center py-2 px-1 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700",
-                            fds ? "bg-slate-200/60 dark:bg-slate-700/60 text-slate-500" : "text-slate-800"
+                            "text-center py-1.5 px-0.5 w-8 print:w-[4.2%] font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600",
+                            fds
+                              ? "bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 print:bg-slate-300 print:text-black"
+                              : "text-slate-800 print:text-black"
                           )}
-                          title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${fds ? "Final de semana" : "Dia útil"})`}
+                          title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${diaSemanaNome})`}
                         >
-                          {String(d).padStart(2, "0")}{fds ? "*" : ""}
+                          <div className="text-[8px] print:text-[6.5px] font-extrabold uppercase text-slate-500 print:text-black leading-tight">
+                            {diaSemanaNome}
+                          </div>
+                          <div className="text-[11px] print:text-[9px] font-black">
+                            {String(d).padStart(2, "0")}{fds ? "*" : ""}
+                          </div>
                         </th>
                       );
                     })}
-                    <th className="text-center py-2 px-2 min-w-[70px] font-bold bg-blue-50/80 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 border-l-2 border-blue-200">
+                    <th className="text-center py-2 px-2 min-w-[70px] print:w-[7%] font-bold bg-blue-50/80 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 border-l-2 border-blue-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       TOTAL 1ª Q.
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-400">
                   {linhasFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan={18} className="text-center py-8 text-slate-400">
+                      <td colSpan={18} className="text-center py-8 text-slate-400 print:text-slate-600">
                         Nenhum medicamento encontrado para os filtros selecionados.
                       </td>
                     </tr>
                   ) : (
-                    linhasFiltradas.map((item) => {
+                    linhasFiltradas.map((item, idx) => {
                       const med = item.medicamento;
                       return (
-                        <tr key={med.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-1.5 px-3">
-                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px]" title={med.nome}>
+                        <tr
+                          key={med.id}
+                          className={cn(
+                            "hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent",
+                            idx % 2 === 1 && "print:bg-slate-50"
+                          )}
+                        >
+                          <td className="py-1.5 px-3 print:py-1 print:px-2 print:border print:border-slate-400">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px] print:max-w-none print:truncate-none print:whitespace-normal print:text-[8.5px] leading-tight" title={med.nome}>
                               {med.nome}
                             </div>
-                            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <div className="text-[10px] print:text-[7.5px] text-slate-500 print:text-slate-700 flex flex-wrap items-center gap-1 mt-0.5">
                               <span className="font-mono">Cód: {med.codigo || "S/C"}</span>
-                              <span className="font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-300">
+                              <span className="font-extrabold px-1 py-0.2 rounded text-[9px] print:text-[7px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-500">
                                 {item.apresentacaoFormatada}
                               </span>
                               {med.concentracao && <span>• {med.concentracao}</span>}
                               {item.isPsicotropico && (
-                                <span className="text-[9px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200">
+                                <span className="text-[9px] print:text-[7px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200 print:bg-white print:text-black print:border-black">
                                   {item.listaP344 || "P344"}
                                 </span>
                               )}
                               {item.isMav && (
-                                <span className="text-[9px] font-black text-red-700 bg-red-50 px-1 rounded border border-red-200">
+                                <span className="text-[9px] print:text-[7px] font-black text-red-700 bg-red-50 px-1 rounded border border-red-200 print:bg-white print:text-black print:border-black">
                                   MAV
                                 </span>
                               )}
                             </div>
                           </td>
 
-                          <td className="text-center py-1.5 px-1 font-mono text-[10px]">
+                          <td className="text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
                                 {item.listaP344 || "P344"}
                               </Badge>
                             ) : item.isMav ? (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-50 text-red-700 border-red-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-red-50 text-red-700 border-red-200 print:bg-transparent print:text-black print:border-slate-600">
                                 MAV
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-sky-50 text-sky-700 border-sky-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-sky-50 text-sky-700 border-sky-200 print:bg-transparent print:text-black print:border-slate-600">
                                 Geral
                               </Badge>
                             )}
@@ -1218,27 +1261,27 @@ export function MapaMensalDispensacao() {
                               <td
                                 key={d}
                                 className={cn(
-                                  "text-center py-1 px-0.5 font-mono border-r border-slate-100 dark:border-slate-800",
-                                  fds && "bg-slate-50/50 dark:bg-slate-800/20"
+                                  "text-center py-1 px-0.5 font-mono border-r border-slate-100 dark:border-slate-800 print:border print:border-slate-400 print:py-0.5",
+                                  fds && "bg-slate-50/50 dark:bg-slate-800/20 print:bg-slate-100"
                                 )}
                               >
                                 {val > 0 ? (
                                   <span
                                     className={cn(
-                                      "inline-block px-1 py-0.5 rounded text-[10px] font-bold",
-                                      val >= 20 ? "bg-amber-100 text-amber-900" : "text-blue-900 dark:text-blue-200"
+                                      "inline-block px-1 py-0.5 rounded text-[10px] print:text-[8.5px] font-black print:text-black",
+                                      val >= 20 ? "bg-amber-100 text-amber-900 print:bg-transparent" : "text-blue-900 dark:text-blue-200"
                                     )}
                                   >
                                     {val}
                                   </span>
                                 ) : (
-                                  <span className="text-slate-300 dark:text-slate-600">-</span>
+                                  <span className="text-slate-300 dark:text-slate-600 print:text-slate-300">-</span>
                                 )}
                               </td>
                             );
                           })}
 
-                          <td className="text-center py-1.5 px-2 font-mono font-bold bg-blue-50/50 dark:bg-blue-950/20 text-blue-950 dark:text-blue-200 border-l-2 border-blue-200">
+                          <td className="text-center py-1.5 px-2 font-mono font-black bg-blue-50/50 dark:bg-blue-950/20 text-blue-950 dark:text-blue-200 border-l-2 border-blue-200 print:bg-slate-100 print:text-black print:border print:border-slate-600">
                             {item.totalQ1} un
                           </td>
                         </tr>
@@ -1249,22 +1292,38 @@ export function MapaMensalDispensacao() {
 
                 {/* Rodapé Totalizador da Folha 1 */}
                 <tfoot>
-                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-100">
-                    <td className="py-2 px-3 text-right uppercase text-[10px]">
+                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
+                    <td className="py-2 px-3 text-right uppercase text-[10px] print:text-[8px] print:border print:border-slate-600">
                       TOTAL DISPENSADO NO DIA:
                     </td>
-                    <td className="text-center">-</td>
+                    <td className="text-center print:border print:border-slate-600">-</td>
                     {diasQ1.map((d) => (
-                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] border-r border-slate-200">
+                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 print:border print:border-slate-600">
                         {totaisFiltrados.porDia[d] || 0}
                       </td>
                     ))}
-                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-200 bg-blue-100/70 border-l-2 border-blue-300">
+                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-200 bg-blue-100/70 border-l-2 border-blue-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.q1} un
                     </td>
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Campo Hospitalar de Assinaturas e Carimbo (Folha 1) */}
+            <div className="hidden print:grid grid-cols-3 gap-6 mt-3 pt-3 border-t-2 border-slate-800 text-[8.5px] text-slate-900 font-sans">
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Farmacêutico(a) Responsável</p>
+                <p className="text-[7.5px] text-slate-500">Assinatura & Carimbo / CRF</p>
+              </div>
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Enfermagem / Supervisão da Ala</p>
+                <p className="text-[7.5px] text-slate-500">Conferência & Visto / COREN</p>
+              </div>
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Coordenação / Auditoria</p>
+                <p className="text-[7.5px] text-slate-500">Visto Hospitalar & Arquivo</p>
+              </div>
             </div>
           </div>
         )}
@@ -1275,103 +1334,148 @@ export function MapaMensalDispensacao() {
         {(modoVisualizacao === "ambas" || modoVisualizacao === "q2") && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs print:border-none print:shadow-none print:m-0 print:p-0 page-break-before">
             
-            {/* Cabeçalho da Folha 2 */}
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-3.5 px-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center print:border-b-2 print:border-black print:p-1 print:mb-1">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight print:text-xs">
-                  Zorion Saúde • Mapa de Dispensação Diária — 2ª Quinzena (Dias 16 a {totalDiasMes})
-                </h3>
-                <p className="text-[11px] text-slate-500 print:text-[8px]">
-                  Mês de Referência: <strong>{mesesNomes[mes]} / {ano}</strong> • Ala: <strong className="uppercase text-emerald-700 print:text-black">{nomeAlaSelecionada}</strong> • Categoria: <strong className="text-slate-800">{rotuloCategoria}</strong> • Folha 2 de 2 (Fechamento Mensal)
-                </p>
+            {/* Cabeçalho Hospitalar Oficial da Folha 2 */}
+            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 px-4 border-b border-slate-200 dark:border-slate-700 print:bg-white print:border-2 print:border-slate-800 print:rounded-lg print:p-2.5 print:mb-2">
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 print:border-b-2 print:border-slate-800 pb-2 mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white font-black flex items-center justify-center text-sm print:bg-black print:text-white shadow-xs">
+                    ZS
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight print:text-xs">
+                      ZORION SAÚDE • FARMÁCIA HOSPITALAR & CLÍNICA
+                    </h3>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold print:text-[8.5px] print:text-black">
+                      MAPA DE DISPENSAÇÃO DIÁRIA DE MEDICAMENTOS • 2ª QUINZENA (DIAS 16 A {totalDiasMes}) — FECHAMENTO MENSAL
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-black px-2.5 py-1 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 print:bg-slate-200 print:text-black print:border-slate-800 uppercase font-mono">
+                    FOLHA 2 DE 2
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 font-mono print:text-[9px]">
-                  Subtotal 2ª Q: {totaisFiltrados.q2} un &nbsp;|&nbsp; TOTAL MÊS: {totaisFiltrados.geral} un
-                </span>
-                <span className="text-[10px] text-slate-400 block print:hidden">A4 Paisagem</span>
+
+              {/* Linha de Metadados / Setor / Período */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs print:text-[8.5px] text-slate-800 dark:text-slate-200 font-medium">
+                <div>
+                  <span className="text-slate-500 font-normal">Mês / Ano:</span>{" "}
+                  <strong className="uppercase">{mesesNomes[mes]} / {ano}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-normal">Ala / Setor:</span>{" "}
+                  <strong className="uppercase text-emerald-800 dark:text-emerald-300 print:text-black">{nomeAlaSelecionada}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-normal">Filtro:</span>{" "}
+                  <strong>{rotuloCategoria}</strong>
+                </div>
+                <div className="text-right font-mono">
+                  <span className="text-slate-500 font-normal">Subtotal 2ª Q:</span>{" "}
+                  <strong>{totaisFiltrados.q2} un</strong> &nbsp;|&nbsp;{" "}
+                  <span className="text-slate-500 font-normal">TOTAL MÊS:</span>{" "}
+                  <strong className="text-emerald-800 dark:text-emerald-300 print:text-black">{totaisFiltrados.geral} un</strong>
+                </div>
               </div>
             </div>
 
             {/* Tabela Quinzena 2 */}
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[11px] print:text-[8px]">
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
                 <thead>
-                  <tr className="bg-slate-100/80 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-100">
-                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-700">
+                  <tr className="bg-slate-100/90 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-200 print:border-slate-800">
+                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] print:min-w-0 print:max-w-none print:w-[26%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
                       Medicamento / Apresentação
                     </th>
-                    <th className="text-center py-2 px-1 w-12 font-bold text-slate-700">Cat.</th>
+                    <th className="text-center py-2 px-1 w-12 print:w-[4%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                      Cat.
+                    </th>
                     {diasQ2.map((d) => {
                       const dataDia = new Date(ano, mes, d);
                       const fds = isWeekend(dataDia);
+                      const diaSemanaNome = format(dataDia, "EEE", { locale: ptBR }).toUpperCase().slice(0, 3);
+
                       return (
                         <th
                           key={d}
                           className={cn(
-                            "text-center py-2 px-1 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700",
-                            fds ? "bg-slate-200/60 dark:bg-slate-700/60 text-slate-500" : "text-slate-800"
+                            "text-center py-1.5 px-0.5 w-8 print:w-[3.9%] font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600",
+                            fds
+                              ? "bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 print:bg-slate-300 print:text-black"
+                              : "text-slate-800 print:text-black"
                           )}
-                          title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${fds ? "Final de semana" : "Dia útil"})`}
+                          title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${diaSemanaNome})`}
                         >
-                          {String(d).padStart(2, "0")}{fds ? "*" : ""}
+                          <div className="text-[8px] print:text-[6.5px] font-extrabold uppercase text-slate-500 print:text-black leading-tight">
+                            {diaSemanaNome}
+                          </div>
+                          <div className="text-[11px] print:text-[9px] font-black">
+                            {String(d).padStart(2, "0")}{fds ? "*" : ""}
+                          </div>
                         </th>
                       );
                     })}
-                    <th className="text-center py-2 px-2 min-w-[65px] font-bold bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 border-l-2 border-emerald-200">
+                    <th className="text-center py-2 px-2 min-w-[65px] print:w-[6.5%] font-bold bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 border-l-2 border-emerald-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       TOTAL 2ª Q.
                     </th>
-                    <th className="text-center py-2 px-2 min-w-[75px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400">
+                    <th className="text-center py-2 px-2 min-w-[75px] print:w-[7.5%] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400 print:bg-slate-400 print:text-black print:border print:border-slate-800">
                       TOTAL MÊS
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-400">
                   {linhasFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan={19} className="text-center py-8 text-slate-400">
+                      <td colSpan={19} className="text-center py-8 text-slate-400 print:text-slate-600">
                         Nenhum medicamento encontrado para os filtros selecionados.
                       </td>
                     </tr>
                   ) : (
-                    linhasFiltradas.map((item) => {
+                    linhasFiltradas.map((item, idx) => {
                       const med = item.medicamento;
                       return (
-                        <tr key={med.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-1.5 px-3">
-                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px]" title={med.nome}>
+                        <tr
+                          key={med.id}
+                          className={cn(
+                            "hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent",
+                            idx % 2 === 1 && "print:bg-slate-50"
+                          )}
+                        >
+                          <td className="py-1.5 px-3 print:py-1 print:px-2 print:border print:border-slate-400">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px] print:max-w-none print:truncate-none print:whitespace-normal print:text-[8.5px] leading-tight" title={med.nome}>
                               {med.nome}
                             </div>
-                            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <div className="text-[10px] print:text-[7.5px] text-slate-500 print:text-slate-700 flex flex-wrap items-center gap-1 mt-0.5">
                               <span className="font-mono">Cód: {med.codigo || "S/C"}</span>
-                              <span className="font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-300">
+                              <span className="font-extrabold px-1 py-0.2 rounded text-[9px] print:text-[7px] uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800 print:bg-slate-100 print:text-black print:border-slate-500">
                                 {item.apresentacaoFormatada}
                               </span>
                               {med.concentracao && <span>• {med.concentracao}</span>}
                               {item.isPsicotropico && (
-                                <span className="text-[9px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200">
+                                <span className="text-[9px] print:text-[7px] font-black text-purple-700 bg-purple-50 px-1 rounded border border-purple-200 print:bg-white print:text-black print:border-black">
                                   {item.listaP344 || "P344"}
                                 </span>
                               )}
                               {item.isMav && (
-                                <span className="text-[9px] font-black text-red-700 bg-red-50 px-1 rounded border border-red-200">
+                                <span className="text-[9px] print:text-[7px] font-black text-red-700 bg-red-50 px-1 rounded border border-red-200 print:bg-white print:text-black print:border-black">
                                   MAV
                                 </span>
                               )}
                             </div>
                           </td>
 
-                          <td className="text-center py-1.5 px-1 font-mono text-[10px]">
+                          <td className="text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
                                 {item.listaP344 || "P344"}
                               </Badge>
                             ) : item.isMav ? (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-50 text-red-700 border-red-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-red-50 text-red-700 border-red-200 print:bg-transparent print:text-black print:border-slate-600">
                                 MAV
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-sky-50 text-sky-700 border-sky-200">
+                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-sky-50 text-sky-700 border-sky-200 print:bg-transparent print:text-black print:border-slate-600">
                                 Geral
                               </Badge>
                             )}
@@ -1384,31 +1488,31 @@ export function MapaMensalDispensacao() {
                               <td
                                 key={d}
                                 className={cn(
-                                  "text-center py-1 px-0.5 font-mono border-r border-slate-100 dark:border-slate-800",
-                                  fds && "bg-slate-50/50 dark:bg-slate-800/20"
+                                  "text-center py-1 px-0.5 font-mono border-r border-slate-100 dark:border-slate-800 print:border print:border-slate-400 print:py-0.5",
+                                  fds && "bg-slate-50/50 dark:bg-slate-800/20 print:bg-slate-100"
                                 )}
                               >
                                 {val > 0 ? (
                                   <span
                                     className={cn(
-                                      "inline-block px-1 py-0.5 rounded text-[10px] font-bold",
-                                      val >= 20 ? "bg-amber-100 text-amber-900" : "text-emerald-900 dark:text-emerald-200"
+                                      "inline-block px-1 py-0.5 rounded text-[10px] print:text-[8.5px] font-black print:text-black",
+                                      val >= 20 ? "bg-amber-100 text-amber-900 print:bg-transparent" : "text-emerald-900 dark:text-emerald-200"
                                     )}
                                   >
                                     {val}
                                   </span>
                                 ) : (
-                                  <span className="text-slate-300 dark:text-slate-600">-</span>
+                                  <span className="text-slate-300 dark:text-slate-600 print:text-slate-300">-</span>
                                 )}
                               </td>
                             );
                           })}
 
-                          <td className="text-center py-1.5 px-2 font-mono font-bold bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-200 border-l-2 border-emerald-200">
+                          <td className="text-center py-1.5 px-2 font-mono font-black bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-200 border-l-2 border-emerald-200 print:bg-slate-100 print:text-black print:border print:border-slate-600">
                             {item.totalQ2} un
                           </td>
 
-                          <td className="text-center py-1.5 px-2 font-mono font-black bg-blue-50 dark:bg-blue-950 text-blue-900 dark:text-blue-100 border-l-2 border-blue-400">
+                          <td className="text-center py-1.5 px-2 font-mono font-black bg-blue-50 dark:bg-blue-950 text-blue-900 dark:text-blue-100 border-l-2 border-blue-400 print:bg-slate-200 print:text-black print:border print:border-slate-800">
                             {item.totalMes} un
                           </td>
                         </tr>
@@ -1419,25 +1523,41 @@ export function MapaMensalDispensacao() {
 
                 {/* Rodapé Totalizador da Folha 2 */}
                 <tfoot>
-                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-100">
-                    <td className="py-2 px-3 text-right uppercase text-[10px]">
+                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
+                    <td className="py-2 px-3 text-right uppercase text-[10px] print:text-[8px] print:border print:border-slate-600">
                       TOTAL DISPENSADO NO DIA:
                     </td>
-                    <td className="text-center">-</td>
+                    <td className="text-center print:border print:border-slate-600">-</td>
                     {diasQ2.map((d) => (
-                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] border-r border-slate-200">
+                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 print:border print:border-slate-600">
                         {totaisFiltrados.porDia[d] || 0}
                       </td>
                     ))}
-                    <td className="text-center py-2 px-2 font-mono font-black text-emerald-900 dark:text-emerald-200 bg-emerald-100/70 border-l-2 border-emerald-300">
+                    <td className="text-center py-2 px-2 font-mono font-black text-emerald-900 dark:text-emerald-200 bg-emerald-100/70 border-l-2 border-emerald-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.q2} un
                     </td>
-                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-100 bg-blue-200/80 border-l-2 border-blue-400">
+                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-100 bg-blue-200/80 border-l-2 border-blue-400 print:bg-slate-400 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.geral} un
                     </td>
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Campo Hospitalar de Assinaturas e Carimbo (Folha 2) */}
+            <div className="hidden print:grid grid-cols-3 gap-6 mt-3 pt-3 border-t-2 border-slate-800 text-[8.5px] text-slate-900 font-sans">
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Farmacêutico(a) Responsável</p>
+                <p className="text-[7.5px] text-slate-500">Assinatura & Carimbo / CRF</p>
+              </div>
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Enfermagem / Supervisão da Ala</p>
+                <p className="text-[7.5px] text-slate-500">Conferência & Visto / COREN</p>
+              </div>
+              <div className="border-t border-slate-600 pt-1 text-center">
+                <p className="font-extrabold uppercase tracking-wider">Coordenação / Auditoria</p>
+                <p className="text-[7.5px] text-slate-500">Fechamento Mensal / Arquivo</p>
+              </div>
             </div>
           </div>
         )}
@@ -1448,17 +1568,25 @@ export function MapaMensalDispensacao() {
       <style>{`
         @page {
           size: A4 landscape;
-          margin: 8mm 8mm 8mm 8mm;
+          margin: 6mm 6mm 6mm 6mm;
         }
         @media print {
-          body {
+          html, body, #root, main, .space-y-6, .overflow-x-auto, .overflow-hidden, .overflow-y-auto, [class*="overflow-"] {
+            overflow: visible !important;
+            height: auto !important;
+            width: 100% !important;
+            max-width: none !important;
             background: white !important;
-            color: black !important;
-            font-size: 8px !important;
+            color: #000000 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          body {
+            font-size: 8.5px !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .no-print {
+          .no-print, nav, header, footer, aside, button, input, select, .sonner-toaster {
             display: none !important;
           }
           .page-break-after {
@@ -1470,10 +1598,26 @@ export function MapaMensalDispensacao() {
             break-before: page !important;
           }
           table {
-            font-size: 8px !important;
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+            font-size: 8.5px !important;
+            border: 1.5px solid #0f172a !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           th, td {
             padding: 3px 2px !important;
+            border: 1px solid #475569 !important;
+            color: #000000 !important;
           }
         }
       `}</style>
