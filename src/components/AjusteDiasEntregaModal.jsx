@@ -358,14 +358,40 @@ export function AjusteDiasEntregaModal({
         const doseAtual = extrairDoseDiaria(pr);
 
         // Dose dispensada no último lote
-        const doseAnterior =
+        let doseAnterior =
           pr.dose_diaria_dispensada !== undefined &&
           pr.dose_diaria_dispensada !== null
             ? parseFloat(pr.dose_diaria_dispensada)
             : null;
 
+        // Se a prescrição atual não possui doseAnterior ou coberto_ate (ex: receita alterada com 'Gerar Histórico'),
+        // busca no histórico de prescrições anteriores deste mesmo paciente e medicamento
+        if ((doseAnterior === null || !pr.coberto_ate) && prescricoes) {
+          const prAntiga = prescricoes.find((p) => {
+            if (String(p.id) === String(pr.id)) return false;
+            const pId = p.pacienteId || p.paciente_id || p.pacienteid;
+            if (String(pId) !== String(patient?.id)) return false;
+            const pMedId = String(p.medicamentoId || p.medicamento_id || "").trim();
+            const pMedNome = p.medicamentoNome || p.medicamento_nome || "";
+            const isMesmoMed = (prMedId && pMedId === prMedId) || (namesMatch(pMedNome, prMedNome));
+            return isMesmoMed && (p.coberto_ate || p.dose_diaria_dispensada);
+          });
+
+          if (prAntiga) {
+            if (doseAnterior === null && prAntiga.dose_diaria_dispensada !== undefined && prAntiga.dose_diaria_dispensada !== null) {
+              doseAnterior = parseFloat(prAntiga.dose_diaria_dispensada);
+            } else if (doseAnterior === null) {
+              doseAnterior = extrairDoseDiaria(prAntiga);
+            }
+            if (!pr.coberto_ate && prAntiga.coberto_ate) {
+              pr.coberto_ate = prAntiga.coberto_ate;
+            }
+          }
+        }
+
         const isNova = doseAnterior === null || doseAnterior === undefined;
         const diferencaDose = isNova ? doseAtual : doseAtual - doseAnterior;
+        const isReducaoDose = !isNova && diferencaDose < 0;
 
         // ── IDENTIFICAÇÃO DE ANTIBIÓTICO / ANTIMICROBIANO ─────────────────────
         const isAntibiotico = Boolean(
@@ -458,6 +484,13 @@ export function AjusteDiasEntregaModal({
               cobertoAteStr = format(cobP, "yyyy-MM-dd");
             }
           } catch (e) {}
+        } else if (patient?.ciclo_coberto_ate && !isNova) {
+          try {
+            const cobP = parseISO(patient.ciclo_coberto_ate.split("T")[0]);
+            if (isValid(cobP)) {
+              cobertoAteStr = format(cobP, "yyyy-MM-dd");
+            }
+          } catch (e) {}
         }
 
         const dataUltimaDispStr = pr.data_ultima_dispensacao
@@ -476,11 +509,19 @@ export function AjusteDiasEntregaModal({
           (!diferencaDose || diferencaDose <= 0)
         );
 
-        let jaDispensado = estaTotalmenteCoberto || dispensadoHojeValido;
+        // SE FOR REDUÇÃO DE DOSE (ex: tomava 1-1-1-1 e passa para 0-1-1-1):
+        // O paciente já tomava dose maior e tem comprimidos suficientes no leito/gaveta (com sobra).
+        // NUNCA DEVE ENTREGAR NADA A MAIS!
+        const reducaoJaCoberta = Boolean(
+          isReducaoDose &&
+          (cobertoAteStr || patient?.ciclo_coberto_ate || doseAnterior > 0)
+        );
+
+        let jaDispensado = estaTotalmenteCoberto || dispensadoHojeValido || reducaoJaCoberta;
 
         // Dias restantes reais
         let diasRestantes = diasSugeridos;
-        if (jaDispensado) {
+        if (jaDispensado || isReducaoDose) {
           diasRestantes = 0;
         } else if (cobertoAteStr && cobertoAteStr >= hojeStr && !isAntibiotico) {
           const diffRestante = differenceInCalendarDays(parseISO(dataAlvoFimStr), parseISO(cobertoAteStr));
@@ -496,20 +537,30 @@ export function AjusteDiasEntregaModal({
           ? Math.max(30, diasTratamento || 14)
           : Math.max(1, diasRestantes || diasSugeridos || 1);
 
-        const diasFinais = jaDispensado
+        const diasFinais = (jaDispensado || isReducaoDose)
           ? 0
           : (customDias[pr.id] !== undefined
               ? Math.min(maxDiasPermitidos, Math.max(1, parseInt(customDias[pr.id]) || 1))
               : (isAntibiotico ? (diasTratamento || 7) : maxDiasPermitidos));
 
-        // Dose efetiva a dispensar (diferença se aumento, ou dose cheia se nova medicação)
-        const doseEfetiva = jaDispensado
-          ? 0
-          : (diferencaDose > 0 && doseAnterior !== null
-              ? diferencaDose
-              : (doseAtual > 0 ? doseAtual : 1));
+        // Dose efetiva a dispensar:
+        // 1. Se redução de dose ou já dispensado: ZERO! (Paciente já tem sobra)
+        // 2. Se aumento de dose: apenas a DIFERENÇA (diferencaDose > 0)
+        // 3. Se nova receita: doseAtual
+        let doseEfetiva = 0;
+        if (jaDispensado || isReducaoDose) {
+          doseEfetiva = 0;
+        } else if (diferencaDose > 0 && doseAnterior !== null) {
+          doseEfetiva = diferencaDose;
+        } else if (isNova) {
+          doseEfetiva = doseAtual > 0 ? doseAtual : 1;
+        } else {
+          doseEfetiva = 0;
+        }
 
-        const qtdSugerida = jaDispensado ? 0 : Math.max(1, Math.ceil(doseEfetiva * diasFinais));
+        const qtdSugerida = (jaDispensado || isReducaoDose)
+          ? 0
+          : Math.max(0, Math.ceil(doseEfetiva * diasFinais));
 
         const saldoTotalSat = Number(med?.estoque_satelite) || 0;
 
@@ -544,6 +595,7 @@ export function AjusteDiasEntregaModal({
           doseAtual,
           doseAnterior,
           isNova,
+          isReducaoDose,
           isAntibiotico,
           diferencaDose,
           diasTratamento,
@@ -736,6 +788,24 @@ export function AjusteDiasEntregaModal({
       }
 
       if (itensParaBaixar.length === 0) {
+        // Se houver prescrições com redução de dose, atualiza o registro delas para registrar a nova posologia
+        const reducoes = prescAnalise.filter((p) => p.isReducaoDose && p.pr?.id);
+        if (reducoes.length > 0) {
+          for (const red of reducoes) {
+            try {
+              await db.entities.PrescricaoPaciente.update(red.pr.id, {
+                dose_diaria_dispensada: red.doseAtual,
+                coberto_ate: red.cobertoAteStr || dataFimCiclo,
+              });
+            } catch (e) {}
+          }
+          toast.success("Ciclo sincronizado! As reduções de dose foram registradas e o paciente já possui saldo suficiente.");
+          if (onSuccess) onSuccess();
+          onOpenChange(false);
+          setIsSubmitting(false);
+          return;
+        }
+
         toast.error("Nenhuma quantidade maior que zero para dispensar.");
         setIsSubmitting(false);
         return;
@@ -1124,11 +1194,11 @@ export function AjusteDiasEntregaModal({
                       return (
                         <TableRow
                           key={pr.id}
-                          onClick={() => !item.jaDispensado && toggleSelect(pr.id, item)}
+                          onClick={() => !item.jaDispensado && !item.isReducaoDose && toggleSelect(pr.id, item)}
                           className={cn(
                             "transition-colors select-none",
-                            item.jaDispensado
-                              ? "opacity-60 bg-slate-50/70 dark:bg-slate-900/40 cursor-not-allowed"
+                            item.jaDispensado || item.isReducaoDose
+                              ? "opacity-70 bg-slate-50/70 dark:bg-slate-900/40 cursor-not-allowed"
                               : isSelected
                               ? "cursor-pointer bg-indigo-50/70 dark:bg-indigo-950/40 font-medium"
                               : "cursor-pointer hover:bg-slate-50/60"
@@ -1139,13 +1209,19 @@ export function AjusteDiasEntregaModal({
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              disabled={item.jaDispensado}
+                              disabled={item.jaDispensado || item.isReducaoDose}
                               onChange={() => toggleSelect(pr.id, item)}
                               className={cn(
                                 "w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300",
-                                item.jaDispensado ? "cursor-not-allowed opacity-40" : "cursor-pointer"
+                                item.jaDispensado || item.isReducaoDose ? "cursor-not-allowed opacity-40" : "cursor-pointer"
                               )}
-                              title={item.jaDispensado ? "Medicamento já entregue e coberto" : "Selecionar para entrega"}
+                              title={
+                                item.isReducaoDose
+                                  ? "Redução de dose: paciente já possui medicação suficiente com sobra no leito."
+                                  : item.jaDispensado
+                                  ? "Medicamento já entregue e coberto."
+                                  : "Selecionar para entrega"
+                              }
                             />
                           </TableCell>
 
@@ -1173,7 +1249,16 @@ export function AjusteDiasEntregaModal({
 
                           {/* Status / Motivo do Ajuste */}
                           <TableCell className="text-center">
-                            {item.jaDispensado ? (
+                            {item.isReducaoDose ? (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-sky-100 text-sky-800 border-sky-300 text-[10px] font-bold shadow-2xs">
+                                  ⬇️ Redução de Dose (-{Math.abs(diferencaDose)} un/dia)
+                                </Badge>
+                                <span className="text-[9px] text-sky-700 block font-semibold">
+                                  Não entregar (sobra no leito)
+                                </span>
+                              </div>
+                            ) : item.jaDispensado ? (
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold shadow-xs">
                                 ✅ Já Dispensado ({item.cobertoAteStr ? `até ${format(parseISO(item.cobertoAteStr), "dd/MM/yyyy")}` : "Coberto"})
                               </Badge>
@@ -1206,10 +1291,10 @@ export function AjusteDiasEntregaModal({
 
                           {/* Dias a Entregar (com trava automática de fim do tratamento e teto de ciclo) */}
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                            {item.jaDispensado ? (
+                            {item.jaDispensado || item.isReducaoDose ? (
                               <div className="flex flex-col items-center justify-center">
                                 <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                  <Lock className="w-3 h-3 text-emerald-600" /> 0 dias (Já coberto)
+                                  <Lock className="w-3 h-3 text-emerald-600" /> 0 dias ({item.isReducaoDose ? "Sobra com paciente" : "Já coberto"})
                                 </Badge>
                                 {item.cobertoAteStr && (
                                   <span className="text-[9px] text-emerald-600 font-mono mt-0.5">
