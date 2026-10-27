@@ -62,6 +62,18 @@ export async function initializeApp() {
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_nome" TEXT;
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "baixa_grupo_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "is_baixa_lote_paciente" BOOLEAN DEFAULT false;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dias_cobertura" INTEGER;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_inicio_cobertura" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_fim_cobertura" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dose_diaria" NUMERIC;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "prescricao_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "paciente_nome" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_id" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_nome" TEXT;
+                ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "origem" TEXT;
             `;
             await invoke("execute_postgres", { ip, dbName, password, query });
 

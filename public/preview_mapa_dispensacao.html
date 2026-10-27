@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposta de Layout • Mapa Mensal de Dispensação Diária (Hospitalar)</title>
+  <style>
+    /* Reset & Base Typography */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #0f172a;
+      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.25;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    /* Barra Superior de Ações para o Usuário */
+    .action-bar {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 14px 24px;
+      border-radius: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      max-width: 1120px;
+      color: #f8fafc;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+    }
+
+    .action-bar h1 {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #ffffff;
+    }
+
+    .badge-status {
+      background: #0284c7;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .btn-print {
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.2s;
+    }
+
+    .btn-print:hover {
+      background: #059669;
+    }
+
+    /* Folha A4 Paisagem Simulada (297mm x 210mm) */
+    .page-sheet {
+      background: #ffffff;
+      width: 297mm;
+      min-height: 210mm;
+      padding: 10mm 12mm;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      border-radius: 2px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    /* ─── CABEÇALHO HOSPITALAR ─── */
+    .hospital-header {
+      border: 1.5px solid #0f172a;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+    }
+
+    .hospital-identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hospital-logo-box {
+      width: 34px;
+      height: 34px;
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .hospital-titles h2 {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #0f172a;
+    }
+
+    .hospital-titles p {
+      font-size: 10px;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .sheet-tag {
+      border: 1.5px solid #0f172a;
+      background: #f1f5f9;
+      padding: 4px 10px;
+      font-weight: 800;
+      font-size: 11px;
+      text-align: right;
+      border-radius: 3px;
+    }
+
+    .sheet-tag span {
+      display: block;
+      font-size: 8px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+    }
+
+    /* Linha de Metadados */
+    .header-meta {
+      display: grid;
+      grid-template-columns: 1.2fr 1.4fr 1.2fr 1.2fr;
+      gap: 8px;
+      font-size: 9.5px;
+      color: #1e293b;
+    }
+
+    .meta-item strong {
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    .meta-item span {
+      color: #64748b;
+    }
+
+    /* ─── TABELA HOSPITALAR DE ALTA PRECISÃO ─── */
+    .table-container {
+      flex-grow: 1;
+      margin-bottom: 8px;
+    }
+
+    table.disp-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 8.5px;
+      border: 1.5px solid #0f172a;
+    }
+
+    table.disp-table thead tr th {
+      background: #f1f5f9;
+      color: #0f172a;
+      border: 1px solid #475569;
+      padding: 3px 2px;
+      font-weight: 800;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    /* Cabeçalhos dos Dias */
+    th.day-header {
+      width: 3.8%;
+      padding: 2px 1px !important;
+      line-height: 1.1;
+    }
+
+    .day-weekday {
+      font-size: 6.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #475569;
+      display: block;
+    }
+
+    .day-num {
+      font-size: 9.5px;
+      font-weight: 900;
+      color: #0f172a;
+    }
+
+    /* Fim de semana com sombreamento sutil e legível */
+    th.day-weekend {
+      background: #e2e8f0 !important;
+    }
+    th.day-weekend .day-weekday {
+      color: #0f172a !important;
+    }
+
+    /* Colunas de Itens */
+    th.col-item {
+      width: 2.8%;
+    }
+    th.col-med {
+      width: 26%;
+      text-align: left !important;
+      padding-left: 6px !important;
+    }
+    th.col-cat {
+      width: 5.5%;
+    }
+    th.col-total-q {
+      width: 5.5%;
+      background: #e2e8f0 !important;
+    }
+    th.col-total-m {
+      width: 5.8%;
+      background: #cbd5e1 !important;
+    }
+
+    /* Linhas de Dados */
+    table.disp-table tbody tr {
+      page-break-inside: avoid;
+    }
+
+    table.disp-table tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    table.disp-table td {
+      border: 1px solid #64748b;
+      padding: 3px 3px;
+      vertical-align: middle;
+      text-align: center;
+      color: #0f172a;
+      line-height: 1.15;
+    }
+
+    td.cell-item {
+      font-size: 8px;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    td.cell-med {
+      text-align: left !important;
+      padding-left: 5px !important;
+      overflow: hidden;
+    }
+
+    .med-name {
+      font-weight: 800;
+      font-size: 8.5px;
+      text-transform: uppercase;
+      color: #0f172a;
+      display: block;
+      white-space: normal;
+    }
+
+    .med-details {
+      font-size: 7.5px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    /* Badges de Categoria Nítidos em P&B / Impressão */
+    .badge-cat {
+      display: inline-block;
+      font-size: 7px;
+      font-weight: 800;
+      padding: 1px 3px;
+      border-radius: 2px;
+      border: 1px solid #0f172a;
+      text-transform: uppercase;
+      background: #ffffff;
+    }
+
+    .badge-mav {
+      background: #0f172a;
+      color: #ffffff;
+    }
+
+    .badge-p344 {
+      background: #f1f5f9;
+      color: #0f172a;
+      border: 1.2px solid #0f172a;
+    }
+
+    /* Células de Dias */
+    td.cell-day {
+      font-weight: 900;
+      font-size: 9px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #0f172a;
+      padding: 2px 1px !important;
+    }
+
+    td.cell-day.has-val {
+      background: #f1f5f9;
+    }
+
+    td.cell-day.zero {
+      color: #cbd5e1;
+      font-weight: 400;
+    }
+
+    td.cell-weekend {
+      background: #f1f5f9;
+    }
+
+    /* Colunas de Totais */
+    td.cell-tot-q {
+      font-family: ui-monospace, monospace;
+      font-weight: 900;
+      font-size: 9px;
+      background: #f1f5f9;
+      border-left: 1.5px solid #0f172a;
+    }
+
+    td.cell-tot-m {
+      font-family: ui-monospace, monospace;
+      font-weight: 900;
+      font-size: 9.5px;
+      background: #e2e8f0;
+      border-left: 1.5px solid #0f172a;
+    }
+
+    /* Rodapé Totalizador da Tabela */
+    table.disp-table tfoot tr td {
+      background: #e2e8f0;
+      font-weight: 900;
+      border-top: 1.5px solid #0f172a;
+      border-bottom: 1.5px solid #0f172a;
+      padding: 4px 2px;
+      font-size: 9px;
+    }
+
+    tfoot td.foot-label {
+      text-align: right;
+      padding-right: 6px;
+      font-size: 8px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* ─── BLOCO OFICIAL DE ASSINATURAS E CARIMBO ─── */
+    .signatures-block {
+      border: 1.5px solid #0f172a;
+      border-radius: 4px;
+      padding: 8px 14px 6px 14px;
+      background: #ffffff;
+      margin-top: 6px;
+    }
+
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+
+    .sig-box {
+      text-align: center;
+      padding-top: 18px;
+      position: relative;
+    }
+
+    .sig-line {
+      border-top: 1.2px solid #0f172a;
+      padding-top: 3px;
+    }
+
+    .sig-role {
+      font-size: 8.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #0f172a;
+    }
+
+    .sig-sub {
+      font-size: 7.5px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    /* Rodapé Documental */
+    .document-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 7.5px;
+      color: #64748b;
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+
+    /* ─── REGRAS DE IMPRESSÃO (A4 LANDSCAPE) ─── */
+    @page {
+      size: A4 landscape;
+      margin: 8mm 10mm;
+    }
+
+    @media print {
+      body {
+        background: white !important;
+        padding: 0 !important;
+        gap: 0 !important;
+      }
+
+      .action-bar {
+        display: none !important;
+      }
+
+      .page-sheet {
+        width: 100% !important;
+        min-height: auto !important;
+        height: auto !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        page-break-after: always;
+        break-after: page;
+      }
+
+      .page-break {
+        page-break-before: always;
+        break-before: page;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRA DE AÇÕES DO PREVIEW (NÃO IMPRIME) -->
+  <div class="action-bar">
+    <div>
+      <h1>
+        <span class="badge-status">Proposta Visual Aprovada</span>
+        Layout Hospitalar: Mapa Mensal de Dispensação Diária
+      </h1>
+      <p style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
+        Enquadramento exato para <strong>A4 Paisagem (Landscape)</strong> • Alta legibilidade em impressoras monocromáticas e coloridas.
+      </p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="btn-print" onclick="window.print()">
+        🖨️ Testar Impressão Agora (Ctrl + P)
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       FOLHA 1: 1ª QUINZENA (DIAS 01 A 15)
+       ========================================================================= -->
+  <div class="page-sheet">
+    
+    <!-- Cabeçalho -->
+    <header class="hospital-header">
+      <div class="header-top">
+        <div class="hospital-identity">
+          <div class="hospital-logo-box">ZS</div>
+          <div class="hospital-titles">
+            <h2>ZORION SAÚDE • FARMÁCIA HOSPITALAR & CLÍNICA</h2>
+            <p>MAPA DE DISPENSAÇÃO DIÁRIA DE MEDICAMENTOS • 1ª QUINZENA (DIAS 01 A 15)</p>
+          </div>
+        </div>
+        <div class="sheet-tag">
+          FOLHA 01 DE 02
+          <span>1ª Quinzena</span>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="meta-item"><span>Mês / Ano:</span> <strong>OUTUBRO / 2026</strong></div>
+        <div class="meta-item"><span>Ala / Setor:</span> <strong>REABILITAÇÃO II (MASCULINO)</strong></div>
+        <div class="meta-item"><span>Filtro Farmacológico:</span> <strong>TODOS OS MEDICAMENTOS</strong></div>
+        <div class="meta-item"><span>Emissão:</span> <strong>27/10/2026 às 11:15</strong></div>
+      </div>
+    </header>
+
+    <!-- Tabela Quinzena 1 -->
+    <div class="table-container">
+      <table class="disp-table">
+        <thead>
+          <tr>
+            <th class="col-item">#</th>
+            <th class="col-med">MEDICAMENTO / FORMA FARMACÊUTICA / VIA</th>
+            <th class="col-cat">CAT.</th>
+            
+            <!-- Dias 01 a 15 com Dias da Semana Exatos (Outubro/2026 começa na Quinta-feira) -->
+            <th class="day-header"><span class="day-weekday">QUI</span><span class="day-num">01</span></th>
+            <th class="day-header"><span class="day-weekday">SEX</span><span class="day-num">02</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">SÁB*</span><span class="day-num">03</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">DOM*</span><span class="day-num">04</span></th>
+            <th class="day-header"><span class="day-weekday">SEG</span><span class="day-num">05</span></th>
+            <th class="day-header"><span class="day-weekday">TER</span><span class="day-num">06</span></th>
+            <th class="day-header"><span class="day-weekday">QUA</span><span class="day-num">07</span></th>
+            <th class="day-header"><span class="day-weekday">QUI</span><span class="day-num">08</span></th>
+            <th class="day-header"><span class="day-weekday">SEX</span><span class="day-num">09</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">SÁB*</span><span class="day-num">10</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">DOM*</span><span class="day-num">11</span></th>
+            <th class="day-header"><span class="day-weekday">SEG</span><span class="day-num">12</span></th>
+            <th class="day-header"><span class="day-weekday">TER</span><span class="day-num">13</span></th>
+            <th class="day-header"><span class="day-weekday">QUA</span><span class="day-num">14</span></th>
+            <th class="day-header"><span class="day-weekday">QUI</span><span class="day-num">15</span></th>
+
+            <th class="col-total-q">TOTAL<br>1ª Q.</th>
+            <th class="col-total-m">TOTAL<br>MÊS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Item 1 -->
+          <tr>
+            <td class="cell-item">01</td>
+            <td class="cell-med">
+              <span class="med-name">ÁCIDO VALPRÓICO 250 MG</span>
+              <span class="med-details">Cápsula gelatinosa mole • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-tot-q">190 un</td>
+            <td class="cell-tot-m">380 un</td>
+          </tr>
+
+          <!-- Item 2 -->
+          <tr>
+            <td class="cell-item">02</td>
+            <td class="cell-med">
+              <span class="med-name">AMITRIPTILINA (CLORIDRATO) 25 MG</span>
+              <span class="med-details">Comprimido revestido • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-tot-q">90 un</td>
+            <td class="cell-tot-m">180 un</td>
+          </tr>
+
+          <!-- Item 3 -->
+          <tr>
+            <td class="cell-item">03</td>
+            <td class="cell-med">
+              <span class="med-name">CLONAZEPAM 2 MG</span>
+              <span class="med-details">Comprimido sulcado • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-B1</span></td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-tot-q">128 un</td>
+            <td class="cell-tot-m">256 un</td>
+          </tr>
+
+          <!-- Item 4 (MAV) -->
+          <tr>
+            <td class="cell-item">04</td>
+            <td class="cell-med">
+              <span class="med-name">FENTANILA (CITRATO) 0,05 MG/ML</span>
+              <span class="med-details">Ampola 2 mL • Solução Injetável IV/IM</span>
+            </td>
+            <td><span class="badge-cat badge-mav">MAV • A1</span></td>
+            <td class="cell-day has-val">2</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day has-val cell-weekend">1</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day has-val">2</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day has-val">1</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-tot-q">6 un</td>
+            <td class="cell-tot-m">12 un</td>
+          </tr>
+
+          <!-- Item 5 -->
+          <tr>
+            <td class="cell-item">05</td>
+            <td class="cell-med">
+              <span class="med-name">DIPIRONA SÓDICA 500 MG/ML</span>
+              <span class="med-details">Ampola 2 mL • Solução Injetável IV/IM</span>
+            </td>
+            <td><span class="badge-cat">CLÍNICO</span></td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val">22</td>
+            <td class="cell-day has-val cell-weekend">16</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">20</td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val">24</td>
+            <td class="cell-day has-val">19</td>
+            <td class="cell-day has-val">21</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">17</td>
+            <td class="cell-day has-val">22</td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val">20</td>
+            <td class="cell-day has-val">19</td>
+            <td class="cell-tot-q">283 un</td>
+            <td class="cell-tot-m">570 un</td>
+          </tr>
+
+          <!-- Item 6 -->
+          <tr>
+            <td class="cell-item">06</td>
+            <td class="cell-med">
+              <span class="med-name">HALOPERIDOL 5 MG</span>
+              <span class="med-details">Comprimido simples • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-tot-q">210 un</td>
+            <td class="cell-tot-m">420 un</td>
+          </tr>
+
+          <!-- Item 7 -->
+          <tr>
+            <td class="cell-item">07</td>
+            <td class="cell-med">
+              <span class="med-name">OMEPRAZOL 20 MG</span>
+              <span class="med-details">Cápsula gelatinosa dura com microgrânulos • Oral</span>
+            </td>
+            <td><span class="badge-cat">CLÍNICO</span></td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-tot-q">225 un</td>
+            <td class="cell-tot-m">450 un</td>
+          </tr>
+
+          <!-- Item 8 -->
+          <tr>
+            <td class="cell-item">08</td>
+            <td class="cell-med">
+              <span class="med-name">RISPERIDONA 2 MG</span>
+              <span class="med-details">Comprimido revestido • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-tot-q">150 un</td>
+            <td class="cell-tot-m">300 un</td>
+          </tr>
+        </tbody>
+
+        <!-- Rodapé Totalizador -->
+        <tfoot>
+          <tr>
+            <td colspan="3" class="foot-label">TOTAL DIÁRIO DE UNIDADES DISPENSADAS:</td>
+            <td>85</td>
+            <td>87</td>
+            <td>85</td>
+            <td>84</td>
+            <td>87</td>
+            <td>83</td>
+            <td>89</td>
+            <td>84</td>
+            <td>87</td>
+            <td>83</td>
+            <td>85</td>
+            <td>89</td>
+            <td>83</td>
+            <td>85</td>
+            <td>84</td>
+            <td class="cell-tot-q">1.282 un</td>
+            <td class="cell-tot-m">2.568 un</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Bloco de Assinaturas e Carimbos Oficiais -->
+    <div class="signatures-block">
+      <div class="sig-grid">
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Farmacêutico(a) Responsável</div>
+            <div class="sig-sub">Assinatura & Carimbo / CRF</div>
+          </div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Enfermagem / Supervisão da Ala</div>
+            <div class="sig-sub">Conferência & Visto / COREN</div>
+          </div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Coordenação / Auditoria Hospitalar</div>
+            <div class="sig-sub">Fechamento Mensal & Arquivo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rodapé Legal -->
+    <div class="document-footer">
+      <span>Zorion Saúde • Gestão e Farmácia Hospitalar Integrada</span>
+      <span>* Dias sombreados correspondem a plantões de fins de semana (Sábados e Domingos)</span>
+      <span>Página 1 de 2 • Válido somente com carimbo e assinatura</span>
+    </div>
+
+  </div>
+
+  <!-- =========================================================================
+       FOLHA 2: 2ª QUINZENA (DIAS 16 A 31)
+       ========================================================================= -->
+  <div class="page-sheet page-break" style="margin-top: 16px;">
+    
+    <!-- Cabeçalho -->
+    <header class="hospital-header">
+      <div class="header-top">
+        <div class="hospital-identity">
+          <div class="hospital-logo-box">ZS</div>
+          <div class="hospital-titles">
+            <h2>ZORION SAÚDE • FARMÁCIA HOSPITALAR & CLÍNICA</h2>
+            <p>MAPA DE DISPENSAÇÃO DIÁRIA DE MEDICAMENTOS • 2ª QUINZENA (DIAS 16 A 31)</p>
+          </div>
+        </div>
+        <div class="sheet-tag">
+          FOLHA 02 DE 02
+          <span>2ª Quinzena</span>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="meta-item"><span>Mês / Ano:</span> <strong>OUTUBRO / 2026</strong></div>
+        <div class="meta-item"><span>Ala / Setor:</span> <strong>REABILITAÇÃO II (MASCULINO)</strong></div>
+        <div class="meta-item"><span>Filtro Farmacológico:</span> <strong>TODOS OS MEDICAMENTOS</strong></div>
+        <div class="meta-item"><span>Emissão:</span> <strong>27/10/2026 às 11:15</strong></div>
+      </div>
+    </header>
+
+    <!-- Tabela Quinzena 2 -->
+    <div class="table-container">
+      <table class="disp-table">
+        <thead>
+          <tr>
+            <th class="col-item">#</th>
+            <th class="col-med">MEDICAMENTO / FORMA FARMACÊUTICA / VIA</th>
+            <th class="col-cat">CAT.</th>
+            
+            <!-- Dias 16 a 31 -->
+            <th class="day-header"><span class="day-weekday">SEX</span><span class="day-num">16</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">SÁB*</span><span class="day-num">17</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">DOM*</span><span class="day-num">18</span></th>
+            <th class="day-header"><span class="day-weekday">SEG</span><span class="day-num">19</span></th>
+            <th class="day-header"><span class="day-weekday">TER</span><span class="day-num">20</span></th>
+            <th class="day-header"><span class="day-weekday">QUA</span><span class="day-num">21</span></th>
+            <th class="day-header"><span class="day-weekday">QUI</span><span class="day-num">22</span></th>
+            <th class="day-header"><span class="day-weekday">SEX</span><span class="day-num">23</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">SÁB*</span><span class="day-num">24</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">DOM*</span><span class="day-num">25</span></th>
+            <th class="day-header"><span class="day-weekday">SEG</span><span class="day-num">26</span></th>
+            <th class="day-header"><span class="day-weekday">TER</span><span class="day-num">27</span></th>
+            <th class="day-header"><span class="day-weekday">QUA</span><span class="day-num">28</span></th>
+            <th class="day-header"><span class="day-weekday">QUI</span><span class="day-num">29</span></th>
+            <th class="day-header"><span class="day-weekday">SEX</span><span class="day-num">30</span></th>
+            <th class="day-header day-weekend"><span class="day-weekday">SÁB*</span><span class="day-num">31</span></th>
+
+            <th class="col-total-q">TOTAL<br>2ª Q.</th>
+            <th class="col-total-m">TOTAL<br>MÊS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Item 1 -->
+          <tr>
+            <td class="cell-item">01</td>
+            <td class="cell-med">
+              <span class="med-name">ÁCIDO VALPRÓICO 250 MG</span>
+              <span class="med-details">Cápsula gelatinosa mole • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val">12</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-tot-q">190 un</td>
+            <td class="cell-tot-m">380 un</td>
+          </tr>
+
+          <!-- Item 2 -->
+          <tr>
+            <td class="cell-item">02</td>
+            <td class="cell-med">
+              <span class="med-name">AMITRIPTILINA (CLORIDRATO) 25 MG</span>
+              <span class="med-details">Comprimido revestido • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val">6</td>
+            <td class="cell-day has-val cell-weekend">6</td>
+            <td class="cell-tot-q">90 un</td>
+            <td class="cell-tot-m">180 un</td>
+          </tr>
+
+          <!-- Item 3 -->
+          <tr>
+            <td class="cell-item">03</td>
+            <td class="cell-med">
+              <span class="med-name">CLONAZEPAM 2 MG</span>
+              <span class="med-details">Comprimido sulcado • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-B1</span></td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val">8</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-tot-q">128 un</td>
+            <td class="cell-tot-m">256 un</td>
+          </tr>
+
+          <!-- Item 4 (MAV) -->
+          <tr>
+            <td class="cell-item">04</td>
+            <td class="cell-med">
+              <span class="med-name">FENTANILA (CITRATO) 0,05 MG/ML</span>
+              <span class="med-details">Ampola 2 mL • Solução Injetável IV/IM</span>
+            </td>
+            <td><span class="badge-cat badge-mav">MAV • A1</span></td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day has-val cell-weekend">1</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day has-val">2</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-day has-val">1</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day zero">-</td>
+            <td class="cell-day has-val">2</td>
+            <td class="cell-day zero cell-weekend">-</td>
+            <td class="cell-tot-q">6 un</td>
+            <td class="cell-tot-m">12 un</td>
+          </tr>
+
+          <!-- Item 5 -->
+          <tr>
+            <td class="cell-item">05</td>
+            <td class="cell-med">
+              <span class="med-name">DIPIRONA SÓDICA 500 MG/ML</span>
+              <span class="med-details">Ampola 2 mL • Solução Injetável IV/IM</span>
+            </td>
+            <td><span class="badge-cat">CLÍNICO</span></td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val cell-weekend">16</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">20</td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val">24</td>
+            <td class="cell-day has-val">19</td>
+            <td class="cell-day has-val">21</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">17</td>
+            <td class="cell-day has-val">22</td>
+            <td class="cell-day has-val">18</td>
+            <td class="cell-day has-val">20</td>
+            <td class="cell-day has-val">19</td>
+            <td class="cell-day has-val">20</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-tot-q">287 un</td>
+            <td class="cell-tot-m">570 un</td>
+          </tr>
+
+          <!-- Item 6 -->
+          <tr>
+            <td class="cell-item">06</td>
+            <td class="cell-med">
+              <span class="med-name">HALOPERIDOL 5 MG</span>
+              <span class="med-details">Comprimido simples • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val">14</td>
+            <td class="cell-day has-val cell-weekend">14</td>
+            <td class="cell-tot-q">210 un</td>
+            <td class="cell-tot-m">420 un</td>
+          </tr>
+
+          <!-- Item 7 -->
+          <tr>
+            <td class="cell-item">07</td>
+            <td class="cell-med">
+              <span class="med-name">OMEPRAZOL 20 MG</span>
+              <span class="med-details">Cápsula gelatinosa dura com microgrânulos • Oral</span>
+            </td>
+            <td><span class="badge-cat">CLÍNICO</span></td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val">15</td>
+            <td class="cell-day has-val cell-weekend">15</td>
+            <td class="cell-tot-q">225 un</td>
+            <td class="cell-tot-m">450 un</td>
+          </tr>
+
+          <!-- Item 8 -->
+          <tr>
+            <td class="cell-item">08</td>
+            <td class="cell-med">
+              <span class="med-name">RISPERIDONA 2 MG</span>
+              <span class="med-details">Comprimido revestido • Uso Oral</span>
+            </td>
+            <td><span class="badge-cat badge-p344">P344-C1</span></td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val">10</td>
+            <td class="cell-day has-val cell-weekend">10</td>
+            <td class="cell-tot-q">150 un</td>
+            <td class="cell-tot-m">300 un</td>
+          </tr>
+        </tbody>
+
+        <!-- Rodapé Totalizador -->
+        <tfoot>
+          <tr>
+            <td colspan="3" class="foot-label">TOTAL DIÁRIO DE UNIDADES DISPENSADAS:</td>
+            <td>85</td>
+            <td>85</td>
+            <td>84</td>
+            <td>87</td>
+            <td>83</td>
+            <td>89</td>
+            <td>84</td>
+            <td>87</td>
+            <td>83</td>
+            <td>85</td>
+            <td>89</td>
+            <td>83</td>
+            <td>85</td>
+            <td>84</td>
+            <td>87</td>
+            <td>84</td>
+            <td class="cell-tot-q">1.286 un</td>
+            <td class="cell-tot-m">2.568 un</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Bloco de Assinaturas e Carimbos Oficiais -->
+    <div class="signatures-block">
+      <div class="sig-grid">
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Farmacêutico(a) Responsável</div>
+            <div class="sig-sub">Assinatura & Carimbo / CRF</div>
+          </div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Enfermagem / Supervisão da Ala</div>
+            <div class="sig-sub">Conferência & Visto / COREN</div>
+          </div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-line">
+            <div class="sig-role">Coordenação / Auditoria Hospitalar</div>
+            <div class="sig-sub">Fechamento Mensal & Arquivo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rodapé Legal -->
+    <div class="document-footer">
+      <span>Zorion Saúde • Gestão e Farmácia Hospitalar Integrada</span>
+      <span>* Dias sombreados correspondem a plantões de fins de semana (Sábados e Domingos)</span>
+      <span>Página 2 de 2 • Válido somente com carimbo e assinatura</span>
+    </div>
+
+  </div>
+
+</body>
+</html>

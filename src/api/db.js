@@ -520,6 +520,17 @@ async function autoEnsureTable(entityName) {
   }
 }
 
+export async function ensureAllCoreTables() {
+  const coreEntities = ["Saida", "Medicamento", "Lote", "Paciente", "PrescricaoPaciente", "Entrada", "TransferenciaPendente", "PedidoSatelite", "Auditoria"];
+  for (const ent of coreEntities) {
+    try {
+      await autoEnsureTable(ent);
+    } catch (e) {
+      console.warn(`[db.js] Falha ao auto-assegurar tabela ${ent}:`, e);
+    }
+  }
+}
+
 let hasSanitizedMedicamentos = false;
 async function sanitizeMedicamentosDb(ip, dbName, password) {
   if (hasSanitizedMedicamentos) return;
@@ -919,7 +930,23 @@ export async function batchExecuteSql(statements = [], { auditAction = null, aud
 
   const fullTransaction = `BEGIN;\n${validStmts.map(s => s.endsWith(";") ? s : `${s};`).join("\n")}\nCOMMIT;`;
 
-  return await invoke("execute_postgres", { ip, dbName, password, query: fullTransaction });
+  try {
+    return await invoke("execute_postgres", { ip, dbName, password, query: fullTransaction });
+  } catch (err) {
+    console.warn("[db.js] Falha na transação batch. Assegurando estrutura de colunas e reexecutando...", err);
+    const tabelas = ["Saida", "Medicamento", "Lote", "Paciente", "PrescricaoPaciente", "Auditoria", "TransferenciaPendente", "PedidoSatelite"];
+    for (const tbl of tabelas) {
+      if (fullTransaction.includes(`"${tbl}"`)) {
+        try {
+          await autoEnsureTable(tbl);
+        } catch (tableErr) {
+          console.warn(`[db.js] Falha ao verificar tabela ${tbl}:`, tableErr);
+        }
+      }
+    }
+    // Tenta reexecutar após garantir todas as colunas
+    return await invoke("execute_postgres", { ip, dbName, password, query: fullTransaction });
+  }
 }
 
 export async function executeRawSql(query) {
@@ -931,6 +958,7 @@ export async function executeRawSql(query) {
 export const db = {
   executeRaw: executeRawSql,
   batchExecute: batchExecuteSql,
+  ensureTables: ensureAllCoreTables,
   buildInsertSql,
   buildUpdateSql,
   logAction: registrarAuditoria,

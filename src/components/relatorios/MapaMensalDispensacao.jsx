@@ -36,6 +36,7 @@ import {
   Search,
   X,
   Hospital,
+  ExternalLink,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { isMav, isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
@@ -874,6 +875,16 @@ export function MapaMensalDispensacao() {
               >
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                 Exportar Excel (.csv)
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => window.open("/preview_mapa_dispensacao.html", "_blank")}
+                className="h-9 px-3 text-xs font-bold gap-1.5 text-blue-700 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
+                title="Abrir página HTML do modelo para conferência e aprovação da impressão"
+              >
+                <ExternalLink className="w-4 h-4 text-blue-600" />
+                Ver Modelo HTML
               </Button>
 
               <Button
