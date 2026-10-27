@@ -74,6 +74,32 @@ export async function initializeApp() {
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_id" TEXT;
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "ala_nome" TEXT;
                 ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "origem" TEXT;
+                ALTER TABLE "Saida" ALTER COLUMN "lote_id" DROP NOT NULL;
+
+                ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ciclo_coberto_ate" TEXT;
+                ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "ultimo_ciclo_dias" INTEGER;
+                ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "data_ultimo_ciclo" TEXT;
+                ALTER TABLE "Paciente" ADD COLUMN IF NOT EXISTS "data_ultimo_ajuste_ciclo" TEXT;
+
+                ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "coberto_ate" TEXT;
+                ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "ultimo_lote_dias" INTEGER;
+                ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "data_ultima_dispensacao" TEXT;
+                ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "dose_diaria_dispensada" NUMERIC;
+                ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "quantidade_ultimo_lote" INTEGER;
+
+                ALTER TABLE "Lote" ADD COLUMN IF NOT EXISTS "quantidade_satelite" INTEGER DEFAULT 0;
+                ALTER TABLE "Medicamento" ADD COLUMN IF NOT EXISTS "estoque_satelite" INTEGER DEFAULT 0;
+
+                CREATE TABLE IF NOT EXISTS "Auditoria" (
+                    "id" TEXT PRIMARY KEY,
+                    "acao" TEXT,
+                    "entidade" TEXT,
+                    "entidade_id" TEXT,
+                    "detalhes" TEXT,
+                    "usuario" TEXT,
+                    "data_hora" TEXT,
+                    "created_at" TEXT
+                );
             `;
             await invoke("execute_postgres", { ip, dbName, password, query });
 
