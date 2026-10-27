@@ -1701,6 +1701,12 @@ export function SeparacaoLoteModal({
           <div className="p-6 space-y-4">
             <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1.5 font-medium">
               <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">Data da Separação / Baixa:</span>
+                <span className="font-bold text-indigo-700 dark:text-indigo-400 font-mono">
+                  {format(dataInicioDate, "dd/MM/yyyy")} (Ciclo de {dias} dias)
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-semibold">Profissional Responsável:</span>
                 <span className="font-bold text-slate-800 dark:text-slate-200">
                   {activeUser?.nome || activeUser?.login || "Farmacêutico"}
