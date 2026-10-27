@@ -62,6 +62,7 @@ import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas,
 import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
 import { AjusteDiasEntregaModal } from "@/components/AjusteDiasEntregaModal";
 import { SeparacaoLoteModal } from "@/components/SeparacaoLoteModal";
+import { getActiveUser, validarSenhaUsuario } from "@/utils/authUtils";
 
 import {
   DIAS_SEMANA_MAP,
@@ -189,11 +190,13 @@ export default function PacientesMedicao() {
   const [ajusteCicloModalOpen, setAjusteCicloModalOpen] = useState(false);
   const [ajusteCicloPatient, setAjusteCicloPatient] = useState(null);
 
-  // ── SEGURANÇA / CONTROLE DE ACESSO (FASE DE TESTES - SENHA 102030) ──────────
+  // ── SEGURANÇA / CONTROLE DE ACESSO (SENHA DO USUÁRIO LOGADO) ──────────────
   const [senhaBaixaModalOpen, setSenhaBaixaModalOpen] = useState(false);
   const [senhaBaixaInput, setSenhaBaixaInput] = useState("");
   const [senhaBaixaError, setSenhaBaixaError] = useState("");
   const [baixaPendingAction, setBaixaPendingAction] = useState(null);
+  const [validandoSenhaBaixa, setValidandoSenhaBaixa] = useState(false);
+  const activeUser = useMemo(() => getActiveUser(), [senhaBaixaModalOpen]);
 
   const executarComSenha102030 = (acao) => {
     setSenhaBaixaInput("");
@@ -202,19 +205,38 @@ export default function PacientesMedicao() {
     setSenhaBaixaModalOpen(true);
   };
 
-  const handleConfirmarSenhaBaixa = () => {
-    if (senhaBaixaInput.trim() !== "102030") {
-      setSenhaBaixaError("ACESSO NEGADO: Senha de liberação incorreta! Tentativa registrada.");
-      toast.error("ACESSO NEGADO: Senha incorreta! Tentativa registrada no sistema.");
+  const handleConfirmarSenhaBaixa = async () => {
+    if (!senhaBaixaInput.trim()) {
+      setSenhaBaixaError("Por favor, digite sua senha de usuário.");
       return;
     }
-    setSenhaBaixaModalOpen(false);
-    setSenhaBaixaInput("");
+
+    setValidandoSenhaBaixa(true);
     setSenhaBaixaError("");
-    toast.success("Autenticação autorizada! Processando baixa...");
-    if (baixaPendingAction) {
-      baixaPendingAction();
-      setBaixaPendingAction(null);
+
+    try {
+      const senhaValida = await validarSenhaUsuario(senhaBaixaInput);
+      if (!senhaValida) {
+        setSenhaBaixaError("Senha incorreta! Digite a sua senha de acesso.");
+        toast.error("Senha de usuário incorreta!", {
+          description: "A confirmação da baixa requer a sua senha de acesso ao sistema.",
+        });
+        setValidandoSenhaBaixa(false);
+        return;
+      }
+
+      setSenhaBaixaModalOpen(false);
+      setSenhaBaixaInput("");
+      setSenhaBaixaError("");
+      setValidandoSenhaBaixa(false);
+      toast.success("Autenticação autorizada! Processando baixa...");
+      if (baixaPendingAction) {
+        baixaPendingAction();
+        setBaixaPendingAction(null);
+      }
+    } catch (e) {
+      setValidandoSenhaBaixa(false);
+      setSenhaBaixaError("Erro ao validar credenciais.");
     }
   };
 
@@ -4913,46 +4935,48 @@ export default function PacientesMedicao() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── MODAL DE SENHA DE SEGURANÇA (FASE DE TESTES: SENHA 102030) ─────────── */}
+      {/* ─── MODAL DE SENHA DE SEGURANÇA (SENHA DO USUÁRIO) ─────────── */}
       <Dialog open={senhaBaixaModalOpen} onOpenChange={setSenhaBaixaModalOpen}>
-        <DialogContent className="sm:max-w-[480px] border-2 border-red-500 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden">
-          <div className="bg-red-600 dark:bg-red-950 p-5 text-white flex items-center gap-3">
+        <DialogContent className="sm:max-w-[460px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden rounded-2xl">
+          <div className="bg-emerald-600 dark:bg-emerald-900 p-5 text-white flex items-center gap-3">
             <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-xs">
-              <ShieldAlert className="w-7 h-7 text-white animate-pulse" />
+              <Lock className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-black tracking-wide uppercase">
-                ACESSO RESTRITO • FASE DE TESTES
+              <h2 className="text-base font-bold tracking-wide">
+                Autenticação de Segurança
               </h2>
-              <p className="text-xs text-red-100 font-medium">
-                Auditoria de Estoque da Farmácia Satélite
+              <p className="text-xs text-emerald-100 font-medium">
+                Confirmação de Baixa de Medicamentos • Farmácia Satélite
               </p>
             </div>
           </div>
 
           <div className="p-6 space-y-4">
-            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1.5 font-medium">
-              <p className="font-bold flex items-center gap-1.5 text-amber-950 dark:text-amber-100">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                AVISO DE AUDITORIA E CONTROLE DE DISPENSAÇÃO:
-              </p>
-              <p>
-                O sistema de confirmação de baixa está em <strong>FASE DE HOMOLOGAÇÃO RESTRITA</strong>. A confirmação debitará o estoque físico e registrará logs auditáveis no banco de dados.
-              </p>
-              <p className="text-[11px] text-red-700 dark:text-red-300 font-bold">
-                ⚠️ Tentativas com senha incorreta serão bloqueadas e registradas.
-              </p>
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1.5 font-medium">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">Profissional Responsável:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {activeUser?.nome || activeUser?.login || "Farmacêutico"}
+                </span>
+              </div>
+              {activeUser?.cargo && (
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Cargo / Função:</span>
+                  <span className="capitalize">{activeUser.cargo}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-red-600" />
-                Para liberar a baixa, insira a senha autorizada:
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-emerald-600" />
+                Digite a sua senha de usuário para liberar a baixa:
               </label>
               <Input
                 type="password"
                 autoFocus
-                placeholder="Insira a senha de liberação..."
+                placeholder="Sua senha de acesso..."
                 value={senhaBaixaInput}
                 onChange={(e) => {
                   setSenhaBaixaInput(e.target.value);
@@ -4965,22 +4989,22 @@ export default function PacientesMedicao() {
                   }
                 }}
                 className={cn(
-                  "h-11 text-center font-mono text-lg tracking-widest font-black border-2",
+                  "h-11 text-center font-mono text-lg tracking-widest font-bold border",
                   senhaBaixaError
                     ? "border-red-500 bg-red-50/50 text-red-900 focus-visible:ring-red-400"
-                    : "border-slate-300 focus-visible:ring-indigo-500"
+                    : "border-slate-300 focus-visible:ring-emerald-500"
                 )}
               />
               {senhaBaixaError && (
-                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1 animate-bounce">
-                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   {senhaBaixaError}
                 </p>
               )}
             </div>
           </div>
 
-          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
             <Button
               type="button"
               variant="outline"
@@ -4992,15 +5016,16 @@ export default function PacientesMedicao() {
               }}
               className="font-bold text-xs"
             >
-              Cancelar e Bloquear
+              Cancelar
             </Button>
             <Button
               type="button"
               onClick={handleConfirmarSenhaBaixa}
-              className="bg-red-600 hover:bg-red-700 text-white font-black text-xs gap-1.5 shadow-md px-5"
+              disabled={validandoSenhaBaixa}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-md px-5"
             >
               <Lock className="w-3.5 h-3.5" />
-              Liberar Baixa no Estoque
+              {validandoSenhaBaixa ? "Validando..." : "Confirmar e Liberar Baixa"}
             </Button>
           </DialogFooter>
         </DialogContent>

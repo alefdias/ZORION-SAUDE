@@ -62,6 +62,7 @@ import {
 import { isPsicotropico } from "@/utils/mavUtils";
 import { safeFormatDate } from "@/utils/dateUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
+import { getActiveUser, validarSenhaUsuario } from "@/utils/authUtils";
 
 /**
  * Verifica se um lote pertence a determinado medicamento por id, código ou nome
@@ -146,10 +147,12 @@ export function SeparacaoLoteModal({
   });
   const allAlas = useMemo(() => (alas && alas.length > 0 ? alas : dbAlas), [alas, dbAlas]);
 
-  // ── SEGURANÇA / CONTROLE DE ACESSO (FASE DE TESTES - SENHA 102030) ──────────
+  // ── SEGURANÇA / CONTROLE DE ACESSO (SENHA DO USUÁRIO LOGADO) ──────────────
   const [senhaModalOpen, setSenhaModalOpen] = useState(false);
   const [senhaInput, setSenhaInput] = useState("");
   const [senhaError, setSenhaError] = useState("");
+  const [validandoSenha, setValidandoSenha] = useState(false);
+  const activeUser = useMemo(() => getActiveUser(), [open]);
 
   // Resetar filtro e busca ao abrir a modal, e atualizar estoque fresco
   useEffect(() => {
@@ -600,21 +603,37 @@ export function SeparacaoLoteModal({
     }));
   };
 
-  // Validação de Senha de Segurança para Liberação de Baixa (Fase de Testes: 102030)
-  const handleValidarSenhaEConfirmar = () => {
-    if (senhaInput.trim() !== "102030") {
-      setSenhaError("ACESSO NEGADO: Senha de liberação incorreta! Tentativa registrada.");
-      toast.error("ACESSO NEGADO: Senha incorreta!", {
-        description: "Operação travada. Verifique com a administração a senha de liberação.",
-      });
+  // Validação de Senha de Segurança para Liberação de Baixa (Senha do Usuário)
+  const handleValidarSenhaEConfirmar = async () => {
+    if (!senhaInput.trim()) {
+      setSenhaError("Por favor, digite sua senha de usuário.");
       return;
     }
 
+    setValidandoSenha(true);
     setSenhaError("");
-    setSenhaModalOpen(false);
-    setSenhaInput("");
-    toast.success("Autenticação autorizada! Processando baixa de medicamentos...");
-    executarBaixaMutation.mutate();
+
+    try {
+      const senhaValida = await validarSenhaUsuario(senhaInput);
+      if (!senhaValida) {
+        setSenhaError("Senha incorreta! Digite a senha do usuário logado.");
+        toast.error("Senha de usuário incorreta!", {
+          description: "A confirmação da baixa requer a sua senha de acesso ao sistema.",
+        });
+        setValidandoSenha(false);
+        return;
+      }
+
+      setSenhaError("");
+      setSenhaModalOpen(false);
+      setSenhaInput("");
+      setValidandoSenha(false);
+      toast.success("Autenticação autorizada! Processando baixa de medicamentos...");
+      executarBaixaMutation.mutate();
+    } catch (e) {
+      setValidandoSenha(false);
+      setSenhaError("Erro ao validar senha.");
+    }
   };
 
   // Executar Impressão da Guia de Separação (Padrão Idêntico ao Pedidos Central)
@@ -1573,47 +1592,49 @@ export function SeparacaoLoteModal({
         </DialogContent>
       </Dialog>
 
-      {/* ─── MODAL DE SENHA DE SEGURANÇA (FASE DE TESTES: SENHA 102030) ─────────── */}
+      {/* ─── MODAL DE SENHA DE SEGURANÇA (SENHA DO USUÁRIO) ─────────── */}
       <Dialog open={senhaModalOpen} onOpenChange={setSenhaModalOpen}>
-        <DialogContent className="sm:max-w-[480px] border-2 border-red-500 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden">
-          {/* Header de Alerta Máximo */}
-          <div className="bg-red-600 dark:bg-red-950 p-5 text-white flex items-center gap-3">
+        <DialogContent className="sm:max-w-[460px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-2xl p-0 overflow-hidden rounded-2xl">
+          {/* Header */}
+          <div className="bg-indigo-600 dark:bg-indigo-900 p-5 text-white flex items-center gap-3">
             <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-xs">
-              <ShieldAlert className="w-7 h-7 text-white animate-pulse" />
+              <Lock className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-black tracking-wide uppercase">
-                ACESSO RESTRITO • FASE DE TESTES
+              <h2 className="text-base font-bold tracking-wide">
+                Autenticação de Segurança
               </h2>
-              <p className="text-xs text-red-100 font-medium">
-                Auditoria de Estoque da Farmácia Satélite
+              <p className="text-xs text-indigo-100 font-medium">
+                Confirmação de Baixa de Medicamentos • Farmácia Satélite
               </p>
             </div>
           </div>
 
           <div className="p-6 space-y-4">
-            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1.5 font-medium">
-              <p className="font-bold flex items-center gap-1.5 text-amber-950 dark:text-amber-100">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                AVISO DE AUDITORIA E CONTROLE DE DISPENSAÇÃO:
-              </p>
-              <p>
-                O sistema de confirmação de baixa está em <strong>FASE DE HOMOLOGAÇÃO RESTRITA</strong>. A confirmação irá debitar o estoque real e registrar a movimentação na auditoria técnica.
-              </p>
-              <p className="text-[11px] text-red-700 dark:text-red-300 font-bold">
-                ⚠️ Tentativas com senha incorreta serão bloqueadas e registradas.
-              </p>
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1.5 font-medium">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-semibold">Profissional Responsável:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {activeUser?.nome || activeUser?.login || "Farmacêutico"}
+                </span>
+              </div>
+              {activeUser?.cargo && (
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Cargo / Função:</span>
+                  <span className="capitalize">{activeUser.cargo}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-red-600" />
-                Para liberar a baixa, insira a senha autorizada:
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-indigo-600" />
+                Digite a sua senha de usuário para liberar a baixa:
               </label>
               <Input
                 type="password"
                 autoFocus
-                placeholder="Insira a senha de liberação..."
+                placeholder="Sua senha de acesso..."
                 value={senhaInput}
                 onChange={(e) => {
                   setSenhaInput(e.target.value);
@@ -1626,22 +1647,22 @@ export function SeparacaoLoteModal({
                   }
                 }}
                 className={cn(
-                  "h-11 text-center font-mono text-lg tracking-widest font-black border-2",
+                  "h-11 text-center font-mono text-lg tracking-widest font-bold border",
                   senhaError
                     ? "border-red-500 bg-red-50/50 text-red-900 focus-visible:ring-red-400"
                     : "border-slate-300 focus-visible:ring-indigo-500"
                 )}
               />
               {senhaError && (
-                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1 animate-bounce">
-                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   {senhaError}
                 </p>
               )}
             </div>
           </div>
 
-          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
             <Button
               type="button"
               variant="outline"
@@ -1652,16 +1673,16 @@ export function SeparacaoLoteModal({
               }}
               className="font-bold text-xs"
             >
-              Cancelar e Bloquear
+              Cancelar
             </Button>
             <Button
               type="button"
               onClick={handleValidarSenhaEConfirmar}
-              disabled={executarBaixaMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white font-black text-xs gap-1.5 shadow-md px-5"
+              disabled={validandoSenha || executarBaixaMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 shadow-md px-5"
             >
               <Lock className="w-3.5 h-3.5" />
-              Liberar Baixa no Estoque
+              {validandoSenha ? "Validando..." : "Confirmar e Liberar Baixa"}
             </Button>
           </DialogFooter>
         </DialogContent>
