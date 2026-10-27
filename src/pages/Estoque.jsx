@@ -18,8 +18,10 @@ import {
   Pencil, 
   CalendarDays, 
   ShieldCheck, 
-  ShieldAlert 
+  ShieldAlert,
+  Building2 
 } from "lucide-react";
+import RelatorioConsolidadoEstoque from "@/components/estoque/RelatorioConsolidadoEstoque";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays, parseISO, isValid, format } from "date-fns";
 import { safeFormatDate, safeParseISO } from "@/utils/dateUtils";
@@ -491,11 +493,15 @@ export default function Estoque() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-6">
+        <TabsList className="mb-6 flex-wrap">
           <TabsTrigger value="padronizados" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Padronizados</TabsTrigger>
           <TabsTrigger value="nao_padronizados" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Não Padronizados</TabsTrigger>
           <TabsTrigger value="satelite" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Estoque Satélite</TabsTrigger>
           <TabsTrigger value="carrinho_parada" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">Estoque Carrinho de Parada</TabsTrigger>
+          <TabsTrigger value="consolidado" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm font-bold gap-1.5">
+            <Building2 className="w-3.5 h-3.5" />
+            Central vs Satélite (Consolidado)
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="padronizados" className="space-y-6">
@@ -846,6 +852,10 @@ export default function Estoque() {
 
       <TabsContent value="carrinho_parada" className="space-y-6">
         <EstoqueCarrinhoParadaTab />
+      </TabsContent>
+
+      <TabsContent value="consolidado" className="space-y-6">
+        <RelatorioConsolidadoEstoque medicamentos={medicamentos} lotes={lotes} />
       </TabsContent>
 
       </Tabs>

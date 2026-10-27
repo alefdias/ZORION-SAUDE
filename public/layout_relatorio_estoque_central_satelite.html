@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Layout Proposto • Relatório de Estoque Consolidado (Central + Satélite)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: #eef2ff;
+      --primary-border: #c7d2fe;
+      --secondary: #0f172a;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --emerald: #059669;
+      --emerald-light: #ecfdf5;
+      --emerald-border: #a7f3d0;
+      --amber: #d97706;
+      --amber-light: #fffbeb;
+      --amber-border: #fde68a;
+      --rose: #e11d48;
+      --rose-light: #fff1f2;
+      --rose-border: #fecdd3;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1380px;
+      margin: 0 auto;
+    }
+
+    /* Top banner feedback */
+    .proposal-banner {
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+      color: white;
+      padding: 18px 24px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 10px 25px -5px rgba(49, 46, 129, 0.25);
+    }
+
+    .proposal-banner h2 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .proposal-banner p {
+      font-size: 0.85rem;
+      color: #c7d2fe;
+      margin-top: 4px;
+    }
+
+    .badge-status {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* Main Card */
+    .main-card {
+      background: var(--card-bg);
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      background: #ffffff;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-box {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 24px;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .header-title h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+
+    .header-title p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .btn-outline {
+      background: white;
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .btn-outline:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* KPI Summary Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      padding: 24px 28px;
+      background: #fbfcfe;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .kpi-card {
+      background: white;
+      padding: 16px 20px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+    }
+
+    .kpi-central::before { background: #3b82f6; }
+    .kpi-satelite::before { background: #8b5cf6; }
+    .kpi-total::before { background: #059669; }
+    .kpi-padronizado::before { background: #10b981; }
+    .kpi-nao-padronizado::before { background: #f59e0b; }
+
+    .kpi-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .kpi-val {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: #0f172a;
+      font-family: 'JetBrains Mono', monospace;
+      margin: 8px 0 4px;
+    }
+
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    /* Filter & Controls Toolbar */
+    .toolbar {
+      padding: 16px 28px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      background: white;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tabs {
+      display: flex;
+      background: #f1f5f9;
+      padding: 4px;
+      border-radius: 12px;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      padding: 7px 16px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: #0f172a;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    .tab-counter {
+      padding: 2px 7px;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      background: #e2e8f0;
+      color: #475569;
+    }
+
+    .tab-btn.active .tab-counter {
+      background: #e0e7ff;
+      color: #4338ca;
+    }
+
+    .search-box {
+      position: relative;
+      min-width: 320px;
+    }
+
+    .search-box input {
+      width: 100%;
+      height: 38px;
+      padding: 0 14px 0 38px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-size: 0.82rem;
+      font-family: inherit;
+      background: #f8fafc;
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .search-box input:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: white;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #94a3b8;
+      pointer-events: none;
+      font-size: 14px;
+    }
+
+    /* Table */
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    thead {
+      background: #f8fafc;
+      border-bottom: 2px solid var(--border);
+    }
+
+    th {
+      padding: 12px 18px;
+      font-size: 0.73rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tbody tr {
+      transition: background-color 0.15s ease;
+    }
+
+    tbody tr:hover {
+      background-color: #f8fafc;
+    }
+
+    .col-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: #64748b;
+      font-size: 0.75rem;
+    }
+
+    .med-cell {
+      max-width: 320px;
+    }
+
+    .med-nome {
+      font-weight: 800;
+      color: #0f172a;
+      font-size: 0.87rem;
+    }
+
+    .med-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .badge-padronizado {
+      background: var(--emerald-light);
+      color: var(--emerald);
+      border: 1px solid var(--emerald-border);
+    }
+
+    .badge-nao-padronizado {
+      background: var(--amber-light);
+      color: var(--amber);
+      border: 1px solid var(--amber-border);
+    }
+
+    /* Numeric columns */
+    .num-central {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: #1e40af;
+      background: #eff6ff;
+      padding: 4px 10px;
+      border-radius: 8px;
+      display: inline-block;
+      min-width: 60px;
+      text-align: right;
+      border: 1px solid #bfdbfe;
+    }
+
+    .num-satelite {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: #6b21a8;
+      background: #faf5ff;
+      padding: 4px 10px;
+      border-radius: 8px;
+      display: inline-block;
+      min-width: 60px;
+      text-align: right;
+      border: 1px solid #e9d5ff;
+    }
+
+    .num-total {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      color: #065f46;
+      background: #ecfdf5;
+      padding: 6px 12px;
+      border-radius: 8px;
+      display: inline-block;
+      min-width: 70px;
+      text-align: right;
+      border: 1.5px solid #a7f3d0;
+      font-size: 0.9rem;
+    }
+
+    .progress-bar-container {
+      width: 120px;
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      display: flex;
+      margin-top: 4px;
+    }
+
+    .progress-central {
+      background: #3b82f6;
+      height: 100%;
+    }
+
+    .progress-satelite {
+      background: #a855f7;
+      height: 100%;
+    }
+
+    .prop-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #64748b;
+      margin-top: 3px;
+    }
+
+    /* Table Footer Summary */
+    tfoot {
+      background: #f1f5f9;
+      border-top: 2px solid var(--border);
+      font-weight: 800;
+    }
+
+    tfoot td {
+      padding: 16px 18px;
+      font-size: 0.85rem;
+      color: #0f172a;
+    }
+
+    /* Info card at bottom */
+    .footer-notes {
+      padding: 20px 28px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .signature-boxes {
+      display: flex;
+      gap: 32px;
+    }
+
+    .sig-line {
+      border-top: 1px dashed #cbd5e1;
+      padding-top: 4px;
+      min-width: 180px;
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    @media print {
+      body { padding: 0; background: white; }
+      .proposal-banner, .header-actions, .toolbar { display: none !important; }
+      .main-card { border: none; box-shadow: none; }
+      th, td { padding: 8px 10px; font-size: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Proposta para Aprovação -->
+    <div class="proposal-banner">
+      <div>
+        <h2>📋 Layout de Demonstração para Aprovação</h2>
+        <p>Modelo visual interativo do novo <strong>Relatório Consolidado de Estoque: Farmácia Central + Farmácia Satélite</strong> (Padronizados e Não Padronizados).</p>
+      </div>
+      <div>
+        <span class="badge-status">Status: Aguardando sua Aprovação</span>
+      </div>
+    </div>
+
+    <!-- Card Principal -->
+    <div class="main-card">
+      
+      <!-- Cabeçalho -->
+      <div class="header">
+        <div class="header-left">
+          <div class="logo-box">🏥</div>
+          <div class="header-title">
+            <h1>Posição de Estoque Unificado: Central & Satélite</h1>
+            <p>Auditoria Consolidada de Saldo Físico • Medicamentos Padronizados & Não Padronizados</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="btn btn-outline" onclick="window.print()">
+            🖨️ Imprimir Relatório
+          </button>
+          <button class="btn btn-outline" onclick="alert('Exportação CSV configurada com sucesso!')">
+            📊 Exportar Excel/CSV
+          </button>
+          <button class="btn btn-primary" onclick="alert('Layout Aprovado! Posso integrar diretamente no sistema.')">
+            ✅ Aprovar este Modelo
+          </button>
+        </div>
+      </div>
+
+      <!-- Resumo KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-central">
+          <span class="kpi-label">🏛️ Estoque Central</span>
+          <div class="kpi-val" id="kpiCentral">14.850</div>
+          <span class="kpi-sub">Saldo em almoxarifado central</span>
+        </div>
+
+        <div class="kpi-card kpi-satelite">
+          <span class="kpi-label">💊 Estoque Satélite</span>
+          <div class="kpi-val" id="kpiSatelite">4.210</div>
+          <span class="kpi-sub">Saldo nas alas e leitos</span>
+        </div>
+
+        <div class="kpi-card kpi-total">
+          <span class="kpi-label">📦 Total Geral Hospital</span>
+          <div class="kpi-val" id="kpiTotal">19.060</div>
+          <span class="kpi-sub">Central + Satélite somados</span>
+        </div>
+
+        <div class="kpi-card kpi-padronizado">
+          <span class="kpi-label">✅ Padronizados (REMUME)</span>
+          <div class="kpi-val" id="kpiPad">16.340</div>
+          <span class="kpi-sub">85,7% do inventário total</span>
+        </div>
+
+        <div class="kpi-card kpi-nao-padronizado">
+          <span class="kpi-label">🏷️ Não Padronizados</span>
+          <div class="kpi-val" id="kpiNaoPad">2.720</div>
+          <span class="kpi-sub">14,3% (Uso específico/extra)</span>
+        </div>
+      </div>
+
+      <!-- Barra de Filtros e Busca -->
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="filtrarCategoria('todos', this)">
+            Todos os Itens
+            <span class="tab-counter" id="countTodos">8</span>
+          </button>
+          <button class="tab-btn" onclick="filtrarCategoria('padronizado', this)">
+            ⭐ Padronizados
+            <span class="tab-counter" id="countPad">5</span>
+          </button>
+          <button class="tab-btn" onclick="filtrarCategoria('nao-padronizado', this)">
+            🏷️ Não Padronizados
+            <span class="tab-counter" id="countNaoPad">3</span>
+          </button>
+        </div>
+
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" oninput="filtrarBusca()" placeholder="Buscar por medicamento, princípio ativo ou código...">
+        </div>
+      </div>
+
+      <!-- Tabela de Medicamentos -->
+      <div class="table-responsive">
+        <table id="tabelaEstoque">
+          <thead>
+            <tr>
+              <th style="width: 80px;">Código</th>
+              <th>Medicamento / Descrição</th>
+              <th>Apresentação</th>
+              <th style="text-align: center;">Padronização</th>
+              <th style="text-align: right;">Estoque Central</th>
+              <th style="text-align: right;">Estoque Satélite</th>
+              <th style="text-align: right;">Soma (Total Geral)</th>
+              <th style="width: 140px; text-align: center;">Divisão Central/Satélite</th>
+              <th style="text-align: center;">Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Item 1: Padronizado -->
+            <tr data-tipo="padronizado">
+              <td class="col-code">MED-00102</td>
+              <td class="med-cell">
+                <div class="med-nome">Dipirona Monoidratada 500mg/ml</div>
+                <div class="med-desc">Solução Injetável • Ampola 2ml</div>
+              </td>
+              <td>Ampola 2ml</td>
+              <td style="text-align: center;">
+                <span class="badge badge-padronizado">⭐ Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">3.400 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">850 un</span></td>
+              <td style="text-align: right;"><span class="num-total">4.250 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 80%;" title="80% Central"></div>
+                  <div class="progress-satelite" style="width: 20%;" title="20% Satélite"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>80% C</span>
+                  <span>20% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+
+            <!-- Item 2: Padronizado -->
+            <tr data-tipo="padronizado">
+              <td class="col-code">MED-00105</td>
+              <td class="med-cell">
+                <div class="med-nome">Haloperidol 5mg</div>
+                <div class="med-desc">Comprimido Simples • Portaria 344</div>
+              </td>
+              <td>Comprimido</td>
+              <td style="text-align: center;">
+                <span class="badge badge-padronizado">⭐ Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">2.100 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">620 un</span></td>
+              <td style="text-align: right;"><span class="num-total">2.720 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 77%;" title="77% Central"></div>
+                  <div class="progress-satelite" style="width: 23%;" title="23% Satélite"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>77% C</span>
+                  <span>23% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+
+            <!-- Item 3: Não Padronizado -->
+            <tr data-tipo="nao-padronizado">
+              <td class="col-code">MED-00214</td>
+              <td class="med-cell">
+                <div class="med-nome">Quetiapina (Hemifumarato) 25mg</div>
+                <div class="med-desc">Comprimido Revestido • Uso Especial Paciente Específico</div>
+              </td>
+              <td>Comprimido</td>
+              <td style="text-align: center;">
+                <span class="badge badge-nao-padronizado">🏷️ Não Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">480 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">120 un</span></td>
+              <td style="text-align: right;"><span class="num-total">600 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 80%;"></div>
+                  <div class="progress-satelite" style="width: 20%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>80% C</span>
+                  <span>20% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a;">Atenção</span>
+              </td>
+            </tr>
+
+            <!-- Item 4: Padronizado -->
+            <tr data-tipo="padronizado">
+              <td class="col-code">MED-00045</td>
+              <td class="med-cell">
+                <div class="med-nome">Amoxicilina + Clavulanato 500mg+125mg</div>
+                <div class="med-desc">Comprimido Revestido • Antibiótico Sistêmico</div>
+              </td>
+              <td>Comprimido</td>
+              <td style="text-align: center;">
+                <span class="badge badge-padronizado">⭐ Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">1.800 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">450 un</span></td>
+              <td style="text-align: right;"><span class="num-total">2.250 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 80%;"></div>
+                  <div class="progress-satelite" style="width: 20%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>80% C</span>
+                  <span>20% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+
+            <!-- Item 5: Não Padronizado -->
+            <tr data-tipo="nao-padronizado">
+              <td class="col-code">MED-00330</td>
+              <td class="med-cell">
+                <div class="med-nome">Pregabalina 75mg</div>
+                <div class="med-desc">Cápsula Dura • Demanda Judicial / Autorização RT</div>
+              </td>
+              <td>Cápsula</td>
+              <td style="text-align: center;">
+                <span class="badge badge-nao-padronizado">🏷️ Não Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">320 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">90 un</span></td>
+              <td style="text-align: right;"><span class="num-total">410 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 78%;"></div>
+                  <div class="progress-satelite" style="width: 22%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>78% C</span>
+                  <span>22% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+
+            <!-- Item 6: Padronizado -->
+            <tr data-tipo="padronizado">
+              <td class="col-code">MED-00012</td>
+              <td class="med-cell">
+                <div class="med-nome">Omeprazol 20mg</div>
+                <div class="med-desc">Cápsula com Grânulos Gastro-resistentes</div>
+              </td>
+              <td>Cápsula</td>
+              <td style="text-align: center;">
+                <span class="badge badge-padronizado">⭐ Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">4.200 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">1.100 un</span></td>
+              <td style="text-align: right;"><span class="num-total">5.300 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 79%;"></div>
+                  <div class="progress-satelite" style="width: 21%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>79% C</span>
+                  <span>21% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+
+            <!-- Item 7: Não Padronizado -->
+            <tr data-tipo="nao-padronizado">
+              <td class="col-code">MED-00418</td>
+              <td class="med-cell">
+                <div class="med-nome">Rivastigmina 4,6mg/24h</div>
+                <div class="med-desc">Adesivo Transdérmico • Fornecimento Próprio/Externo</div>
+              </td>
+              <td>Adesivo</td>
+              <td style="text-align: center;">
+                <span class="badge badge-nao-padronizado">🏷️ Não Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">150 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">30 un</span></td>
+              <td style="text-align: right;"><span class="num-total">180 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 83%;"></div>
+                  <div class="progress-satelite" style="width: 17%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>83% C</span>
+                  <span>17% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecdd3;">Crítico</span>
+              </td>
+            </tr>
+
+            <!-- Item 8: Padronizado -->
+            <tr data-tipo="padronizado">
+              <td class="col-code">MED-00088</td>
+              <td class="med-cell">
+                <div class="med-nome">Clonazepam 2mg</div>
+                <div class="med-desc">Comprimido Sulcado • Portaria 344 Lista B1</div>
+              </td>
+              <td>Comprimido</td>
+              <td style="text-align: center;">
+                <span class="badge badge-padronizado">⭐ Padronizado</span>
+              </td>
+              <td style="text-align: right;"><span class="num-central">2.400 un</span></td>
+              <td style="text-align: right;"><span class="num-satelite">450 un</span></td>
+              <td style="text-align: right;"><span class="num-total">2.850 un</span></td>
+              <td>
+                <div class="progress-bar-container">
+                  <div class="progress-central" style="width: 84%;"></div>
+                  <div class="progress-satelite" style="width: 16%;"></div>
+                </div>
+                <div class="prop-labels">
+                  <span>84% C</span>
+                  <span>16% S</span>
+                </div>
+              </td>
+              <td style="text-align: center;">
+                <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;">Estável</span>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">Subtotal / Total Filtrado</td>
+              <td style="text-align: right; color:#1e40af;" id="footCentral">14.850 un</td>
+              <td style="text-align: right; color:#6b21a8;" id="footSatelite">4.210 un</td>
+              <td style="text-align: right; color:#047857; font-size:1rem;" id="footTotal">19.060 un</td>
+              <td colspan="2" style="text-align: center; font-size:0.75rem; color:#64748b;">
+                100% Auditado
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Rodapé do Relatório -->
+      <div class="footer-notes">
+        <div>
+          <p><strong>Zorion Saúde • Gestão Hospitalar e Farmácia Central</strong></p>
+          <p>Dados auditados em tempo real do banco de dados relacional. Suporte a impressão A4 formato paisagem.</p>
+        </div>
+
+        <div class="signature-boxes">
+          <div class="sig-line">
+            Farmacêutico(a) Responsável Técnico
+          </div>
+          <div class="sig-line">
+            Coordenação da Farmácia Central
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let categoriaAtual = 'todos';
+
+    function filtrarCategoria(cat, btn) {
+      categoriaAtual = cat;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      aplicarFiltros();
+    }
+
+    function filtrarBusca() {
+      aplicarFiltros();
+    }
+
+    function aplicarFiltros() {
+      const termo = document.getElementById('searchInput').value.toLowerCase().trim();
+      const linhas = document.querySelectorAll('#tabelaEstoque tbody tr');
+
+      let somaC = 0, somaS = 0, somaT = 0;
+      let countVisible = 0;
+
+      linhas.forEach(tr => {
+        const tipo = tr.getAttribute('data-tipo');
+        const texto = tr.innerText.toLowerCase();
+
+        const matchCat = (categoriaAtual === 'todos' || tipo === categoriaAtual);
+        const matchTermo = (!termo || texto.includes(termo));
+
+        if (matchCat && matchTermo) {
+          tr.style.display = '';
+          countVisible++;
+
+          const valC = parseInt(tr.querySelector('.num-central').innerText.replace(/\D/g, '')) || 0;
+          const valS = parseInt(tr.querySelector('.num-satelite').innerText.replace(/\D/g, '')) || 0;
+          const valT = parseInt(tr.querySelector('.num-total').innerText.replace(/\D/g, '')) || 0;
+
+          somaC += valC;
+          somaS += valS;
+          somaT += valT;
+        } else {
+          tr.style.display = 'none';
+        }
+      });
+
+      document.getElementById('footCentral').innerText = somaC.toLocaleString('pt-BR') + ' un';
+      document.getElementById('footSatelite').innerText = somaS.toLocaleString('pt-BR') + ' un';
+      document.getElementById('footTotal').innerText = somaT.toLocaleString('pt-BR') + ' un';
+    }
+  </script>
+</body>
+</html>

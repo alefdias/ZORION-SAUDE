@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { format, addDays, parseISO, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { db } from "@/api/db";
+import { cancelarEstornarBaixaGrupo } from "@/utils/baixaEstoqueService";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -641,7 +642,7 @@ export function SeparacaoLoteModal({
     window.print();
   };
 
-  // Mutação de Baixa em Lote dos itens filtrados
+  // Mutação de Baixa em Lote dos itens filtrados (com transação atômica batch)
   const executarBaixaMutation = useMutation({
     mutationFn: async () => {
       const nowStr = new Date().toISOString();
@@ -669,6 +670,9 @@ export function SeparacaoLoteModal({
         }
       }
 
+      const sqlStatements = [];
+      const baixaGrupoId = crypto.randomUUID();
+
       // 2. Debitar os lotes físicos conforme o split escolhido pelo usuário
       for (const item of itensFiltrados) {
         for (const aloc of item.alocacoes) {
@@ -678,10 +682,12 @@ export function SeparacaoLoteModal({
           const loteObj = (lotes || []).find((l) => String(l.id) === String(aloc.loteId));
           if (loteObj && (Number(loteObj.quantidade_atual) || 0) > 0) {
             const novoSaldoLote = Math.max(0, (Number(loteObj.quantidade_atual) || 0) - qtdAloc);
-            await db.entities.Lote.update(loteObj.id, {
-              quantidade_atual: novoSaldoLote,
-              status: novoSaldoLote <= 0 ? "esgotado" : loteObj.status,
-            });
+            sqlStatements.push(
+              db.buildUpdateSql("Lote", loteObj.id, {
+                quantidade_atual: novoSaldoLote,
+                status: novoSaldoLote <= 0 ? "esgotado" : loteObj.status,
+              })
+            );
             loteObj.quantidade_atual = novoSaldoLote;
           }
         }
@@ -717,31 +723,34 @@ export function SeparacaoLoteModal({
             const qtdDesteLote = Math.min(qtdRestantePac, curLote.saldoRestante);
 
             if (qtdDesteLote > 0) {
-              await db.entities.Saida.create({
-                medicamento_id: item.medicamentoId,
-                medicamento_nome: item.medicamentoNome,
-                lote_id: curLote.loteId,
-                numero_lote: curLote.numeroLote,
-                quantidade: qtdDesteLote,
-                destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
-                paciente_nome: pac ? pac.nome : "Paciente",
-                paciente_id: pac?.id || pr.pacienteId || pr.paciente_id,
-                prescricao_id: pr.id,
-                ala_id: pac?.alaId || pac?.ala_id || null,
-                ala_nome: pac ? pac.alaNome || pac.ala_nome || "Ala Geral" : "Geral",
-                motivo: `Separação Consolidada (${dias} ${dias === 1 ? "dia" : "dias"})`,
-                observacao: `Grade: ${pr.esquemaPosologico || "Posologia Fixa"} | Qt: ${qtdDesteLote} un | Lote: ${curLote.numeroLote} | Cobertura: ${format(dataInicioDate, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
-                data_saida: todayDateStr,
-                created_at: nowStr,
-                responsavel: responsavel,
-                responsavel_crf: responsavelCrf,
-                usuario_nome: responsavel,
-                dias_cobertura: dias,
-                data_inicio_cobertura: dataInicioStr,
-                data_fim_cobertura: dataFimStr,
-                dose_diaria: doseDiaria,
-                is_baixa_lote_paciente: true,
-              });
+              sqlStatements.push(
+                db.buildInsertSql("Saida", {
+                  medicamento_id: item.medicamentoId,
+                  medicamento_nome: item.medicamentoNome,
+                  lote_id: curLote.loteId,
+                  numero_lote: curLote.numeroLote,
+                  quantidade: qtdDesteLote,
+                  destino: pac ? `Paciente ${pac.nome} (Leito: ${pac.leito || "S/L"})` : "Paciente",
+                  paciente_nome: pac ? pac.nome : "Paciente",
+                  paciente_id: pac?.id || pr.pacienteId || pr.paciente_id,
+                  prescricao_id: pr.id,
+                  ala_id: pac?.alaId || pac?.ala_id || null,
+                  ala_nome: pac ? pac.alaNome || pac.ala_nome || "Ala Geral" : "Geral",
+                  motivo: `Separação Consolidada (${dias} ${dias === 1 ? "dia" : "dias"})`,
+                  observacao: `Grade: ${pr.esquemaPosologico || "Posologia Fixa"} | Qt: ${qtdDesteLote} un | Lote: ${curLote.numeroLote} | Cobertura: ${format(dataInicioDate, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
+                  data_saida: todayDateStr,
+                  created_at: nowStr,
+                  responsavel: responsavel,
+                  responsavel_crf: responsavelCrf,
+                  usuario_nome: responsavel,
+                  dias_cobertura: dias,
+                  data_inicio_cobertura: dataInicioStr,
+                  data_fim_cobertura: dataFimStr,
+                  dose_diaria: doseDiaria,
+                  is_baixa_lote_paciente: true,
+                  baixa_grupo_id: baixaGrupoId,
+                })
+              );
 
               curLote.saldoRestante -= qtdDesteLote;
               qtdRestantePac -= qtdDesteLote;
@@ -754,13 +763,15 @@ export function SeparacaoLoteModal({
 
           // Atualizar cobertura na prescrição
           if (pr) {
-            await db.entities.PrescricaoPaciente.update(pr.id, {
-              coberto_ate: dataFimStr,
-              ultimo_lote_dias: dias,
-              data_ultima_dispensacao: dataInicioStr,
-              dose_diaria_dispensada: doseDiaria,
-              quantidade_ultimo_lote: qtdIndividual,
-            });
+            sqlStatements.push(
+              db.buildUpdateSql("PrescricaoPaciente", pr.id, {
+                coberto_ate: dataFimStr,
+                ultimo_lote_dias: dias,
+                data_ultima_dispensacao: dataInicioStr,
+                dose_diaria_dispensada: doseDiaria,
+                quantidade_ultimo_lote: qtdIndividual,
+              })
+            );
           }
         }
 
@@ -768,9 +779,11 @@ export function SeparacaoLoteModal({
         const med = (medicamentos || []).find((m) => String(m.id) === String(item.medicamentoId));
         if (med) {
           const novoEstoque = Math.max(0, (Number(med.estoque_satelite) || 0) - item.qtdTotal);
-          await db.entities.Medicamento.update(med.id, {
-            estoque_satelite: novoEstoque,
-          });
+          sqlStatements.push(
+            db.buildUpdateSql("Medicamento", med.id, {
+              estoque_satelite: novoEstoque,
+            })
+          );
         }
       }
 
@@ -784,22 +797,56 @@ export function SeparacaoLoteModal({
 
       for (const pac of selectedPacs) {
         if (todosPacientesIds.has(String(pac.id))) {
-          await db.entities.Paciente.update(pac.id, {
-            ciclo_coberto_ate: dataFimStr,
-            ultimo_ciclo_dias: dias,
-            data_ultimo_ciclo: dataInicioStr,
-          });
+          sqlStatements.push(
+            db.buildUpdateSql("Paciente", pac.id, {
+              ciclo_coberto_ate: dataFimStr,
+              ultimo_ciclo_dias: dias,
+              data_ultimo_ciclo: dataInicioStr,
+            })
+          );
         }
       }
+
+      // Executar todas as instruções em uma única transação atômica (eliminando travamento do banco)
+      await db.batchExecute(sqlStatements, {
+        auditAction: "BAIXA_LOTE_SEPARACAO",
+        auditEntity: "Saida",
+        auditDetails: `Separação e Baixa de ${itensFiltrados.length} medicamento(s) (${dias} dias) por ${responsavel}. Grupo: ${baixaGrupoId}`,
+      });
+
+      return { baixaGrupoId };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
       queryClient.invalidateQueries({ queryKey: ["saidas"] });
       queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
       queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+
+      const grupoId = data?.baixaGrupoId;
       toast.success(
-        `Separação e Baixa de ${itensFiltrados.length} medicamento(s) concluída com sucesso!`
+        `Separação e Baixa de ${itensFiltrados.length} medicamento(s) concluída com sucesso!`,
+        {
+          duration: 12000,
+          action: grupoId
+            ? {
+                label: "Cancelar Baixa (Desfazer)",
+                onClick: async () => {
+                  try {
+                    await cancelarEstornarBaixaGrupo({ baixaGrupoId: grupoId });
+                    queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+                    queryClient.invalidateQueries({ queryKey: ["lotes"] });
+                    queryClient.invalidateQueries({ queryKey: ["saidas"] });
+                    queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+                    queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+                    toast.success("Baixa cancelada e estoque estornado com sucesso!");
+                  } catch (e) {
+                    toast.error("Erro ao cancelar baixa: " + e.message);
+                  }
+                },
+              }
+            : undefined,
+        }
       );
       if (onSuccess) onSuccess();
       onOpenChange(false);

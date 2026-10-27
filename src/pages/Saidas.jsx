@@ -24,6 +24,8 @@ import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import SaidaForm from "@/components/forms/SaidaForm";
+import CancelarBaixaModal from "@/components/CancelarBaixaModal";
+import { cancelarEstornarSaidaIndividual } from "@/utils/baixaEstoqueService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
@@ -41,6 +43,7 @@ export default function Saidas({ isTab = false }) {
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [cancelarBaixaModalOpen, setCancelarBaixaModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [editData, setEditData] = useState(null);
   const [preselectedMedId, setPreselectedMedId] = useState(null);
@@ -214,30 +217,16 @@ export default function Saidas({ isTab = false }) {
 
   const deleteSaidaMutation = useMutation({
     mutationFn: async (saida) => {
-      // 1. Reverter estoque do medicamento (Apenas Satélite)
-      const medId = saida.medicamento_id || saida.medicamentoId;
-      const medicamento = medicamentos.find(m => String(m.id) === String(medId));
-      if (medicamento) {
-        await db.entities.Medicamento.update(medicamento.id, {
-          estoque_satelite: (medicamento.estoque_satelite || 0) + (Number(saida.quantidade) || 0),
-        });
-      }
-
-      // 2. Reverter saldo do lote físico se houver lote vinculado
-      const loteId = saida.lote_id || saida.loteId;
-      if (loteId) {
-        const loteObj = (lotes || []).find(l => String(l.id) === String(loteId));
-        if (loteObj) {
-          const novoSaldo = (Number(loteObj.quantidade_atual) || 0) + (Number(saida.quantidade) || 0);
-          await db.entities.Lote.update(loteObj.id, {
-            quantidade_atual: novoSaldo,
-            status: "ativo"
-          });
+      let responsavel = "Farmacêutico";
+      try {
+        const rawU = localStorage.getItem("pharma_user");
+        if (rawU) {
+          const u = JSON.parse(rawU);
+          responsavel = u.full_name || u.nome || u.login || "Farmacêutico";
         }
-      }
+      } catch (e) {}
 
-      // 3. Deletar a saída no banco de dados
-      await db.entities.Saida.delete(saida.id);
+      await cancelarEstornarSaidaIndividual({ saida, usuarioNome: responsavel });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
@@ -246,10 +235,10 @@ export default function Saidas({ isTab = false }) {
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       setDeleteId(null);
-      toast.success("Dispensação deletada e estoque estornado com sucesso!");
+      toast.success("Dispensação cancelada e estoque estornado com sucesso!");
     },
     onError: (err) => {
-      toast.error("Erro ao deletar saída: " + (err.message || err));
+      toast.error("Erro ao estornar saída: " + (err.message || err));
     },
   });
 
@@ -607,6 +596,15 @@ export default function Saidas({ isTab = false }) {
 
   const actionButtons = (
     <div className="flex flex-wrap items-center gap-2">
+      <Button 
+        onClick={() => setCancelarBaixaModalOpen(true)} 
+        variant="outline" 
+        className="h-9 text-xs font-bold border-rose-300 text-rose-700 hover:bg-rose-50 shadow-xs gap-1.5 cursor-pointer"
+        title="Cancelar ou estornar dispensações de medicamentos em lote"
+      >
+        <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+        Estornar Baixa
+      </Button>
       <Button 
         onClick={() => setReportOpen(true)} 
         variant="outline" 
@@ -1330,6 +1328,19 @@ export default function Saidas({ isTab = false }) {
         lotes={lotes}
         alas={alas}
         isLoading={createSaidaMutation.isPending || updateSaidaMutation.isPending}
+      />
+
+      {/* Modal para Cancelar / Estornar Baixas em Lote */}
+      <CancelarBaixaModal
+        open={cancelarBaixaModalOpen}
+        onOpenChange={setCancelarBaixaModalOpen}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['saidas'] });
+          queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+          queryClient.invalidateQueries({ queryKey: ['lotes'] });
+          queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+          queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+        }}
       />
 
 

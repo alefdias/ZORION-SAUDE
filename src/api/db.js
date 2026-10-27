@@ -152,6 +152,7 @@ const ensureTableQuery = {
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "data_fim_cobertura" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "dose_diaria" NUMERIC;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "is_baixa_lote_paciente" BOOLEAN DEFAULT false;
+    ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "baixa_grupo_id" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "origem" TEXT;
     ALTER TABLE "Saida" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
   `,
@@ -855,6 +856,72 @@ export async function registrarAuditoria(acao, entidade, entidadeId, detalhes) {
   }
 }
 
+export function buildInsertSql(entityName, data) {
+  const item = { ...data };
+  if (!item.id) item.id = crypto.randomUUID();
+  if (!item.created_at) item.created_at = new Date().toISOString();
+
+  const cols = Object.keys(item).map(k => `"${k}"`).join(", ");
+  const vals = Object.values(item).map(v => {
+    if (v === null || v === undefined || v === "") return "NULL";
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (typeof v === "number") return v.toString();
+    return `'${String(v).replace(/'/g, "''")}'`;
+  }).join(", ");
+
+  return `INSERT INTO "${entityName}" (${cols}) VALUES (${vals});`;
+}
+
+export function buildUpdateSql(entityName, id, data) {
+  const updates = Object.keys(data).filter(k => k !== "id").map(k => {
+    const v = data[k];
+    let valStr;
+    if (v === null || v === undefined || v === "") valStr = "NULL";
+    else if (typeof v === "boolean") valStr = v ? "true" : "false";
+    else if (typeof v === "number") valStr = v.toString();
+    else valStr = `'${String(v).replace(/'/g, "''")}'`;
+    return `"${k}" = ${valStr}`;
+  }).join(", ");
+
+  if (!updates) return "";
+  return `UPDATE "${entityName}" SET ${updates} WHERE "id" = '${id}';`;
+}
+
+export async function batchExecuteSql(statements = [], { auditAction = null, auditEntity = "Saida", auditDetails = "" } = {}) {
+  const { ip, dbName, password } = getPgConfig();
+  if (!ip || !dbName) throw new Error("Postgres não configurado.");
+
+  const validStmts = statements
+    .map(s => (typeof s === "string" ? s.trim() : ""))
+    .filter(s => s.length > 0 && s !== ";");
+
+  if (validStmts.length === 0) return 0;
+
+  // Se houver auditoria consolidada para o lote inteiro
+  if (auditAction) {
+    try {
+      const user = JSON.parse(localStorage.getItem("pharma_user") || "null");
+      const userName = user ? (user.nome || user.login || "Sistema") : "Sistema";
+      const auditId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const safeDetails = String(auditDetails || "").replace(/'/g, "''");
+      validStmts.push(
+        `INSERT INTO "Auditoria" ("id", "acao", "entidade", "entidade_id", "detalhes", "usuario", "data_hora", "created_at") VALUES ('${auditId}', '${auditAction}', '${auditEntity}', '', '${safeDetails}', '${userName}', '${now}', '${now}');`
+      );
+    } catch (e) {
+      console.warn("[db.js] Erro ao anexar auditoria ao lote:", e);
+    }
+  }
+
+  // Notificações únicas de sincronização no final da transação
+  validStmts.push(`NOTIFY table_change, '${auditEntity || "Saida"}';`);
+  validStmts.push(`NOTIFY app_update, '${auditEntity || "Saida"}';`);
+
+  const fullTransaction = `BEGIN;\n${validStmts.map(s => s.endsWith(";") ? s : `${s};`).join("\n")}\nCOMMIT;`;
+
+  return await invoke("execute_postgres", { ip, dbName, password, query: fullTransaction });
+}
+
 export async function executeRawSql(query) {
   const { ip, dbName, password } = getPgConfig();
   if (!ip || !dbName) throw new Error("Postgres não configurado.");
@@ -863,6 +930,9 @@ export async function executeRawSql(query) {
 
 export const db = {
   executeRaw: executeRawSql,
+  batchExecute: batchExecuteSql,
+  buildInsertSql,
+  buildUpdateSql,
   logAction: registrarAuditoria,
   entities: {
     Medicamento: createEntityProxy("Medicamento"),
