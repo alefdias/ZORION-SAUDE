@@ -63,6 +63,7 @@ import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
 import { AjusteDiasEntregaModal } from "@/components/AjusteDiasEntregaModal";
 import { SeparacaoLoteModal } from "@/components/SeparacaoLoteModal";
 import CancelarBaixaModal from "@/components/CancelarBaixaModal";
+import { TrocaLoteValidadeModal } from "@/components/vencimentos/TrocaLoteValidadeModal";
 import { cancelarEstornarBaixaGrupo } from "@/utils/baixaEstoqueService";
 import { getActiveUser, validarSenhaUsuario } from "@/utils/authUtils";
 
@@ -284,6 +285,11 @@ export default function PacientesMedicao() {
 
   // Estado para indicar reinternação de paciente de alta
   const [isReinternando, setIsReinternando] = useState(false);
+
+  // Estados para Modal de Troca de Lote por Validade (Portaria 344)
+  const [trocaLoteModalOpen, setTrocaLoteModalOpen] = useState(false);
+  const [trocaLoteModalPatientId, setTrocaLoteModalPatientId] = useState(null);
+  const [trocaLoteModalPrescId, setTrocaLoteModalPrescId] = useState(null);
 
   // Queries - com refetchInterval para sincronização automática entre Zorion Recepção e Zorion Saúde
   const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
@@ -2023,6 +2029,20 @@ export default function PacientesMedicao() {
             Cancelar / Estornar Baixa
           </Button>
 
+          <Button
+            onClick={() => {
+              setTrocaLoteModalPatientId(null);
+              setTrocaLoteModalPrescId(null);
+              setTrocaLoteModalOpen(true);
+            }}
+            variant="outline"
+            className="h-9 text-xs font-bold border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 bg-amber-50/80 hover:bg-amber-100 dark:bg-amber-950/40 shadow-xs gap-1.5 cursor-pointer"
+            title="Troca de medicamentos prestes a vencer ou vencidos dispensados a pacientes, com descarte oficial na Portaria 344"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+            Troca por Validade (344)
+          </Button>
+
           <Button 
             onClick={() => handleOpenNewPatient()} 
             variant="outline" 
@@ -2679,6 +2699,19 @@ export default function PacientesMedicao() {
                           <Button 
                             size="sm" 
                             variant="ghost" 
+                            onClick={() => {
+                              setTrocaLoteModalPatientId(p.id);
+                              setTrocaLoteModalPrescId(null);
+                              setTrocaLoteModalOpen(true);
+                            }} 
+                            className="h-8 w-8 p-0 text-amber-600 hover:bg-amber-50 hover:text-amber-700" 
+                            title="Troca de Lote por Validade (Substituição Técnica)"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
                             onClick={() => handleOpenNewPresc(p.id)} 
                             className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" 
                             title="Adicionar Prescrição Fixa"
@@ -3065,6 +3098,27 @@ export default function PacientesMedicao() {
           queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
           queryClient.invalidateQueries({ queryKey: ["lotes"] });
           queryClient.invalidateQueries({ queryKey: ["saidas"] });
+          queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+        }}
+      />
+
+      {/* ─── MODAL: TROCA DE LOTE POR VALIDADE COM PERDA OFICIAL PORTARIA 344 ─── */}
+      <TrocaLoteValidadeModal
+        open={trocaLoteModalOpen}
+        onOpenChange={setTrocaLoteModalOpen}
+        pacientes={pacientes}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        lotes={lotes}
+        saidas={saidas}
+        initialPacienteId={trocaLoteModalPatientId}
+        initialPrescricaoId={trocaLoteModalPrescId}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+          queryClient.invalidateQueries({ queryKey: ["lotes"] });
+          queryClient.invalidateQueries({ queryKey: ["saidas"] });
+          queryClient.invalidateQueries({ queryKey: ["entradas"] });
           queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
           queryClient.invalidateQueries({ queryKey: ["pacientes"] });
         }}

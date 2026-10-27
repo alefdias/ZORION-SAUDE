@@ -30,11 +30,13 @@ import {
   ShieldAlert,
   ArrowDownCircle,
   FileSpreadsheet,
+  RefreshCw,
 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { isMav } from "@/utils/mavUtils";
 import { cn } from "@/lib/utils";
 import RetirarEstoquePerdaModal from "@/components/vencimentos/RetirarEstoquePerdaModal";
+import TrocaLoteValidadeModal from "@/components/vencimentos/TrocaLoteValidadeModal";
 
 // ─── Paleta de cores por categoria ───────────────────────────────────────────
 const CATEGORIA_COLORS = [
@@ -212,6 +214,8 @@ export default function Vencimentos() {
   const [filterGrupo, setFilterGrupo] = useState("all");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedLoteParaPerda, setSelectedLoteParaPerda] = useState(null);
+  const [selectedLoteParaTroca, setSelectedLoteParaTroca] = useState(null);
+  const [trocaLoteModalOpen, setTrocaLoteModalOpen] = useState(false);
 
   const hoje = new Date();
 
@@ -228,6 +232,16 @@ export default function Vencimentos() {
   const { data: saidas = [], isLoading: loadingSaidas } = useQuery({
     queryKey: ["saidas"],
     queryFn: () => db.entities.Saida.list(),
+  });
+
+  const { data: pacientes = [] } = useQuery({
+    queryKey: ["pacientes"],
+    queryFn: () => db.entities.Paciente.list(),
+  });
+
+  const { data: prescricoes = [] } = useQuery({
+    queryKey: ["prescricoes_paciente"],
+    queryFn: () => db.entities.PrescricaoPaciente.list(),
   });
 
   const isLoading = loadingMeds || loadingLotes || loadingSaidas;
@@ -550,6 +564,18 @@ export default function Vencimentos() {
           </div>
         </div>
         <div className="flex items-center gap-2 no-print self-end sm:self-auto">
+          <Button
+            onClick={() => {
+              setSelectedLoteParaTroca(null);
+              setTrocaLoteModalOpen(true);
+            }}
+            variant="outline"
+            className="gap-2 bg-amber-50/80 border-amber-300 text-amber-800 hover:bg-amber-100 font-semibold text-xs h-9 cursor-pointer shadow-xs"
+            title="Substituir lote vencendo ou vencido que já foi dispensado a paciente, com descarte oficial na Portaria 344"
+          >
+            <RefreshCw className="w-4 h-4 text-amber-600" />
+            Substituir Lote em Paciente
+          </Button>
           <Button onClick={handlePrint} variant="outline" className="gap-2 bg-white">
             <Printer className="w-4 h-4" />
             Imprimir
@@ -995,16 +1021,31 @@ export default function Vencimentos() {
 
                             {/* Ações */}
                             <td className="py-3 px-4 text-center no-print">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelectedLoteParaPerda(lote)}
-                                className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300 font-semibold text-xs h-8 px-2.5 gap-1.5 cursor-pointer"
-                                title="Retirar do estoque (Central / Satélite / Ambos) e registrar perda"
-                              >
-                                <PackageMinus className="w-3.5 h-3.5 text-red-600" />
-                                Retirar Estoque
-                              </Button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedLoteParaTroca(lote);
+                                    setTrocaLoteModalOpen(true);
+                                  }}
+                                  className="bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 hover:border-amber-300 font-semibold text-xs h-8 px-2 gap-1 cursor-pointer"
+                                  title="Substituir este lote em pacientes internados (Troca Técnica com Perda Oficial na Portaria 344)"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                                  Trocar em Paciente
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelectedLoteParaPerda(lote)}
+                                  className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300 font-semibold text-xs h-8 px-2.5 gap-1.5 cursor-pointer"
+                                  title="Retirar do estoque (Central / Satélite / Ambos) e registrar perda"
+                                >
+                                  <PackageMinus className="w-3.5 h-3.5 text-red-600" />
+                                  Retirar Estoque
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1133,18 +1174,33 @@ export default function Vencimentos() {
                               </p>
                             </td>
 
-                            {/* Botão de Retirada / Baixa por Perda */}
+                            {/* Botão de Retirada / Baixa por Perda & Troca em Paciente */}
                             <td className="py-2.5 px-4 text-center no-print">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelectedLoteParaPerda(lote)}
-                                className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300 font-semibold text-xs h-8 px-2.5 gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] transition-transform w-full justify-center"
-                                title="Dar baixa no estoque Central e/ou Satélite e registrar como perda"
-                              >
-                                <PackageMinus className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                                <span>Retirar Estoque</span>
-                              </Button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedLoteParaTroca(lote);
+                                    setTrocaLoteModalOpen(true);
+                                  }}
+                                  className="bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 hover:border-amber-300 font-semibold text-xs h-8 px-2 gap-1 cursor-pointer shadow-2xs hover:scale-[1.02] transition-transform"
+                                  title="Substituir este lote em pacientes internados (Troca Técnica com Perda Oficial na Portaria 344)"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>Trocar Paciente</span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelectedLoteParaPerda(lote)}
+                                  className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300 font-semibold text-xs h-8 px-2.5 gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] transition-transform"
+                                  title="Dar baixa no estoque Central e/ou Satélite e registrar como perda"
+                                >
+                                  <PackageMinus className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                  <span>Retirar Estoque</span>
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1168,6 +1224,26 @@ export default function Vencimentos() {
           queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
           queryClient.invalidateQueries({ queryKey: ["lotes"] });
           queryClient.invalidateQueries({ queryKey: ["saidas"] });
+        }}
+      />
+
+      {/* Modal para Troca de Lote por Validade em Paciente (Portaria 344) */}
+      <TrocaLoteValidadeModal
+        open={trocaLoteModalOpen}
+        onOpenChange={setTrocaLoteModalOpen}
+        pacientes={pacientes}
+        prescricoes={prescricoes}
+        medicamentos={medicamentos}
+        lotes={lotes}
+        saidas={saidas}
+        initialLoteId={selectedLoteParaTroca?.id}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+          queryClient.invalidateQueries({ queryKey: ["lotes"] });
+          queryClient.invalidateQueries({ queryKey: ["saidas"] });
+          queryClient.invalidateQueries({ queryKey: ["entradas"] });
+          queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes"] });
         }}
       />
 

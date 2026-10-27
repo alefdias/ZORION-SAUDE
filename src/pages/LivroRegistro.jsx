@@ -455,12 +455,15 @@ export default function LivroRegistro() {
         }
 
         // C) Perdas / Quebras declaradas
-        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || s.destino === 'Descarte Especial SNGPC' || motivoStr.includes('quebra') || motivoStr.includes('perda');
+        const isPerda = s.destino === 'Perda' || s.motivo === 'Perda' || s.destino === 'Descarte Especial SNGPC' || motivoStr.includes('quebra') || motivoStr.includes('perda') || motivoStr.includes('descarte');
         if (isPerda) {
+          const descCustom = s.motivo && !s.motivo.toLowerCase().startsWith('perda / quebra')
+            ? `PERDA DECLARADA: ${s.motivo}`
+            : 'PERDA / QUEBRA DECLARADA';
           saidasProcessadas.push({
             ...s,
             tipo: 'PERDA',
-            descricao: 'PERDA / QUEBRA DECLARADA',
+            descricao: descCustom,
             dataObj: dataBase,
             sortOrder: 3
           });
@@ -468,11 +471,12 @@ export default function LivroRegistro() {
         }
 
         // D) Baixa real de Paciente (Dispensação no posto Satélite)
+        const isSubstituicao = motivoStr.includes('substituição') || motivoStr.includes('substituicao');
         saidasProcessadas.push({
           ...s,
           tipo: 'SAIDA',
           descricao: s.paciente_nome 
-            ? `PACIENTE: ${s.paciente_nome}${s.ala_nome ? ` (${s.ala_nome})` : ''}` 
+            ? `PACIENTE: ${s.paciente_nome}${s.ala_nome ? ` (${s.ala_nome})` : ''}${isSubstituicao ? ' [Substituição de Lote por Validade]' : ''}` 
             : (s.destino || 'Paciente Ambulatorial / Internação'),
           dataObj: dataBase,
           sortOrder: 4
