@@ -118,6 +118,28 @@ export async function initializeApp() {
                 console.warn("[syncManager] Limpeza metades:", e);
             }
 
+            // Sincronização e padronização definitiva dos nomes de alas renomeadas (R2 -> REABILITAÇÃO II, N1 -> NEURO I)
+            try {
+                await invoke("execute_postgres", {
+                    ip, dbName, password,
+                    query: `
+                        UPDATE "Paciente" p
+                        SET "alaNome" = a."nome"
+                        FROM "Ala" a
+                        WHERE (p."alaId" = a."id" OR p."ala_id" = a."id") AND p."alaNome" != a."nome";
+
+                        UPDATE "Paciente" SET "alaNome" = 'REABILITAÇÃO II' WHERE UPPER(TRIM("alaNome")) IN ('R2', 'ALA R2', 'SETOR R2');
+                        UPDATE "Paciente" SET "alaNome" = 'NEURO I' WHERE UPPER(TRIM("alaNome")) IN ('N1', 'ALA N1', 'SETOR N1');
+                        UPDATE "PrescricaoPaciente" SET "alaNome" = 'REABILITAÇÃO II' WHERE UPPER(TRIM("alaNome")) IN ('R2', 'ALA R2', 'SETOR R2');
+                        UPDATE "PrescricaoPaciente" SET "alaNome" = 'NEURO I' WHERE UPPER(TRIM("alaNome")) IN ('N1', 'ALA N1', 'SETOR N1');
+                        UPDATE "Saida" SET "ala_nome" = 'REABILITAÇÃO II' WHERE UPPER(TRIM("ala_nome")) IN ('R2', 'ALA R2', 'SETOR R2');
+                        UPDATE "Saida" SET "ala_nome" = 'NEURO I' WHERE UPPER(TRIM("ala_nome")) IN ('N1', 'ALA N1', 'SETOR N1');
+                    `
+                });
+            } catch (e) {
+                console.warn("[syncManager] Sincronização nomes de alas:", e);
+            }
+
             // Migrate R2 patients once
             if (!localStorage.getItem("migrated_patients_r2")) {
                 try {

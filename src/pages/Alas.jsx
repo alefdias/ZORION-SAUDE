@@ -33,9 +33,30 @@ export default function Alas({ isTab }) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => db.entities.Ala.update(id, data),
+    mutationFn: async ({ id, data, oldNome }) => {
+      const updated = await db.entities.Ala.update(id, data);
+      if (data.nome && oldNome && data.nome !== oldNome) {
+        const safeNovo = data.nome.replace(/'/g, "''");
+        const safeAntigo = oldNome.replace(/'/g, "''");
+        const cascadeQueries = [
+          `UPDATE "Paciente" SET "alaNome" = '${safeNovo}' WHERE "alaId" = '${id}' OR "alaNome" = '${safeAntigo}';`,
+          `UPDATE "PrescricaoPaciente" SET "alaNome" = '${safeNovo}' WHERE "alaNome" = '${safeAntigo}';`,
+          `UPDATE "Saida" SET "ala_nome" = '${safeNovo}' WHERE "ala_id" = '${id}' OR "ala_nome" = '${safeAntigo}';`,
+          `UPDATE "GavetaPaciente" SET "ala_nome" = '${safeNovo}' WHERE "ala_id" = '${id}' OR "ala_nome" = '${safeAntigo}';`
+        ];
+        try {
+          await db.batchExecute(cascadeQueries);
+        } catch (err) {
+          console.warn("Aviso ao propagar renomeação de ala:", err);
+        }
+      }
+      return updated;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alas'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['saidas'] });
       setFormOpen(false);
       setEditingAla(null);
       toast.success("Ala atualizada com sucesso!");
@@ -52,7 +73,7 @@ export default function Alas({ isTab }) {
 
   const handleSave = (data) => {
     if (editingAla) {
-      updateMutation.mutate({ id: editingAla.id, data });
+      updateMutation.mutate({ id: editingAla.id, data, oldNome: editingAla.nome });
     } else {
       createMutation.mutate(data);
     }
