@@ -491,6 +491,43 @@ const ensureTableQuery = {
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "foto_recusada_motivo" TEXT;
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
     ALTER TABLE "Visita" ADD COLUMN IF NOT EXISTS "deleted_at" TEXT;
+  `,
+  HistoricoSeparacaoConsolidada: `
+    CREATE TABLE IF NOT EXISTS "HistoricoSeparacaoConsolidada" (
+      "id" TEXT PRIMARY KEY,
+      "baixa_grupo_id" TEXT,
+      "data_separacao" TEXT,
+      "dias_ciclo" INTEGER DEFAULT 8,
+      "data_inicio_cobertura" TEXT,
+      "data_fim_cobertura" TEXT,
+      "total_medicamentos" INTEGER DEFAULT 0,
+      "total_unidades" NUMERIC DEFAULT 0,
+      "total_pacientes" INTEGER DEFAULT 0,
+      "alas_atendidas" TEXT,
+      "categoria" TEXT DEFAULT 'todos',
+      "responsavel" TEXT,
+      "responsavel_crf" TEXT,
+      "status" TEXT DEFAULT 'CONCLUIDA',
+      "created_at" TEXT,
+      "revertido_em" TEXT,
+      "revertido_por" TEXT
+    );
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "baixa_grupo_id" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "data_separacao" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "dias_ciclo" INTEGER DEFAULT 8;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "data_inicio_cobertura" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "data_fim_cobertura" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "total_medicamentos" INTEGER DEFAULT 0;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "total_unidades" NUMERIC DEFAULT 0;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "total_pacientes" INTEGER DEFAULT 0;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "alas_atendidas" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "categoria" TEXT DEFAULT 'todos';
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "responsavel" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "responsavel_crf" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'CONCLUIDA';
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "created_at" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "revertido_em" TEXT;
+    ALTER TABLE "HistoricoSeparacaoConsolidada" ADD COLUMN IF NOT EXISTS "revertido_por" TEXT;
   `
 };
 
@@ -521,7 +558,7 @@ async function autoEnsureTable(entityName) {
 }
 
 export async function ensureAllCoreTables() {
-  const coreEntities = ["Saida", "Medicamento", "Lote", "Paciente", "PrescricaoPaciente", "Entrada", "TransferenciaPendente", "PedidoSatelite", "Auditoria"];
+  const coreEntities = ["Saida", "Medicamento", "Lote", "Paciente", "PrescricaoPaciente", "Entrada", "TransferenciaPendente", "PedidoSatelite", "Auditoria", "HistoricoSeparacaoConsolidada"];
   for (const ent of coreEntities) {
     try {
       await autoEnsureTable(ent);
@@ -986,7 +1023,8 @@ export const db = {
     Usuario: createEntityProxy("Usuario"),
     GavetaPaciente: createEntityProxy("GavetaPaciente"),
     Visita: createEntityProxy("Visita"),
-    NotificacaoFarmacia: createEntityProxy("NotificacaoFarmacia")
+    NotificacaoFarmacia: createEntityProxy("NotificacaoFarmacia"),
+    HistoricoSeparacaoConsolidada: createEntityProxy("HistoricoSeparacaoConsolidada")
   }
 };
 

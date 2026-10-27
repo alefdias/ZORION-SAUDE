@@ -141,6 +141,14 @@ export async function cancelarEstornarBaixaGrupo({
     sqlStatements.push(`DELETE FROM "Saida" WHERE "id" = '${sId}';`);
   }
 
+  // 6. Atualizar status no HistoricoSeparacaoConsolidada caso exista registro do lote
+  const gId = baixaGrupoId || (listaSaidas[0]?.baixa_grupo_id);
+  if (gId) {
+    sqlStatements.push(
+      `UPDATE "HistoricoSeparacaoConsolidada" SET "status" = 'ESTORNADA', "revertido_em" = '${new Date().toISOString()}', "revertido_por" = '${usuarioNome.replace(/'/g, "''")}' WHERE "id" = '${gId}' OR "baixa_grupo_id" = '${gId}';`
+    );
+  }
+
   // Executar tudo em UMA única transação no Postgres
   await db.batchExecute(sqlStatements, {
     auditAction: "CANCELAMENTO_BAIXA_ESTOQUE",

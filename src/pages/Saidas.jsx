@@ -25,6 +25,7 @@ import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import SaidaForm from "@/components/forms/SaidaForm";
 import CancelarBaixaModal from "@/components/CancelarBaixaModal";
+import { HistoricoSeparacoesModal } from "@/components/HistoricoSeparacoesModal";
 import { cancelarEstornarSaidaIndividual } from "@/utils/baixaEstoqueService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -44,6 +45,7 @@ export default function Saidas({ isTab = false }) {
   const [formOpen, setFormOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [cancelarBaixaModalOpen, setCancelarBaixaModalOpen] = useState(false);
+  const [historicoSeparacoesOpen, setHistoricoSeparacoesOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [editData, setEditData] = useState(null);
   const [preselectedMedId, setPreselectedMedId] = useState(null);
@@ -596,6 +598,15 @@ export default function Saidas({ isTab = false }) {
 
   const actionButtons = (
     <div className="flex flex-wrap items-center gap-2">
+      <Button 
+        onClick={() => setHistoricoSeparacoesOpen(true)} 
+        variant="outline" 
+        className="h-9 text-xs font-bold border-indigo-300 bg-indigo-50/70 text-indigo-800 hover:bg-indigo-100 shadow-xs gap-1.5 cursor-pointer"
+        title="Histórico de separações consolidadas e reversão de lote completo com 1 clique"
+      >
+        <Boxes className="w-3.5 h-3.5 text-indigo-600" />
+        Separações Consolidadas
+      </Button>
       <Button 
         onClick={() => setCancelarBaixaModalOpen(true)} 
         variant="outline" 
@@ -1341,6 +1352,20 @@ export default function Saidas({ isTab = false }) {
           queryClient.invalidateQueries({ queryKey: ['lotes'] });
           queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
           queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+        }}
+      />
+
+      {/* Modal de Histórico de Separações Consolidadas (Dispensação em Bloco) */}
+      <HistoricoSeparacoesModal
+        open={historicoSeparacoesOpen}
+        onOpenChange={setHistoricoSeparacoesOpen}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['saidas'] });
+          queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+          queryClient.invalidateQueries({ queryKey: ['lotes'] });
+          queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+          queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+          queryClient.invalidateQueries({ queryKey: ['historico_separacao_consolidada'] });
         }}
       />
 

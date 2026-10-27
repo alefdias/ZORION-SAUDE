@@ -51,6 +51,7 @@ import {
   Stethoscope,
   ShieldAlert,
   Lock,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -64,6 +65,7 @@ import { isPsicotropico } from "@/utils/mavUtils";
 import { safeFormatDate } from "@/utils/dateUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import { getActiveUser, validarSenhaUsuario } from "@/utils/authUtils";
+import { HistoricoSeparacoesModal } from "@/components/HistoricoSeparacoesModal";
 
 /**
  * Verifica se um lote pertence a determinado medicamento por id, código ou nome
@@ -153,6 +155,7 @@ export function SeparacaoLoteModal({
   const [senhaInput, setSenhaInput] = useState("");
   const [senhaError, setSenhaError] = useState("");
   const [validandoSenha, setValidandoSenha] = useState(false);
+  const [historicoModalOpen, setHistoricoModalOpen] = useState(false);
   const activeUser = useMemo(() => getActiveUser(), [open]);
 
   // Resetar filtro e busca ao abrir a modal, e atualizar estoque fresco
@@ -738,7 +741,7 @@ export function SeparacaoLoteModal({
                   ala_nome: pac ? pac.alaNome || pac.ala_nome || "Ala Geral" : "Geral",
                   motivo: `Separação Consolidada (${dias} ${dias === 1 ? "dia" : "dias"})`,
                   observacao: `Grade: ${pr.esquemaPosologico || "Posologia Fixa"} | Qt: ${qtdDesteLote} un | Lote: ${curLote.numeroLote} | Cobertura: ${format(dataInicioDate, "dd/MM")} a ${format(dataFimDate, "dd/MM/yyyy")}`,
-                  data_saida: todayDateStr,
+                  data_saida: dataInicioStr || todayDateStr,
                   created_at: nowStr,
                   responsavel: responsavel,
                   responsavel_crf: responsavelCrf,
@@ -807,6 +810,31 @@ export function SeparacaoLoteModal({
         }
       }
 
+      // 4. Gravar registro consolidado mestre no Histórico de Separações
+      const alasConsolidadasTexto = Array.from(
+        new Set((selectedPacs || []).map((p) => p.alaNome || p.ala_nome).filter(Boolean))
+      ).join(", ") || "Todas as Alas";
+
+      sqlStatements.push(
+        db.buildInsertSql("HistoricoSeparacaoConsolidada", {
+          id: baixaGrupoId,
+          baixa_grupo_id: baixaGrupoId,
+          data_separacao: dataInicioStr || todayDateStr,
+          dias_ciclo: dias,
+          data_inicio_cobertura: dataInicioStr,
+          data_fim_cobertura: dataFimStr,
+          total_medicamentos: itensFiltrados.length,
+          total_unidades: itensFiltrados.reduce((acc, i) => acc + (Number(i.qtdTotal) || 0), 0),
+          total_pacientes: selectedPacs.length,
+          alas_atendidas: alasConsolidadasTexto,
+          categoria: categoriaFiltro || "todos",
+          responsavel: responsavel,
+          responsavel_crf: responsavelCrf,
+          status: "CONCLUIDA",
+          created_at: nowStr,
+        })
+      );
+
       // Executar todas as instruções em uma única transação atômica (eliminando travamento do banco)
       await db.batchExecute(sqlStatements, {
         auditAction: "BAIXA_LOTE_SEPARACAO",
@@ -822,6 +850,7 @@ export function SeparacaoLoteModal({
       queryClient.invalidateQueries({ queryKey: ["saidas"] });
       queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
       queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+      queryClient.invalidateQueries({ queryKey: ["historico_separacao_consolidada"] });
 
       const grupoId = data?.baixaGrupoId;
       toast.success(
@@ -1077,6 +1106,7 @@ export function SeparacaoLoteModal({
             selectedPacs={selectedPacs}
             dias={dias}
             hoje={hoje}
+            dataInicioDate={dataInicioDate}
             dataFimDate={dataFimDate}
             allLotes={allLotes}
             medicamentos={medicamentos}
@@ -1101,14 +1131,25 @@ export function SeparacaoLoteModal({
                 </p>
               </div>
 
-              {/* Botão de Impressão da Folha */}
+              {/* Botões do Topo: Histórico e Impressão */}
               <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  onClick={() => setHistoricoModalOpen(true)}
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-3 text-xs font-bold gap-1.5 border-slate-300 bg-white hover:bg-slate-50 text-slate-800 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200 shadow-xs cursor-pointer"
+                  title="Ver histórico de separações consolidadas anteriores e reverter saídas em bloco"
+                >
+                  <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Histórico de Separações
+                </Button>
+
                 <Button
                   onClick={handleImprimirGuia}
                   variant="outline"
                   size="sm"
                   disabled={itensConsolidados.length === 0}
-                  className="h-9 px-3 text-xs font-bold gap-1.5 border-indigo-200 bg-indigo-50/70 text-indigo-900 hover:bg-indigo-100 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-200 shadow-xs"
+                  className="h-9 px-3 text-xs font-bold gap-1.5 border-indigo-200 bg-indigo-50/70 text-indigo-900 hover:bg-indigo-100 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-200 shadow-xs cursor-pointer"
                   title="Imprimir folhas separadas: 1 Clínico + 1 Psicotrópico (Portaria 344) automático"
                 >
                   <Printer className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -1734,6 +1775,19 @@ export function SeparacaoLoteModal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Histórico e Reversão em Bloco de Separações Consolidadas */}
+      <HistoricoSeparacoesModal
+        open={historicoModalOpen}
+        onOpenChange={setHistoricoModalOpen}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+          queryClient.invalidateQueries({ queryKey: ["lotes"] });
+          queryClient.invalidateQueries({ queryKey: ["saidas"] });
+          queryClient.invalidateQueries({ queryKey: ["prescricoes_paciente"] });
+          queryClient.invalidateQueries({ queryKey: ["pacientes"] });
+        }}
+      />
     </>
   );
 }
@@ -1747,6 +1801,7 @@ function SingleDepotGuiaSheet({
   selectedPacs,
   dias,
   hoje,
+  dataInicioDate,
   dataFimDate,
   allLotes,
   medicamentos,
@@ -1826,11 +1881,12 @@ function SingleDepotGuiaSheet({
             </p>
           )}
           <p className="text-xs text-slate-600 font-mono mt-0.5">
-            Ciclo: <strong className="text-slate-950">{dias} dia(s)</strong> • Cobertura: <strong className="text-slate-950">{format(hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong> • Pacientes: <strong className="text-slate-950">{totalPacientes} atendido(s)</strong>
+            Ciclo: <strong className="text-slate-950">{dias} dia(s)</strong> • Cobertura: <strong className="text-slate-950">{format(dataInicioDate || hoje, "dd/MM/yyyy")} a {format(dataFimDate, "dd/MM/yyyy")}</strong> • Pacientes: <strong className="text-slate-950">{totalPacientes} atendido(s)</strong>
           </p>
         </div>
         <div className="text-right text-xs text-slate-700 font-mono space-y-0.5 shrink-0">
-          <p>Emissão: <strong className="text-slate-950">{format(hoje, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong></p>
+          <p>Data da Separação: <strong className="text-slate-950">{format(dataInicioDate || hoje, "dd/MM/yyyy")}</strong></p>
+          <p>Emissão: <strong className="text-slate-950">{format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong></p>
           <p>
             Prioridade:{" "}
             <span
@@ -2048,6 +2104,7 @@ function PrintGuiaContent({
   selectedPacs,
   dias,
   hoje,
+  dataInicioDate,
   dataFimDate,
   allLotes,
   medicamentos,
@@ -2076,6 +2133,7 @@ function PrintGuiaContent({
             selectedPacs={selectedPacs}
             dias={dias}
             hoje={hoje}
+            dataInicioDate={dataInicioDate}
             dataFimDate={dataFimDate}
             allLotes={allLotes}
             medicamentos={medicamentos}
@@ -2114,6 +2172,7 @@ function PrintGuiaContent({
             selectedPacs={selectedPacs}
             dias={dias}
             hoje={hoje}
+            dataInicioDate={dataInicioDate}
             dataFimDate={dataFimDate}
             allLotes={allLotes}
             medicamentos={medicamentos}
