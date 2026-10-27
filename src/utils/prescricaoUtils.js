@@ -223,7 +223,12 @@ export const calculatePrescQtdParaDias = (pr, diasCount, dataReferencia = new Da
     }
 
     if (maxDataFim && d > maxDataFim) {
-      break;
+      // Se for antibiótico/antimicrobiano com tempo determinado, interrompe na data final prescrita.
+      // Medicamentos de uso contínuo (não antibióticos) com prescrição ativa não devem ser cortados
+      // prematuramente na virada do mês durante a separação do ciclo da farmácia.
+      if (isMedicamentoAntibiotico(pr)) {
+        break;
+      }
     }
 
     let isDiaDeAdministracao = false;

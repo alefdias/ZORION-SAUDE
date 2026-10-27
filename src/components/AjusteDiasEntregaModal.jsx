@@ -360,7 +360,8 @@ export function AjusteDiasEntregaModal({
         // Dose dispensada no último lote
         let doseAnterior =
           pr.dose_diaria_dispensada !== undefined &&
-          pr.dose_diaria_dispensada !== null
+          pr.dose_diaria_dispensada !== null &&
+          pr.dose_diaria_dispensada !== ""
             ? parseFloat(pr.dose_diaria_dispensada)
             : null;
 
@@ -389,8 +390,43 @@ export function AjusteDiasEntregaModal({
           }
         }
 
+        // Se doseAnterior ainda for desconhecida, busca nas saídas recentes da satélite deste paciente e medicamento
+        if (doseAnterior === null && Array.isArray(internalSaidas)) {
+          const saidaAnt = internalSaidas.find((s) => {
+            const sPacId = s.paciente_id || s.pacienteId;
+            if (sPacId && patient?.id && String(sPacId) !== String(patient.id)) return false;
+            const sMedId = s.medicamento_id || s.medicamentoId;
+            const isMesmo = (medId && String(sMedId) === String(medId)) || namesMatch(s.medicamento_nome, medNome);
+            return isMesmo && (s.dose_diaria || (s.quantidade && s.dias_cobertura));
+          });
+          if (saidaAnt) {
+            if (saidaAnt.dose_diaria && parseFloat(saidaAnt.dose_diaria) > 0) {
+              doseAnterior = parseFloat(saidaAnt.dose_diaria);
+            } else if (saidaAnt.quantidade && saidaAnt.dias_cobertura && parseFloat(saidaAnt.dias_cobertura) > 0) {
+              doseAnterior = Math.round((parseFloat(saidaAnt.quantidade) / parseFloat(saidaAnt.dias_cobertura)) * 10) / 10;
+            }
+          }
+        }
+
+        // Se doseAnterior ainda for desconhecida, busca anotação de dose/esquema anterior no histórico ou observações
+        if (doseAnterior === null) {
+          const textoAlt = `${pr.observacoes || ""} ${pr.motivo_alteracao || ""} ${pr.historico_alteracoes || ""}`;
+          const matchAnt = textoAlt.match(/(?:anterior|de|ajustado de|era)\s*:?\s*(\d+[-/]\d+[-/]\d+[-/]\d+)/i);
+          if (matchAnt && matchAnt[1]) {
+            const partes = matchAnt[1].split(/[-/]/);
+            const soma = partes.reduce((acc, p) => acc + (parseFloat(p) || 0), 0);
+            if (soma > 0) doseAnterior = soma;
+          }
+        }
+
+        // Se o paciente já possuía cobertura prévia e temos a quantidade e dias do último lote
+        if (doseAnterior === null && pr.quantidade_ultimo_lote && pr.ultimo_lote_dias && pr.ultimo_lote_dias > 0) {
+          doseAnterior = Math.round((parseFloat(pr.quantidade_ultimo_lote) / parseFloat(pr.ultimo_lote_dias)) * 10) / 10;
+        }
+
         const isNova = doseAnterior === null || doseAnterior === undefined;
         const diferencaDose = isNova ? doseAtual : doseAtual - doseAnterior;
+        const temAumentoDose = (!isNova && diferencaDose > 0) || (isNova && doseAtual > 0 && !pr.coberto_ate);
         const isReducaoDose = !isNova && diferencaDose < 0;
 
         // ── IDENTIFICAÇÃO DE ANTIBIÓTICO / ANTIMICROBIANO ─────────────────────
@@ -499,14 +535,15 @@ export function AjusteDiasEntregaModal({
         const dispensadoHoje = dataUltimaDispStr === hojeStr;
 
         // Já está 100% coberto se coberto_ate cobre até ou além da data alvo
-        const estaTotalmenteCoberto = Boolean(cobertoAteStr && cobertoAteStr >= dataAlvoFimStr);
+        // IMPORTANTE: Se houve aumento de dose, NÃO está totalmente coberto! O paciente precisa do complemento.
+        const estaTotalmenteCoberto = Boolean(cobertoAteStr && cobertoAteStr >= dataAlvoFimStr) && !temAumentoDose;
 
         // Se foi dispensado hoje e já cobre a partir de hoje (sem aumento de dose)
         const dispensadoHojeValido = Boolean(
           dispensadoHoje &&
           cobertoAteStr &&
           cobertoAteStr >= hojeStr &&
-          (!diferencaDose || diferencaDose <= 0)
+          !temAumentoDose
         );
 
         // SE FOR REDUÇÃO DE DOSE (ex: tomava 1-1-1-1 e passa para 0-1-1-1):
@@ -514,7 +551,7 @@ export function AjusteDiasEntregaModal({
         // NUNCA DEVE ENTREGAR NADA A MAIS!
         const reducaoJaCoberta = Boolean(
           isReducaoDose &&
-          (cobertoAteStr || patient?.ciclo_coberto_ate || doseAnterior > 0)
+          (cobertoAteStr || patient?.ciclo_coberto_ate || (doseAnterior && doseAnterior > 0))
         );
 
         let jaDispensado = estaTotalmenteCoberto || dispensadoHojeValido || reducaoJaCoberta;
@@ -523,6 +560,10 @@ export function AjusteDiasEntregaModal({
         let diasRestantes = diasSugeridos;
         if (jaDispensado || isReducaoDose) {
           diasRestantes = 0;
+        } else if (temAumentoDose) {
+          // No aumento de dose dentro de um ciclo em andamento, o complemento corre de hoje até o final do ciclo/tratamento
+          const diffRestante = differenceInCalendarDays(parseISO(dataAlvoFimStr), hoje) + 1;
+          diasRestantes = Math.max(1, diffRestante);
         } else if (cobertoAteStr && cobertoAteStr >= hojeStr && !isAntibiotico) {
           const diffRestante = differenceInCalendarDays(parseISO(dataAlvoFimStr), parseISO(cobertoAteStr));
           diasRestantes = Math.max(0, diffRestante);
@@ -541,7 +582,7 @@ export function AjusteDiasEntregaModal({
           ? 0
           : (customDias[pr.id] !== undefined
               ? Math.min(maxDiasPermitidos, Math.max(1, parseInt(customDias[pr.id]) || 1))
-              : (isAntibiotico ? (diasTratamento || 7) : maxDiasPermitidos));
+              : (isAntibiotico ? (diasTratamento || 7) : diasRestantes));
 
         // Dose efetiva a dispensar:
         // 1. Se redução de dose ou já dispensado: ZERO! (Paciente já tem sobra)
@@ -550,7 +591,7 @@ export function AjusteDiasEntregaModal({
         let doseEfetiva = 0;
         if (jaDispensado || isReducaoDose) {
           doseEfetiva = 0;
-        } else if (diferencaDose > 0 && doseAnterior !== null) {
+        } else if (temAumentoDose && !isNova && diferencaDose > 0) {
           doseEfetiva = diferencaDose;
         } else if (isNova) {
           doseEfetiva = doseAtual > 0 ? doseAtual : 1;
@@ -595,6 +636,7 @@ export function AjusteDiasEntregaModal({
           doseAtual,
           doseAnterior,
           isNova,
+          temAumentoDose,
           isReducaoDose,
           isAntibiotico,
           diferencaDose,
@@ -718,7 +760,9 @@ export function AjusteDiasEntregaModal({
     }
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
     // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
-    const doseRef = item.doseAtual > 0 ? item.doseAtual : (item.diferencaDose > 0 ? item.diferencaDose : 1);
+    const doseRef = (item.temAumentoDose && !item.isNova && item.diferencaDose > 0)
+      ? item.diferencaDose
+      : (item.doseAtual > 0 ? item.doseAtual : (item.diferencaDose > 0 ? item.diferencaDose : 1));
     const novaQtd = Math.max(1, Math.ceil(doseRef * d));
     setCustomQtds((prev) => ({ ...prev, [prId]: novaQtd }));
   };
@@ -1258,6 +1302,20 @@ export function AjusteDiasEntregaModal({
                                   Não entregar (sobra no leito)
                                 </span>
                               </div>
+                            ) : item.temAumentoDose && !item.isNova ? (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[10px] font-bold shadow-2xs">
+                                  ⚠️ Aumento (+{item.diferencaDose} un/dia)
+                                </Badge>
+                                <span className="text-[9px] text-amber-700 block font-semibold">
+                                  Complemento: {item.qtdSugerida} un ({item.diasFinais}d)
+                                </span>
+                                {item.doseAnterior !== null && (
+                                  <span className="text-[9px] text-slate-400 block font-mono">
+                                    Anterior: {item.doseAnterior} un/dia
+                                  </span>
+                                )}
+                              </div>
                             ) : item.jaDispensado ? (
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold shadow-xs">
                                 ✅ Já Dispensado ({item.cobertoAteStr ? `até ${format(parseISO(item.cobertoAteStr), "dd/MM/yyyy")}` : "Coberto"})
@@ -1270,15 +1328,6 @@ export function AjusteDiasEntregaModal({
                               <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-bold">
                                 🆕 Receita Nova (+{doseAtual} un/dia)
                               </Badge>
-                            ) : diferencaDose > 0 ? (
-                              <div className="space-y-0.5">
-                                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">
-                                  ⚠️ Aumento (+{diferencaDose} un/dia)
-                                </Badge>
-                                <span className="text-[9px] text-slate-400 block font-mono">
-                                  Anterior: {doseAnterior} un/dia
-                                </span>
-                              </div>
                             ) : (
                               <Badge
                                 variant="outline"
