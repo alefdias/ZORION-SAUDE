@@ -367,8 +367,30 @@ export function AjusteDiasEntregaModal({
         const isNova = doseAnterior === null || doseAnterior === undefined;
         const diferencaDose = isNova ? doseAtual : doseAtual - doseAnterior;
 
+        // ── IDENTIFICAÇÃO DE ANTIBIÓTICO / ANTIMICROBIANO ─────────────────────
+        const isAntibiotico = Boolean(
+          med?.antimicrobiano ||
+          pr.antimicrobiano ||
+          (med?.grupo_terapeutico || "").toUpperCase().includes("ANTIBI") ||
+          (med?.grupo_terapeutico || "").toUpperCase().includes("ANTIMICROB") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("AMOXICILINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("AZITROMICINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("CEFTRIAXONA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("CIPROFLOXACINO") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("LEVOFLOXACINO") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("METRONIDAZOL") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("CLAVULANATO") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("CEFALEXINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("AMPICILINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("MEROPENEM") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("VANCOMICINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("CLINDAMICINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("GENTAMICINA") ||
+          (pr.medicamentoNome || "").toUpperCase().includes("SULFAMETOXAZOL")
+        );
+
         // ── REGRA DE DURAÇÃO DO TRATAMENTO ────────────────────────────────────
-        // Se o medicamento foi prescrito com duração definida (ex: 5 dias), ele só entrega até o fim do tratamento!
+        // Se o medicamento foi prescrito com duração definida (ex: 5 dias, 7 dias, 10 dias)
         let diasTratamento = null;
         let dataFimTratamentoStr = null;
 
@@ -385,13 +407,13 @@ export function AjusteDiasEntregaModal({
         }
 
         // Se houver duração em dias registrada diretamente na prescrição
-        const duracaoDiasCampo = parseInt(pr.duracao_dias || pr.dias_tratamento || pr.dias, 10);
+        const duracaoDiasCampo = parseInt(pr.duracao_dias || pr.dias_tratamento || pr.diasTratamento || pr.dias, 10);
         if (duracaoDiasCampo > 0 && !diasTratamento) {
           diasTratamento = duracaoDiasCampo;
           dataFimTratamentoStr = format(addDays(hoje, diasTratamento - 1), "yyyy-MM-dd");
         }
 
-        // Tenta detectar menção de dias nas observações ou esquema (ex: "5 dias", "por 7 dias")
+        // Tenta detectar menção de dias nas observações ou esquema (ex: "5 dias", "por 7 dias", "10 dias")
         if (!diasTratamento) {
           const matchDias =
             (pr.observacoes || "").match(/(\d+)\s*(?:dias|dia)/i) ||
@@ -405,15 +427,27 @@ export function AjusteDiasEntregaModal({
           }
         }
 
-        // Data limite alvo desta medicação (menor entre fim do tratamento e o ciclo do paciente)
-        const dataAlvoFimStr = (dataFimTratamentoStr && dataFimCiclo)
-          ? (dataFimTratamentoStr < dataFimCiclo ? dataFimTratamentoStr : dataFimCiclo)
-          : (dataFimTratamentoStr || dataFimCiclo || format(addDays(hoje, 6), "yyyy-MM-dd"));
+        // Se for antibiótico sem duração explicitada, assume 7 dias como padrão de tratamento completo
+        if (isAntibiotico && !diasTratamento) {
+          diasTratamento = 7;
+          dataFimTratamentoStr = format(addDays(hoje, 6), "yyyy-MM-dd");
+        }
 
-        // O teto de dias para este medicamento é o menor entre o fim do tratamento e o ciclo do paciente
-        const diasSugeridos = diasTratamento
-          ? Math.min(diasRestantesCiclo, diasTratamento)
-          : diasRestantesCiclo;
+        // Data limite alvo desta medicação:
+        // Para antibiótico, o alvo é o término exato do tratamento prescrito (ex: 7 ou 10 dias), não o ciclo da ala
+        const dataAlvoFimStr = (isAntibiotico && dataFimTratamentoStr)
+          ? dataFimTratamentoStr
+          : ((dataFimTratamentoStr && dataFimCiclo)
+              ? (dataFimTratamentoStr < dataFimCiclo ? dataFimTratamentoStr : dataFimCiclo)
+              : (dataFimTratamentoStr || dataFimCiclo || format(addDays(hoje, 6), "yyyy-MM-dd")));
+
+        // Dias sugeridos:
+        // SE FOR ANTIBIÓTICO: Libera o tratamento inteiro (7, 10, etc.) sem truncar pelo ciclo da ala
+        const diasSugeridos = isAntibiotico
+          ? (diasTratamento || 7)
+          : (diasTratamento
+              ? Math.min(diasRestantesCiclo, diasTratamento)
+              : diasRestantesCiclo);
 
         // ── REGRA DE COBERTURA / JÁ DISPENSADO ──────────────────────────────────
         let cobertoAteStr = null;
@@ -448,7 +482,7 @@ export function AjusteDiasEntregaModal({
         let diasRestantes = diasSugeridos;
         if (jaDispensado) {
           diasRestantes = 0;
-        } else if (cobertoAteStr && cobertoAteStr >= hojeStr) {
+        } else if (cobertoAteStr && cobertoAteStr >= hojeStr && !isAntibiotico) {
           const diffRestante = differenceInCalendarDays(parseISO(dataAlvoFimStr), parseISO(cobertoAteStr));
           diasRestantes = Math.max(0, diffRestante);
           if (diasRestantes === 0) {
@@ -456,12 +490,17 @@ export function AjusteDiasEntregaModal({
           }
         }
 
-        const maxDiasPermitidos = Math.max(1, diasRestantes || diasSugeridos || 1);
+        // Teto de dias permitidos no input:
+        // Antibióticos permitem livremente o tratamento total (ex: 7, 10, até 30 dias)
+        const maxDiasPermitidos = isAntibiotico
+          ? Math.max(30, diasTratamento || 14)
+          : Math.max(1, diasRestantes || diasSugeridos || 1);
+
         const diasFinais = jaDispensado
           ? 0
           : (customDias[pr.id] !== undefined
               ? Math.min(maxDiasPermitidos, Math.max(1, parseInt(customDias[pr.id]) || 1))
-              : maxDiasPermitidos);
+              : (isAntibiotico ? (diasTratamento || 7) : maxDiasPermitidos));
 
         // Dose efetiva a dispensar (diferença se aumento, ou dose cheia se nova medicação)
         const doseEfetiva = jaDispensado
@@ -505,6 +544,7 @@ export function AjusteDiasEntregaModal({
           doseAtual,
           doseAnterior,
           isNova,
+          isAntibiotico,
           diferencaDose,
           diasTratamento,
           dataFimTratamentoStr,
@@ -616,11 +656,13 @@ export function AjusteDiasEntregaModal({
   // Alterar dias de uma prescrição específica
   const handleDiasChange = (prId, diasVal, item) => {
     if (item.jaDispensado) return;
-    const maxTeto = item.diasRestantes || item.diasSugeridos || diasRestantesCiclo || 1;
+    const maxTeto = item.isAntibiotico
+      ? 30 // Para antibiótico, permite entregar o tratamento inteiro (ex: 7, 10 ou 14 dias) sem travar no ciclo da ala
+      : (item.diasRestantes || item.diasSugeridos || diasRestantesCiclo || 1);
     let d = Math.max(1, parseInt(diasVal) || 1);
     if (d > maxTeto) {
       d = maxTeto;
-      toast.warning(`Limite do ciclo atingido: máximo de ${maxTeto} dia(s) para este medicamento.`);
+      toast.warning(`Limite máximo atingido: ${maxTeto} dia(s) para este medicamento.`);
     }
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
     // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
@@ -1109,9 +1151,16 @@ export function AjusteDiasEntregaModal({
 
                           {/* Medicamento e Esquema */}
                           <TableCell className="max-w-[220px]">
-                            <p className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug">
-                              {pr.medicamentoNome}
-                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug">
+                                {pr.medicamentoNome}
+                              </p>
+                              {item.isAntibiotico && (
+                                <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[9px] px-1.5 py-0 rounded shadow-2xs">
+                                  🧪 Antibiótico
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className="font-mono text-[11px] font-semibold text-slate-600 bg-white px-1.5 py-0.2 rounded border border-slate-200">
                                 {pr.esquemaPosologico}
@@ -1127,6 +1176,10 @@ export function AjusteDiasEntregaModal({
                             {item.jaDispensado ? (
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold shadow-xs">
                                 ✅ Já Dispensado ({item.cobertoAteStr ? `até ${format(parseISO(item.cobertoAteStr), "dd/MM/yyyy")}` : "Coberto"})
+                              </Badge>
+                            ) : item.isAntibiotico ? (
+                              <Badge className="bg-purple-100 text-purple-900 border-purple-300 text-[10px] font-extrabold shadow-2xs">
+                                🧪 Tratamento Inteiro ({item.diasTratamento || diasFinais}d)
                               </Badge>
                             ) : isNova ? (
                               <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-bold">
@@ -1170,24 +1223,35 @@ export function AjusteDiasEntregaModal({
                                   <Input
                                     type="number"
                                     min="1"
-                                    max={item.diasRestantes || diasRestantesCiclo}
+                                    max={item.isAntibiotico ? (item.diasTratamento || 30) : (item.diasRestantes || diasRestantesCiclo)}
                                     value={diasFinais}
                                     disabled={!isSelected}
                                     onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
-                                    className="w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300"
+                                    className={cn(
+                                      "w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300",
+                                      item.isAntibiotico && "border-purple-400 bg-purple-50/60 text-purple-900 font-black"
+                                    )}
                                   />
                                   <span className="text-xs text-slate-600 font-bold">dias</span>
                                 </div>
-                                <span className="text-[9px] font-semibold text-slate-500 block">
-                                  Máx: {item.diasRestantes || diasRestantesCiclo}d (até {safeFormatDate(item.dataAlvoFimStr)})
-                                </span>
-                                {diasTratamento && (
-                                  <span
-                                    className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"
-                                    title={`Tratamento prescrito com duração máxima de ${diasTratamento} dias até ${format(parseISO(dataFimTratamentoStr), "dd/MM/yyyy")}`}
-                                  >
-                                    ⏳ Tratamento: {diasTratamento}d
+                                {item.isAntibiotico ? (
+                                  <span className="text-[9px] font-black text-purple-800 bg-purple-100/90 border border-purple-300 px-1.5 py-0.5 rounded block text-center mt-0.5">
+                                    🧪 Tratamento Total ({diasFinais}d)
                                   </span>
+                                ) : (
+                                  <>
+                                    <span className="text-[9px] font-semibold text-slate-500 block">
+                                      Máx: {item.diasRestantes || diasRestantesCiclo}d (até {safeFormatDate(item.dataAlvoFimStr)})
+                                    </span>
+                                    {diasTratamento && (
+                                      <span
+                                        className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded block"
+                                        title={`Tratamento prescrito com duração máxima de ${diasTratamento} dias até ${format(parseISO(dataFimTratamentoStr), "dd/MM/yyyy")}`}
+                                      >
+                                        ⏳ Tratamento: {diasTratamento}d
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             )}
