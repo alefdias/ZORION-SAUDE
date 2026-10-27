@@ -1168,14 +1168,14 @@ export function MapaMensalDispensacao() {
             </div>
 
             {/* Tabela Quinzena 1 */}
-            <div className="overflow-x-auto print:overflow-visible">
+            <div className="overflow-x-auto overflow-y-auto max-h-[72vh] relative rounded-b-xl border-t border-slate-200 dark:border-slate-700 print:max-h-none print:overflow-visible print:border-none">
               <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
-                <thead>
-                  <tr className="bg-slate-100/90 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-200 print:border-slate-800">
-                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] print:min-w-0 print:max-w-none print:w-[27%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                <thead className="sticky top-0 z-20 shadow-xs print:static print:shadow-none">
+                  <tr className="border-b-2 border-slate-300 dark:border-slate-700 print:border-slate-800">
+                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[27%]">
                       Medicamento / Apresentação
                     </th>
-                    <th className="text-center py-2 px-1 w-12 print:w-[4%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-12 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[4%]">
                       Cat.
                     </th>
                     {diasQ1.map((d) => {
@@ -1187,10 +1187,10 @@ export function MapaMensalDispensacao() {
                         <th
                           key={d}
                           className={cn(
-                            "text-center py-1.5 px-0.5 w-8 print:w-[4.2%] font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600",
+                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[4.2%]",
                             fds
-                              ? "bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 print:bg-slate-300 print:text-black"
-                              : "text-slate-800 print:text-black"
+                              ? "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 print:bg-slate-300 print:text-black"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 print:bg-transparent print:text-black"
                           )}
                           title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${diaSemanaNome})`}
                         >
@@ -1203,7 +1203,7 @@ export function MapaMensalDispensacao() {
                         </th>
                       );
                     })}
-                    <th className="text-center py-2 px-2 min-w-[70px] print:w-[7%] font-bold bg-blue-50/80 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 border-l-2 border-blue-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[70px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 border-l-2 border-blue-300 dark:border-blue-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[7%]">
                       TOTAL 1ª Q.
                     </th>
                   </tr>
@@ -1222,11 +1222,14 @@ export function MapaMensalDispensacao() {
                         <tr
                           key={med.id}
                           className={cn(
-                            "hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent",
-                            idx % 2 === 1 && "print:bg-slate-50"
+                            "group hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors print:hover:bg-transparent",
+                            idx % 2 === 1 && "bg-slate-50/40 dark:bg-slate-900/40 print:bg-slate-50"
                           )}
                         >
-                          <td className="py-1.5 px-3 print:py-1 print:px-2 print:border print:border-slate-400">
+                          <td className={cn(
+                            "sticky left-0 z-10 py-1.5 px-3 border-r border-slate-200 dark:border-slate-800 shadow-[1px_0_0_0_#e2e8f0] dark:shadow-[1px_0_0_0_#1e293b] print:static print:bg-transparent print:border print:border-slate-400 print:shadow-none group-hover:bg-slate-100 dark:group-hover:bg-slate-800 transition-colors",
+                            idx % 2 === 1 ? "bg-slate-50 dark:bg-slate-850" : "bg-white dark:bg-slate-900"
+                          )}>
                             <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px] print:max-w-none print:truncate-none print:whitespace-normal print:text-[8.5px] leading-tight" title={med.nome}>
                               {med.nome}
                             </div>
@@ -1302,18 +1305,18 @@ export function MapaMensalDispensacao() {
                 </tbody>
 
                 {/* Rodapé Totalizador da Folha 1 */}
-                <tfoot>
-                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
-                    <td className="py-2 px-3 text-right uppercase text-[10px] print:text-[8px] print:border print:border-slate-600">
+                <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-800 shadow-[0_-2px_4px_rgba(0,0,0,0.06)] print:static print:shadow-none">
+                  <tr className="border-t-2 border-slate-300 dark:border-slate-700 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
+                    <td className="sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 py-2 px-3 text-right uppercase text-[10px] print:text-[8px] border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:border print:border-slate-600 print:shadow-none">
                       TOTAL DISPENSADO NO DIA:
                     </td>
                     <td className="text-center print:border print:border-slate-600">-</td>
                     {diasQ1.map((d) => (
-                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 print:border print:border-slate-600">
+                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600">
                         {totaisFiltrados.porDia[d] || 0}
                       </td>
                     ))}
-                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-200 bg-blue-100/70 border-l-2 border-blue-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
+                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-200 bg-blue-100/70 dark:bg-blue-950/70 border-l-2 border-blue-300 dark:border-blue-700 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.q1} un
                     </td>
                   </tr>
@@ -1392,14 +1395,14 @@ export function MapaMensalDispensacao() {
             </div>
 
             {/* Tabela Quinzena 2 */}
-            <div className="overflow-x-auto print:overflow-visible">
+            <div className="overflow-x-auto overflow-y-auto max-h-[72vh] relative rounded-b-xl border-t border-slate-200 dark:border-slate-700 print:max-h-none print:overflow-visible print:border-none">
               <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
-                <thead>
-                  <tr className="bg-slate-100/90 dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 print:bg-slate-200 print:border-slate-800">
-                    <th className="text-left py-2 px-3 min-w-[220px] max-w-[260px] print:min-w-0 print:max-w-none print:w-[26%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                <thead className="sticky top-0 z-20 shadow-xs print:static print:shadow-none">
+                  <tr className="border-b-2 border-slate-300 dark:border-slate-700 print:border-slate-800">
+                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[26%]">
                       Medicamento / Apresentação
                     </th>
-                    <th className="text-center py-2 px-1 w-12 print:w-[4%] font-bold text-slate-800 print:text-black print:border print:border-slate-600">
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-12 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[4%]">
                       Cat.
                     </th>
                     {diasQ2.map((d) => {
@@ -1411,10 +1414,10 @@ export function MapaMensalDispensacao() {
                         <th
                           key={d}
                           className={cn(
-                            "text-center py-1.5 px-0.5 w-8 print:w-[3.9%] font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600",
+                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[3.9%]",
                             fds
-                              ? "bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 print:bg-slate-300 print:text-black"
-                              : "text-slate-800 print:text-black"
+                              ? "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 print:bg-slate-300 print:text-black"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 print:bg-transparent print:text-black"
                           )}
                           title={`${String(d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")} (${diaSemanaNome})`}
                         >
@@ -1427,10 +1430,10 @@ export function MapaMensalDispensacao() {
                         </th>
                       );
                     })}
-                    <th className="text-center py-2 px-2 min-w-[65px] print:w-[6.5%] font-bold bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 border-l-2 border-emerald-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[65px] font-bold bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 border-l-2 border-emerald-300 dark:border-emerald-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[6.5%]">
                       TOTAL 2ª Q.
                     </th>
-                    <th className="text-center py-2 px-2 min-w-[75px] print:w-[7.5%] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400 print:bg-slate-400 print:text-black print:border print:border-slate-800">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[75px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400 dark:border-blue-600 print:static print:bg-slate-400 print:text-black print:border print:border-slate-800 print:w-[7.5%]">
                       TOTAL MÊS
                     </th>
                   </tr>
@@ -1449,11 +1452,14 @@ export function MapaMensalDispensacao() {
                         <tr
                           key={med.id}
                           className={cn(
-                            "hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent",
-                            idx % 2 === 1 && "print:bg-slate-50"
+                            "group hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors print:hover:bg-transparent",
+                            idx % 2 === 1 && "bg-slate-50/40 dark:bg-slate-900/40 print:bg-slate-50"
                           )}
                         >
-                          <td className="py-1.5 px-3 print:py-1 print:px-2 print:border print:border-slate-400">
+                          <td className={cn(
+                            "sticky left-0 z-10 py-1.5 px-3 border-r border-slate-200 dark:border-slate-800 shadow-[1px_0_0_0_#e2e8f0] dark:shadow-[1px_0_0_0_#1e293b] print:static print:bg-transparent print:border print:border-slate-400 print:shadow-none group-hover:bg-slate-100 dark:group-hover:bg-slate-800 transition-colors",
+                            idx % 2 === 1 ? "bg-slate-50 dark:bg-slate-850" : "bg-white dark:bg-slate-900"
+                          )}>
                             <div className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[240px] print:max-w-none print:truncate-none print:whitespace-normal print:text-[8.5px] leading-tight" title={med.nome}>
                               {med.nome}
                             </div>
@@ -1533,21 +1539,21 @@ export function MapaMensalDispensacao() {
                 </tbody>
 
                 {/* Rodapé Totalizador da Folha 2 */}
-                <tfoot>
-                  <tr className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
-                    <td className="py-2 px-3 text-right uppercase text-[10px] print:text-[8px] print:border print:border-slate-600">
+                <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-800 shadow-[0_-2px_4px_rgba(0,0,0,0.06)] print:static print:shadow-none">
+                  <tr className="border-t-2 border-slate-300 dark:border-slate-700 font-bold text-slate-900 dark:text-slate-100 print:bg-slate-200 print:border-t-2 print:border-slate-800">
+                    <td className="sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 py-2 px-3 text-right uppercase text-[10px] print:text-[8px] border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:border print:border-slate-600 print:shadow-none">
                       TOTAL DISPENSADO NO DIA:
                     </td>
                     <td className="text-center print:border print:border-slate-600">-</td>
                     {diasQ2.map((d) => (
-                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 print:border print:border-slate-600">
+                      <td key={d} className="text-center py-2 px-0.5 font-mono text-[10px] print:text-[8.5px] font-black border-r border-slate-200 dark:border-slate-700 print:border print:border-slate-600">
                         {totaisFiltrados.porDia[d] || 0}
                       </td>
                     ))}
-                    <td className="text-center py-2 px-2 font-mono font-black text-emerald-900 dark:text-emerald-200 bg-emerald-100/70 border-l-2 border-emerald-300 print:bg-slate-300 print:text-black print:border print:border-slate-800">
+                    <td className="text-center py-2 px-2 font-mono font-black text-emerald-900 dark:text-emerald-200 bg-emerald-100/70 dark:bg-emerald-950/70 border-l-2 border-emerald-300 dark:border-emerald-700 print:bg-slate-300 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.q2} un
                     </td>
-                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-100 bg-blue-200/80 border-l-2 border-blue-400 print:bg-slate-400 print:text-black print:border print:border-slate-800">
+                    <td className="text-center py-2 px-2 font-mono font-black text-blue-900 dark:text-blue-100 bg-blue-200/80 dark:bg-blue-900/80 border-l-2 border-blue-400 dark:border-blue-600 print:bg-slate-400 print:text-black print:border print:border-slate-800">
                       {totaisFiltrados.geral} un
                     </td>
                   </tr>
