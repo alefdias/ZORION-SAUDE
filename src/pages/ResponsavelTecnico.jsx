@@ -402,7 +402,12 @@ export default function ResponsavelTecnico() {
     if (cargo === 'medico') {
       finalModules = ["medico"];
     } else if (cargo === 'auxiliar_farmacia') {
-      finalModules = ["estoque_farmacia", "farmacia_satelite"];
+      const allowedAux = ["estoque_farmacia", "farmacia_satelite"];
+      finalModules = selectedUserModules.filter(m => allowedAux.includes(m));
+      if (finalModules.length === 0) {
+        toast.error("Selecione pelo menos um módulo de farmácia (Estoque Central ou Farmácia Satélite) para o Auxiliar.");
+        return;
+      }
     }
 
     if (finalModules.length === 0) {
@@ -1454,7 +1459,7 @@ export default function ResponsavelTecnico() {
                   3. Módulos de Acesso do Colaborador
                 </label>
                 <span className="text-xs text-slate-400 font-medium">
-                  {cargo === "medico" ? "1 módulo (Apenas Médico)" : cargo === "auxiliar_farmacia" ? "2 módulos (Estoque Central e Farmácia Satélite)" : `${selectedUserModules.length} módulo(s) habilitado(s)`}
+                  {cargo === "medico" ? "1 módulo (Apenas Médico)" : cargo === "auxiliar_farmacia" ? `${selectedUserModules.filter(m => m === "estoque_farmacia" || m === "farmacia_satelite").length} módulo(s) de farmácia` : `${selectedUserModules.length} módulo(s) habilitado(s)`}
                 </span>
               </div>
 
@@ -1471,7 +1476,7 @@ export default function ResponsavelTecnico() {
                 <div className="p-3.5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800 text-xs flex items-center gap-2.5 text-cyan-800 dark:text-cyan-200">
                   <Boxes className="w-5 h-5 text-cyan-600 shrink-0" />
                   <span>
-                    <strong>Restrição de Acesso:</strong> Auxiliares de Farmácia possuem acesso liberado <strong>ao Estoque Central e Farmácia Satélite</strong> (medicamentos e lotes). Os demais módulos hospitalares ficam bloqueados.
+                    <strong>Perfil Auxiliar de Farmácia:</strong> Selecione abaixo se o colaborador atuará no <strong>Estoque Central</strong>, na <strong>Farmácia Satélite</strong> ou em <strong>ambos</strong>. Os demais módulos hospitalares ficam restritos.
                   </span>
                 </div>
               )}
@@ -1479,15 +1484,14 @@ export default function ResponsavelTecnico() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {AVAILABLE_MODULES.map(module => {
                   const isChecked = (cargo === "medico" && module.id === "medico") ||
-                                    (cargo === "auxiliar_farmacia" && (module.id === "estoque_farmacia" || module.id === "farmacia_satelite")) ||
-                                    (cargo !== "medico" && cargo !== "auxiliar_farmacia" && selectedUserModules.includes(module.id));
-                  const isLocked = cargo === "medico" || cargo === "auxiliar_farmacia";
+                                    (cargo !== "medico" && selectedUserModules.includes(module.id));
+                  const isLocked = cargo === "medico" || (cargo === "auxiliar_farmacia" && module.id !== "estoque_farmacia" && module.id !== "farmacia_satelite");
 
                   return (
                     <label
                       key={module.id}
                       className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
-                        isLocked ? "cursor-default opacity-80" : "cursor-pointer"
+                        isLocked ? "cursor-not-allowed opacity-40 bg-slate-100 dark:bg-slate-900" : "cursor-pointer"
                       } ${
                         isChecked
                           ? "border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 dark:border-blue-500 shadow-xs"

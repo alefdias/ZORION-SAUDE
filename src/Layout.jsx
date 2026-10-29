@@ -201,19 +201,24 @@ export default function Layout({ children, currentPageName }) {
       const stored = sessionStorage.getItem("axion_active_user") || localStorage.getItem("pharma_user");
       if (stored) {
         const u = JSON.parse(stored);
+        let uMods = u.modules || u.modulos || [];
+        if (typeof uMods === 'string') {
+          try { uMods = JSON.parse(uMods); } catch { uMods = uMods.split(','); }
+        }
         setUser({
           ...u,
           id: u.id || u.login || u.username || "admin",
           login: u.login || u.username || "admin",
           full_name: u.nome || u.username || u.login || "Administrador",
-          cargo: u.cargo || u.perfil || "Administrador"
+          cargo: u.cargo || u.perfil || "Administrador",
+          modules: Array.isArray(uMods) ? uMods : []
         });
         return;
       }
     } catch (e) {
       console.warn("Erro ao ler usuário no Layout:", e);
     }
-    setUser({ full_name: "Administrador", cargo: "Administrador" });
+    setUser({ full_name: "Administrador", cargo: "Administrador", modules: [] });
   }, []);
 
   const [themeColor, setThemeColorState] = useState(() => {
@@ -241,16 +246,37 @@ export default function Layout({ children, currentPageName }) {
   const isMedico = (user?.cargo || user?.perfil || "").toLowerCase() === "medico";
 
   const rawSection = getCurrentSection(currentPageName);
-  const activeSection = isAuxiliar ? (moduleSections.find(sec => sec.id === "estoque") || rawSection) : rawSection;
+  const activeSection = rawSection;
+
+  const userModules = useMemo(() => {
+    let mods = user?.modules || user?.modulos || [];
+    if (typeof mods === 'string') {
+      try { mods = JSON.parse(mods); } catch { mods = mods.split(','); }
+    }
+    return Array.isArray(mods) ? mods : [];
+  }, [user]);
+
+  const hasCentral = userModules.includes("estoque_farmacia") || (userModules.length === 0 && isAuxiliar);
+  const hasSatelite = userModules.includes("farmacia_satelite") || (userModules.length === 0 && isAuxiliar);
+
+  const centralPages = ["Dashboard", "Medicamentos", "Movimentacoes", "Estoque", "Vencimentos", "Compras", "Relatorios", "Inventario"];
+  const satelitePages = ["Satelite", "SateliteEvolucao", "PacientesMedicao", "SateliteAdiantamento", "SateliteMovimentacoes", "LivroRegistro", "SateliteEstoque", "SateliteInventario", "MapaDispensacao", "PassagemPlantao", "SatelitePortaria"];
 
   useEffect(() => {
     if (isAuxiliar && user) {
-      const allowedPages = ["Dashboard", "Medicamentos", "Movimentacoes", "Estoque", "Vencimentos", "Compras", "Relatorios"];
-      if (!allowedPages.includes(currentPageName)) {
-        navigate("/Dashboard");
+      const allowedPages = [
+        ...(hasCentral ? centralPages : []),
+        ...(hasSatelite ? satelitePages : [])
+      ];
+      if (allowedPages.length > 0 && !allowedPages.includes(currentPageName)) {
+        if (hasSatelite && !hasCentral) {
+          navigate("/Satelite");
+        } else {
+          navigate("/Dashboard");
+        }
       }
     }
-  }, [isAuxiliar, user, currentPageName, navigate]);
+  }, [isAuxiliar, user, currentPageName, navigate, hasCentral, hasSatelite]);
 
   useEffect(() => {
     if (isMedico && user) {
@@ -281,7 +307,7 @@ export default function Layout({ children, currentPageName }) {
                   type="button"
                   title="Clique para alternar entre Farmácia Central e Satélite"
                   onClick={() => {
-                    if (isAuxiliar) return;
+                    if (isAuxiliar && (!hasCentral || !hasSatelite)) return;
                     const nextTarget = activeSection.id === "satelite" ? "/Dashboard" : "/Satelite";
                     const nextSecId = activeSection.id === "satelite" ? "estoque" : "satelite";
                     try { sessionStorage.setItem("zorion_active_section", nextSecId); } catch (e) {}
@@ -290,7 +316,7 @@ export default function Layout({ children, currentPageName }) {
                   className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 hover:text-sky-700 hover:underline leading-none cursor-pointer group"
                 >
                   <span>{activeSection.name}</span>
-                  {!isAuxiliar && (
+                  {(!isAuxiliar || (hasCentral && hasSatelite)) && (
                     <ArrowLeftRight className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
                   )}
                 </button>
