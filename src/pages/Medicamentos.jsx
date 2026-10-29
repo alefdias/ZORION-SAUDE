@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Package, Printer, Settings2, User } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Package, Printer, Settings2, User, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -105,6 +105,23 @@ export default function Medicamentos() {
     queryFn: () => db.entities.Medicamento.list(),
   });
 
+  const { data: lotes = [] } = useQuery({
+    queryKey: ['lotes'],
+    queryFn: () => db.entities.Lote.list(),
+  });
+
+  // Garante que o estoque exibido confira 100% com a soma dos lotes cadastrados
+  const medicamentosComEstoqueReal = useMemo(() => {
+    return medicamentos.map(med => {
+      const lotesDoMed = lotes.filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id) && l.status !== "Inativo");
+      if (lotesDoMed.length > 0) {
+        const soma = lotesDoMed.reduce((acc, l) => acc + (Number(l.quantidade_atual) || 0), 0);
+        return { ...med, estoque_atual: soma };
+      }
+      return med;
+    });
+  }, [medicamentos, lotes]);
+
   const createMutation = useMutation({
     mutationFn: (data) => db.entities.Medicamento.create(data),
     onSuccess: () => {
@@ -177,18 +194,18 @@ export default function Medicamentos() {
     setDeleteConfirm({ open: false, id: null });
   };
 
-  // Contagens para as abas
-  const padronizadosCount = useMemo(() => medicamentos.filter(m => m.padronizado && !m.is_adiantamento).length, [medicamentos]);
-  const naoPadronizadosCount = useMemo(() => medicamentos.filter(m => !m.padronizado && !m.is_adiantamento).length, [medicamentos]);
-  const adiantamentoCount = useMemo(() => medicamentos.filter(m => Boolean(m.is_adiantamento)).length, [medicamentos]);
+  // Contagens para as abas baseadas no estoque real dos lotes
+  const padronizadosCount = useMemo(() => medicamentosComEstoqueReal.filter(m => m.padronizado && !m.is_adiantamento).length, [medicamentosComEstoqueReal]);
+  const naoPadronizadosCount = useMemo(() => medicamentosComEstoqueReal.filter(m => !m.padronizado && !m.is_adiantamento).length, [medicamentosComEstoqueReal]);
+  const adiantamentoCount = useMemo(() => medicamentosComEstoqueReal.filter(m => Boolean(m.is_adiantamento)).length, [medicamentosComEstoqueReal]);
 
   // Resumo financeiro e de estoque do adiantamento
-  const adiantamentoMeds = useMemo(() => medicamentos.filter(m => Boolean(m.is_adiantamento)), [medicamentos]);
+  const adiantamentoMeds = useMemo(() => medicamentosComEstoqueReal.filter(m => Boolean(m.is_adiantamento)), [medicamentosComEstoqueReal]);
   const totalGastoCartao = useMemo(() => adiantamentoMeds.reduce((acc, m) => acc + (Number(m.valor_compra) || 0), 0), [adiantamentoMeds]);
   const totalItensDisponiveis = useMemo(() => adiantamentoMeds.filter(m => (m.estoque_atual || 0) > 0).length, [adiantamentoMeds]);
   const totalUnidadesAdiantamento = useMemo(() => adiantamentoMeds.reduce((acc, m) => acc + (m.estoque_atual || 0), 0), [adiantamentoMeds]);
 
-  const filteredMeds = medicamentos.filter(m => {
+  const filteredMeds = medicamentosComEstoqueReal.filter(m => {
     // Aba filter
     if (activeTab === "padronizados" && (!m.padronizado || m.is_adiantamento)) return false;
     if (activeTab === "nao_padronizados" && (m.padronizado || m.is_adiantamento)) return false;
@@ -204,6 +221,21 @@ export default function Medicamentos() {
     return true;
   }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
 
+  const [isReconciling, setIsReconciling] = useState(false);
+  const handleReconciliarEstoque = async () => {
+    setIsReconciling(true);
+    try {
+      await db.reconciliarEstoqueComLotes();
+      await queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      await queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      toast.success("Estoque de todos os medicamentos reconciliado com a soma dos lotes físicos com sucesso!");
+    } catch (err) {
+      toast.error("Erro ao reconciliar estoque: " + (err?.message || err));
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
   return (
     <div className="space-y-4 p-4 max-w-[1600px] mx-auto">
       {/* Header & Main Actions */}
@@ -212,7 +244,17 @@ export default function Medicamentos() {
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Catálogo de Medicamentos</h1>
           <p className="text-slate-500 text-sm font-medium mt-1">Gerencie medicamentos, concentrações e padronização</p>
         </div>
-        <div className="flex items-center gap-2.5 no-print">
+        <div className="flex items-center gap-2.5 no-print flex-wrap">
+          <Button 
+            variant="outline" 
+            disabled={isReconciling}
+            onClick={handleReconciliarEstoque} 
+            className="gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all font-semibold"
+            title="Sincroniza os saldos de todos os medicamentos com a soma real de lotes físicos"
+          >
+            <RefreshCw className={cn("w-4 h-4", isReconciling && "animate-spin")} />
+            <span className="hidden sm:inline">{isReconciling ? "Reconciliando..." : "Reconciliar com Lotes"}</span>
+          </Button>
           <Button variant="outline" onClick={() => window.print()} className="gap-2 border-slate-300 hover:bg-slate-100 text-slate-700 shadow-sm transition-all">
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">Imprimir</span>

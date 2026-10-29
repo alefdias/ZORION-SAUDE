@@ -573,15 +573,13 @@ export function AjusteDiasEntregaModal({
         }
 
         // Teto de dias permitidos no input:
-        // Antibióticos permitem livremente o tratamento total (ex: 7, 10, até 30 dias)
-        const maxDiasPermitidos = isAntibiotico
-          ? Math.max(30, diasTratamento || 14)
-          : Math.max(1, diasRestantes || diasSugeridos || 1);
+        // Antibióticos e medicamentos de tempo fixo não ficam mais travados, permitindo entrega flexível
+        const maxDiasPermitidos = 60;
 
         const diasFinais = (jaDispensado || isReducaoDose)
           ? 0
           : (customDias[pr.id] !== undefined
-              ? Math.min(maxDiasPermitidos, Math.max(1, parseInt(customDias[pr.id]) || 1))
+              ? Math.max(1, parseInt(customDias[pr.id]) || 1)
               : (isAntibiotico ? (diasTratamento || 7) : diasRestantes));
 
         // Dose efetiva a dispensar:
@@ -750,21 +748,25 @@ export function AjusteDiasEntregaModal({
   // Alterar dias de uma prescrição específica
   const handleDiasChange = (prId, diasVal, item) => {
     if (item.jaDispensado) return;
-    const maxTeto = item.isAntibiotico
-      ? 30 // Para antibiótico, permite entregar o tratamento inteiro (ex: 7, 10 ou 14 dias) sem travar no ciclo da ala
-      : (item.diasRestantes || item.diasSugeridos || diasRestantesCiclo || 1);
     let d = Math.max(1, parseInt(diasVal) || 1);
-    if (d > maxTeto) {
-      d = maxTeto;
-      toast.warning(`Limite máximo atingido: ${maxTeto} dia(s) para este medicamento.`);
+    if (d > 60) {
+      d = 60;
+      toast.warning(`Limite de segurança de 60 dia(s) para este medicamento.`);
     }
     setCustomDias((prev) => ({ ...prev, [prId]: d }));
     // Recalcula quantidade sugerida multiplicando a dose diária pelos dias
     const doseRef = (item.temAumentoDose && !item.isNova && item.diferencaDose > 0)
       ? item.diferencaDose
       : (item.doseAtual > 0 ? item.doseAtual : (item.diferencaDose > 0 ? item.diferencaDose : 1));
-    const novaQtd = Math.max(1, Math.ceil(doseRef * d));
+    const novaQtd = Math.max(0, Math.ceil(doseRef * d));
     setCustomQtds((prev) => ({ ...prev, [prId]: novaQtd }));
+  };
+
+  // Alterar quantidade enviada diretamente (permite diminuir caso já tenha medicamento no local/leito)
+  const handleQtdChange = (prId, qtdVal, item) => {
+    if (item.jaDispensado) return;
+    const q = Math.max(0, parseInt(qtdVal) || 0);
+    setCustomQtds((prev) => ({ ...prev, [prId]: q }));
   };
 
   const handleConfirm = async () => {
@@ -1198,11 +1200,11 @@ export function AjusteDiasEntregaModal({
                       <TableHead className="text-center font-bold text-xs text-slate-700">Status / Motivo</TableHead>
                       <TableHead className="text-center font-bold text-xs text-slate-700 w-28">Dias a Entregar</TableHead>
                       <TableHead className="text-center font-bold text-xs text-slate-700">Lote</TableHead>
-                      <TableHead className="text-center font-bold text-xs text-slate-700 w-28">
+                      <TableHead className="text-center font-bold text-xs text-slate-700 w-32">
                         <span className="flex items-center justify-center gap-1">
                           Quantidade
-                          <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1 py-0.2 rounded border border-indigo-200">
-                            Auto 🔒
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                            Editável ✏️
                           </span>
                         </span>
                       </TableHead>
@@ -1357,7 +1359,6 @@ export function AjusteDiasEntregaModal({
                                   <Input
                                     type="number"
                                     min="1"
-                                    max={item.isAntibiotico ? (item.diasTratamento || 30) : (item.diasRestantes || diasRestantesCiclo)}
                                     value={diasFinais}
                                     disabled={!isSelected}
                                     onChange={(e) => handleDiasChange(pr.id, e.target.value, item)}
@@ -1461,19 +1462,21 @@ export function AjusteDiasEntregaModal({
                             </Select>
                           </TableCell>
 
-                          {/* Quantidade Bloqueada / Automática (Dias x Dose/dia) */}
+                          {/* Quantidade Editável (Permite reduzir caso já tenha medicação no local) */}
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex flex-col items-center justify-center gap-0.5">
                               <div className="flex items-center justify-center gap-1">
                                 <Input
                                   type="number"
-                                  readOnly
-                                  tabIndex={-1}
+                                  min="0"
+                                  disabled={!isSelected || item.jaDispensado}
                                   value={item.jaDispensado ? 0 : valorFinal}
-                                  title={item.jaDispensado ? "Medicamento já entregue e coberto." : "Quantidade calculada automaticamente pelo sistema com base nos dias e posologia diária. O campo fica bloqueado para digitação manual."}
+                                  onChange={(e) => handleQtdChange(pr.id, e.target.value, item)}
+                                  title="Digite a quantidade a enviar caso o paciente já tenha medicação no local."
                                   className={cn(
-                                    "w-16 h-7 text-center font-mono font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 cursor-not-allowed select-none shadow-none focus-visible:ring-0",
-                                    item.jaDispensado && "text-slate-400 bg-slate-100/50",
+                                    "w-16 h-7 text-center font-mono font-bold text-xs bg-white border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500",
+                                    item.jaDispensado && "text-slate-400 bg-slate-100/50 cursor-not-allowed",
+                                    customVal !== undefined && customVal !== qtdSugerida && "border-amber-500 bg-amber-50 text-amber-900 font-black",
                                     !temEstoque && isSelected && !item.jaDispensado && "border-red-500 bg-red-100 dark:bg-red-950/50 text-red-900 dark:text-red-300"
                                   )}
                                 />
@@ -1481,17 +1484,34 @@ export function AjusteDiasEntregaModal({
                                   un
                                 </span>
                               </div>
-                              <span
-                                className={cn(
-                                  "inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded border",
-                                  item.jaDispensado
-                                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                                    : "text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800"
-                                )}
-                                title={item.jaDispensado ? "Medicamento coberto" : "Cálculo automático: Dias × Dose diária"}
-                              >
-                                {item.jaDispensado ? "🔒 Entregue" : "🔒 Auto"}
-                              </span>
+                              {customVal !== undefined && customVal !== qtdSugerida ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomQtds((prev) => {
+                                      const copy = { ...prev };
+                                      delete copy[pr.id];
+                                      return copy;
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded border text-amber-800 bg-amber-100 border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                                  title={`Quantidade alterada manualmente para ${valorFinal} un. Clique para voltar ao cálculo automático (${qtdSugerida} un).`}
+                                >
+                                  ✏️ Manual (↺ Auto)
+                                </button>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded border",
+                                    item.jaDispensado
+                                      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                      : "text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800"
+                                  )}
+                                  title={item.jaDispensado ? "Medicamento coberto" : "Cálculo automático: Dias × Dose diária. Você pode digitar diretamente para diminuir ou aumentar a quantidade."}
+                                >
+                                  {item.jaDispensado ? "🔒 Entregue" : "⚡ Editável"}
+                                </span>
+                              )}
                             </div>
                           </TableCell>
 

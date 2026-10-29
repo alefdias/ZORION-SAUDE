@@ -140,6 +140,36 @@ export async function initializeApp() {
                 console.warn("[syncManager] Sincronização nomes de alas:", e);
             }
 
+            // Reconciliação automática do estoque Central e Satélite com a soma de lotes físicos
+            try {
+                await invoke("execute_postgres", {
+                    ip, dbName, password,
+                    query: `
+                        UPDATE "Medicamento" m
+                        SET "estoque_atual" = sub.total_central
+                        FROM (
+                            SELECT "medicamento_id", SUM(COALESCE("quantidade_atual", 0)) AS total_central
+                            FROM "Lote"
+                            WHERE ("status" != 'Inativo' OR "status" IS NULL) AND "medicamento_id" IS NOT NULL
+                            GROUP BY "medicamento_id"
+                        ) sub
+                        WHERE m."id" = sub."medicamento_id" AND m."estoque_atual" != sub.total_central;
+
+                        UPDATE "Medicamento" m
+                        SET "estoque_satelite" = sub.total_satelite
+                        FROM (
+                            SELECT "medicamento_id", SUM(COALESCE("quantidade_satelite", 0)) AS total_satelite
+                            FROM "Lote"
+                            WHERE ("status" != 'Inativo' OR "status" IS NULL) AND "medicamento_id" IS NOT NULL
+                            GROUP BY "medicamento_id"
+                        ) sub
+                        WHERE m."id" = sub."medicamento_id" AND m."estoque_satelite" != sub.total_satelite;
+                    `
+                });
+            } catch (e) {
+                console.warn("[syncManager] Reconciliação de lotes:", e);
+            }
+
             // Migrate R2 patients once
             if (!localStorage.getItem("migrated_patients_r2")) {
                 try {

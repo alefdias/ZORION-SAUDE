@@ -1025,8 +1025,45 @@ export const db = {
     Visita: createEntityProxy("Visita"),
     NotificacaoFarmacia: createEntityProxy("NotificacaoFarmacia"),
     HistoricoSeparacaoConsolidada: createEntityProxy("HistoricoSeparacaoConsolidada")
+  },
+  reconciliarEstoqueComLotes: async function() {
+    return reconciliarEstoqueComLotes();
   }
 };
+
+export async function reconciliarEstoqueComLotes() {
+  try {
+    const { ip, dbName, password } = getPgConfig();
+    const query = `
+      -- 1. Sincroniza estoque_atual de Medicamento com a soma real de lotes na Central
+      UPDATE "Medicamento" m
+      SET "estoque_atual" = sub.total_central
+      FROM (
+          SELECT "medicamento_id", SUM(COALESCE("quantidade_atual", 0)) AS total_central
+          FROM "Lote"
+          WHERE ("status" != 'Inativo' OR "status" IS NULL) AND "medicamento_id" IS NOT NULL
+          GROUP BY "medicamento_id"
+      ) sub
+      WHERE m."id" = sub."medicamento_id" AND m."estoque_atual" != sub.total_central;
+
+      -- 2. Sincroniza estoque_satelite de Medicamento com a soma real de lotes na Satélite
+      UPDATE "Medicamento" m
+      SET "estoque_satelite" = sub.total_satelite
+      FROM (
+          SELECT "medicamento_id", SUM(COALESCE("quantidade_satelite", 0)) AS total_satelite
+          FROM "Lote"
+          WHERE ("status" != 'Inativo' OR "status" IS NULL) AND "medicamento_id" IS NOT NULL
+          GROUP BY "medicamento_id"
+      ) sub
+      WHERE m."id" = sub."medicamento_id" AND m."estoque_satelite" != sub.total_satelite;
+    `;
+    await invoke("execute_postgres", { ip, dbName, password, query });
+    return { success: true };
+  } catch (err) {
+    console.error("[reconciliarEstoqueComLotes] Erro:", err);
+    throw err;
+  }
+}
 
 export const PacienteService = {
   update: (id, data) => db.entities.Paciente.update(id, data),
