@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, parseISO, differenceInCalendarDays, addDays, isValid } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, addDays, subDays, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Dialog,
@@ -79,8 +79,10 @@ export function AjusteDiasEntregaModal({
   const [internalTransferencias, setInternalTransferencias] = useState([]);
   const [internalPedidosSatelite, setInternalPedidosSatelite] = useState([]);
   const [internalSaidas, setInternalSaidas] = useState([]);
+  const [internalPacientes, setInternalPacientes] = useState([]);
+  const [internalHistoricoConsolidado, setInternalHistoricoConsolidado] = useState([]);
 
-  // Busca lotes, medicamentos e movimentações da satélite frescos diretamente do banco ao abrir o modal
+  // Busca lotes, medicamentos, movimentações e histórico de ciclos da ala frescos diretamente do banco ao abrir o modal
   useEffect(() => {
     if (!open) return;
     let isMounted = true;
@@ -90,13 +92,17 @@ export function AjusteDiasEntregaModal({
       db.entities.TransferenciaPendente ? db.entities.TransferenciaPendente.list().catch(() => []) : Promise.resolve([]),
       db.entities.PedidoSatelite ? db.entities.PedidoSatelite.list().catch(() => []) : Promise.resolve([]),
       db.entities.Saida ? db.entities.Saida.list().catch(() => []) : Promise.resolve([]),
-    ]).then(([lotesData, medsData, transfData, pedidosData, saidasData]) => {
+      db.entities.Paciente ? db.entities.Paciente.list().catch(() => []) : Promise.resolve([]),
+      db.entities.HistoricoSeparacaoConsolidada ? db.entities.HistoricoSeparacaoConsolidada.list("-created_at").catch(() => []) : Promise.resolve([]),
+    ]).then(([lotesData, medsData, transfData, pedidosData, saidasData, pacsData, histData]) => {
       if (isMounted) {
         if (Array.isArray(lotesData)) setInternalLotes(lotesData);
         if (Array.isArray(medsData)) setInternalMedicamentos(medsData);
         if (Array.isArray(transfData)) setInternalTransferencias(transfData);
         if (Array.isArray(pedidosData)) setInternalPedidosSatelite(pedidosData);
         if (Array.isArray(saidasData)) setInternalSaidas(saidasData);
+        if (Array.isArray(pacsData)) setInternalPacientes(pacsData);
+        if (Array.isArray(histData)) setInternalHistoricoConsolidado(histData);
       }
     });
     return () => {
@@ -242,29 +248,173 @@ export function AjusteDiasEntregaModal({
     });
   }, [prescricoes, patient]);
 
-  // Descobre a data de cobertura atual registrada no paciente ou prescrições
-  useEffect(() => {
-    if (!open) return;
+  // ── DETECÇÃO DO CICLO VIGENTE DA ALA DO PACIENTE (DATA INÍCIO Y ATÉ DATA FIM P) ──
+  const cicloAlaInfo = useMemo(() => {
+    const alaNome = (
+      patient?.alaNome ||
+      patient?.ala_nome ||
+      patient?.ala ||
+      ""
+    ).trim();
+    const alaId = patient?.alaId || patient?.ala_id;
+    const norm = (s) => (s || "").toLowerCase().trim();
 
-    let cicloFinal = patient?.ciclo_coberto_ate;
-    if (!cicloFinal) {
-      const coberturas = activePrescs
-        .map((pr) => pr.coberto_ate)
-        .filter((d) => d && d >= hojeStr)
-        .sort();
-      if (coberturas.length > 0) {
-        cicloFinal = coberturas[coberturas.length - 1];
+    let dataInicioY = null;
+    let dataFimP = null;
+    let diasTotal = null;
+    let fonte = "nenhuma";
+
+    // 1. Prioridade 1: Do próprio paciente se já tiver ciclo registrado
+    if (patient?.ciclo_coberto_ate) {
+      const fimStr = patient.ciclo_coberto_ate.split("T")[0];
+      const dDias = parseInt(patient.ultimo_ciclo_dias, 10) || 8;
+      const iniStr = patient.data_ultimo_ciclo
+        ? patient.data_ultimo_ciclo.split("T")[0]
+        : format(subDays(parseISO(fimStr), Math.max(1, dDias) - 1), "yyyy-MM-dd");
+
+      dataInicioY = iniStr;
+      dataFimP = fimStr;
+      diasTotal = dDias;
+      fonte = "paciente";
+    }
+
+    // 2. Prioridade 2: De outros pacientes da MESMA ALA com ciclo registrado
+    if (!dataFimP && alaNome && Array.isArray(internalPacientes)) {
+      const outrosDaAla = internalPacientes.filter((p) => {
+        if (patient?.id && String(p.id) === String(patient.id)) return false;
+        const pAla = (p.alaNome || p.ala_nome || p.ala || "").trim();
+        const pAlaId = p.alaId || p.ala_id;
+        const mesmaAla = (alaId && pAlaId && String(alaId) === String(pAlaId)) || (norm(pAla) === norm(alaNome));
+        return mesmaAla && p.ciclo_coberto_ate;
+      });
+
+      const ativo = outrosDaAla.find((p) => p.ciclo_coberto_ate.split("T")[0] >= hojeStr);
+      const candidato = ativo || outrosDaAla[0];
+
+      if (candidato) {
+        const fimStr = candidato.ciclo_coberto_ate.split("T")[0];
+        const dDias = parseInt(candidato.ultimo_ciclo_dias, 10) || 8;
+        const iniStr = candidato.data_ultimo_ciclo
+          ? candidato.data_ultimo_ciclo.split("T")[0]
+          : format(subDays(parseISO(fimStr), Math.max(1, dDias) - 1), "yyyy-MM-dd");
+
+        dataInicioY = iniStr;
+        dataFimP = fimStr;
+        diasTotal = dDias;
+        fonte = "outros_pacientes_ala";
       }
     }
 
+    // 3. Prioridade 3: Do Histórico de Separações Consolidadas (HistoricoSeparacaoConsolidada)
+    if (!dataFimP && alaNome && Array.isArray(internalHistoricoConsolidado)) {
+      const histAla = internalHistoricoConsolidado.filter((h) => {
+        if (!h.data_fim_cobertura) return false;
+        const atendidas = (h.alas_atendidas || "").toLowerCase();
+        return (
+          atendidas.includes("todas") ||
+          (alaNome && atendidas.includes(norm(alaNome)))
+        );
+      });
+
+      const ativoHist = histAla.find((h) => h.data_fim_cobertura.split("T")[0] >= hojeStr);
+      const candidatoHist = ativoHist || histAla[0];
+
+      if (candidatoHist) {
+        dataInicioY = candidatoHist.data_inicio_cobertura?.split("T")[0] || candidatoHist.data_separacao?.split("T")[0];
+        dataFimP = candidatoHist.data_fim_cobertura.split("T")[0];
+        diasTotal = parseInt(candidatoHist.dias_ciclo, 10) || 8;
+        fonte = "historico_separacao";
+      }
+    }
+
+    // 4. Prioridade 4: Das saídas recentes da mesma Ala
+    if (!dataFimP && alaNome && Array.isArray(internalSaidas)) {
+      const saidasAla = internalSaidas.filter((s) => {
+        if (!s.data_fim_cobertura) return false;
+        const sAlaNome = (s.ala_nome || s.alaNome || "").trim();
+        const sAlaId = s.ala_id || s.alaId;
+        const mesma = (alaId && sAlaId && String(alaId) === String(sAlaId)) || (norm(sAlaNome) === norm(alaNome));
+        return mesma;
+      });
+
+      const ativaSaida = saidasAla.find((s) => s.data_fim_cobertura.split("T")[0] >= hojeStr);
+      const candidataSaida = ativaSaida || saidasAla[0];
+
+      if (candidataSaida) {
+        dataInicioY = candidataSaida.data_inicio_cobertura?.split("T")[0];
+        dataFimP = candidataSaida.data_fim_cobertura.split("T")[0];
+        diasTotal = parseInt(candidataSaida.dias_cobertura, 10) || 8;
+        fonte = "saidas_ala";
+      }
+    }
+
+    // 5. Fallback padrão: 8 dias a partir de hoje se não houver histórico de ciclo para a ala
+    const ehCicloDefinido = Boolean(dataInicioY && dataFimP);
+    if (!dataFimP) {
+      dataInicioY = hojeStr;
+      dataFimP = format(addDays(hoje, 7), "yyyy-MM-dd");
+      diasTotal = 8;
+      fonte = "padrao";
+    }
+
+    // Calcula dias restantes de HOJE até a data final do ciclo da Ala (dataFimP)
+    let diasRestantes = 1;
+    try {
+      const dFimParsed = parseISO(dataFimP);
+      if (isValid(dFimParsed)) {
+        const diff = differenceInCalendarDays(dFimParsed, hoje);
+        diasRestantes = Math.max(1, diff + 1);
+      }
+    } catch (e) {}
+
+    let dataInicioYFormatada = dataInicioY;
+    let dataFimPFormatada = dataFimP;
+    try {
+      const dIni = parseISO(dataInicioY);
+      if (isValid(dIni)) dataInicioYFormatada = format(dIni, "dd/MM/yyyy");
+      const dFim = parseISO(dataFimP);
+      if (isValid(dFim)) dataFimPFormatada = format(dFim, "dd/MM/yyyy");
+    } catch (e) {}
+
+    return {
+      alaNome: alaNome || "Geral",
+      dataInicioY,
+      dataFimP,
+      dataInicioYFormatada,
+      dataFimPFormatada,
+      diasTotalCiclo: diasTotal || 8,
+      diasRestantes,
+      ehCicloDefinido,
+      fonte,
+    };
+  }, [patient, internalPacientes, internalHistoricoConsolidado, internalSaidas, hoje, hojeStr]);
+
+  // Descobre a data de cobertura atual registrada no paciente ou prescrições (sincronizada com o ciclo da Ala)
+  useEffect(() => {
+    if (!open) return;
+
+    let cicloFinal = cicloAlaInfo?.dataFimP;
+
     if (!cicloFinal || cicloFinal < hojeStr) {
-      cicloFinal = format(addDays(hoje, 7), "yyyy-MM-dd");
+      if (patient?.ciclo_coberto_ate && patient.ciclo_coberto_ate >= hojeStr) {
+        cicloFinal = patient.ciclo_coberto_ate.split("T")[0];
+      } else {
+        const coberturas = activePrescs
+          .map((pr) => pr.coberto_ate)
+          .filter((d) => d && d >= hojeStr)
+          .sort();
+        if (coberturas.length > 0) {
+          cicloFinal = coberturas[coberturas.length - 1];
+        } else {
+          cicloFinal = format(addDays(hoje, 7), "yyyy-MM-dd");
+        }
+      }
     }
 
     setDataFimCiclo(cicloFinal);
     setDataFiltroReceita(hojeStr);
     setApenasDataReferencia(true);
-  }, [open, patient, activePrescs, hoje, hojeStr]);
+  }, [open, patient, activePrescs, cicloAlaInfo, hoje, hojeStr]);
 
   // Dias restantes do ciclo geral do paciente
   const diasRestantesCiclo = useMemo(() => {
@@ -952,13 +1102,13 @@ export function AjusteDiasEntregaModal({
         }
       }
 
-      // 4. Atualizar o ciclo geral no paciente de forma segura
+      // 4. Atualizar o ciclo geral no paciente de forma segura sincronizado com a Ala
       if (patient?.id) {
         try {
           await db.entities.Paciente.update(patient.id, {
             ciclo_coberto_ate: dataFimCiclo || hojeStr,
-            data_ultimo_ciclo: hojeStr,
-            ultimo_ciclo_dias: diasRestantesCiclo || 1,
+            data_ultimo_ciclo: cicloAlaInfo?.dataInicioY || hojeStr,
+            ultimo_ciclo_dias: cicloAlaInfo?.diasTotalCiclo || diasRestantesCiclo || 1,
             data_ultimo_ajuste_ciclo: hojeStr,
           });
         } catch (pacErr) {
@@ -1025,9 +1175,21 @@ export function AjusteDiasEntregaModal({
                     Leito: {patient?.leito || "S/L"}
                   </Badge>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Ala: <strong>{patient?.alaNome || patient?.ala_nome || "Geral"}</strong>
-                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500 font-medium">Setor / Ala:</span>
+                  <Badge variant="outline" className="font-bold text-indigo-700 bg-indigo-50 border-indigo-200">
+                    {cicloAlaInfo.alaNome}
+                  </Badge>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-600 font-medium">Ciclo da Ala:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono">
+                    do dia {cicloAlaInfo.dataInicioYFormatada} até {cicloAlaInfo.dataFimPFormatada} ({cicloAlaInfo.diasTotalCiclo}d)
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded font-bold text-[11px]">
+                    Restam {diasRestantesCiclo} dia(s) até o término
+                  </span>
+                </div>
               </div>
 
               {/* Seletor da Data Final do Ciclo e Atalhos */}
@@ -1054,12 +1216,26 @@ export function AjusteDiasEntregaModal({
                   </span>
                   <Button
                     type="button"
-                    variant={diasRestantesCiclo === 8 ? "default" : "outline"}
+                    variant={dataFimCiclo === cicloAlaInfo.dataFimP ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setDataFimCiclo(cicloAlaInfo.dataFimP);
+                      setCustomDias({});
+                      setCustomQtds({});
+                    }}
+                    className="h-6 px-2 text-[11px] font-bold"
+                    title={`Ciclo oficial da Ala: de ${cicloAlaInfo.dataInicioYFormatada} até ${cicloAlaInfo.dataFimPFormatada}`}
+                  >
+                    Ala ({cicloAlaInfo.diasRestantes}d)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={diasRestantesCiclo === 8 && dataFimCiclo !== cicloAlaInfo.dataFimP ? "default" : "outline"}
                     size="sm"
                     onClick={() => handleSetCicloDias(8)}
                     className="h-6 px-2 text-[11px] font-bold"
                   >
-                    8d (Padrão)
+                    8d
                   </Button>
                   <Button
                     type="button"
@@ -1118,17 +1294,24 @@ export function AjusteDiasEntregaModal({
             </div>
           </div>
 
-          {/* Banner Informativo do Ciclo Fechado */}
-          <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span className="text-slate-700 dark:text-slate-300">
-                <strong>Ciclo Fechado ({diasRestantesCiclo}d):</strong> As novas receitas e complementos são limitados até <strong>{safeFormatDate(dataFimCiclo)}</strong>. Medicamentos já cobertos até o fim do ciclo ficam com 🔒 0 dias e não geram duplicidade.
-              </span>
+          {/* Banner Informativo do Ciclo da Ala e Fechamento */}
+          <div className="bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-indigo-50/90 dark:from-indigo-950/40 dark:to-blue-950/30 border border-indigo-200/90 dark:border-indigo-800/80 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+            <div className="flex items-start gap-2.5">
+              <Calendar className="w-4 h-4 text-indigo-600 mt-0.5 shrink-0" />
+              <div className="text-slate-700 dark:text-slate-300 space-y-0.5">
+                <div>
+                  <strong>Setor / Ala {cicloAlaInfo.alaNome}:</strong> Ciclo oficial <strong>do dia {cicloAlaInfo.dataInicioYFormatada} até {cicloAlaInfo.dataFimPFormatada}</strong> ({cicloAlaInfo.diasTotalCiclo} dias).
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Novas receitas e complementos sugerem estritamente os <strong>{diasRestantesCiclo} dia(s) restantes</strong> até o fechamento da Ala ({safeFormatDate(dataFimCiclo)}). Antibióticos e dosagens fixas respeitam a duração do tratamento prescrito.
+                </div>
+              </div>
             </div>
-            <Badge className="bg-indigo-600 text-white font-mono shrink-0">
-              Até {safeFormatDate(dataFimCiclo)}
-            </Badge>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-mono px-2.5 py-1 text-xs">
+                Restam {diasRestantesCiclo}d (até {safeFormatDate(dataFimCiclo)})
+              </Badge>
+            </div>
           </div>
 
           {/* Tabela de Prescrições para Ajuste */}
