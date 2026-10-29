@@ -100,6 +100,42 @@ const IconUsers = ({ color }) => (
 // ─── Paletas Completas de Temas Visuais (Elegantes e Harmoniosas) ───────────
 
 const THEME_PALETTES = {
+  "theme-medical-clean": {
+    name: "Clínico Clean",
+    isLight: true,
+    screenGradient: "linear-gradient(145deg, #f8fafc 0%, #f0f9ff 45%, #e0f2fe 100%)",
+    spotlight: "rgba(2, 132, 199, 0.08)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(56, 189, 248, 0.18) 0%, transparent 65%)",
+    brandColor: "#0284c7",
+    accentText: "#0369a1",
+    subtitleText: "#475569",
+    modalBg: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
+    modalBorder: "rgba(2, 132, 199, 0.25)",
+    modalGlow: "rgba(14, 165, 233, 0.12)",
+    badgeBg: "rgba(2, 132, 199, 0.1)",
+    badgeBorder: "rgba(2, 132, 199, 0.25)",
+    badgeText: "#0284c7",
+    textColor: "#0f172a",
+    textMuted: "#64748b",
+  },
+  "theme-clinical-sage": {
+    name: "Sálvia & Menta",
+    isLight: true,
+    screenGradient: "linear-gradient(145deg, #f8fafc 0%, #f0fdf4 45%, #ecfdf5 100%)",
+    spotlight: "rgba(16, 185, 129, 0.08)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(52, 211, 153, 0.18) 0%, transparent 65%)",
+    brandColor: "#059669",
+    accentText: "#047857",
+    subtitleText: "#475569",
+    modalBg: "linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%)",
+    modalBorder: "rgba(16, 185, 129, 0.25)",
+    modalGlow: "rgba(16, 185, 129, 0.12)",
+    badgeBg: "rgba(16, 185, 129, 0.1)",
+    badgeBorder: "rgba(16, 185, 129, 0.25)",
+    badgeText: "#059669",
+    textColor: "#0f172a",
+    textMuted: "#64748b",
+  },
   "theme-ocean": {
     name: "Oceano",
     screenGradient: "linear-gradient(145deg, #060e1d 0%, #0a172e 50%, #060d1b 100%)",
@@ -235,6 +271,7 @@ const MODULES = [
 
 function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
   const [hovered, setHovered] = useState(false);
+  const isLight = Boolean(currentTheme?.isLight);
 
   return (
     <button
@@ -242,8 +279,20 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background: hovered ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.03)",
-        border: `1.5px solid ${hovered ? mod.color : "rgba(255, 255, 255, 0.1)"}`,
+        background: isLight
+          ? hovered
+            ? "rgba(255, 255, 255, 0.95)"
+            : "rgba(255, 255, 255, 0.82)"
+          : hovered
+          ? "rgba(255, 255, 255, 0.08)"
+          : "rgba(255, 255, 255, 0.03)",
+        border: `1.5px solid ${
+          hovered
+            ? mod.color
+            : isLight
+            ? "rgba(203, 213, 225, 0.85)"
+            : "rgba(255, 255, 255, 0.1)"
+        }`,
         borderRadius: 22,
         padding: "26px 18px 20px",
         cursor: "pointer",
@@ -257,52 +306,72 @@ function ModuleCard({ mod, currentTheme, delay, visible, onClick }) {
         overflow: "hidden",
         transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         transform: visible
-          ? hovered ? "translateY(-8px) scale(1.04)" : "translateY(0) scale(1)"
+          ? hovered
+            ? "translateY(-8px) scale(1.04)"
+            : "translateY(0) scale(1)"
           : "translateY(30px) scale(0.9)",
         opacity: visible ? 1 : 0,
         transitionDelay: visible ? `${delay}ms` : "0ms",
         boxShadow: hovered
           ? `0 14px 40px ${mod.glow}, 0 0 0 1px ${mod.color}55`
+          : isLight
+          ? "0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03)"
           : "0 6px 20px rgba(0,0,0,0.3)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
       }}
     >
-      <div style={{
-        width: 74,
-        height: 74,
-        borderRadius: "50%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: hovered
-          ? `radial-gradient(circle, ${mod.glow} 0%, transparent 70%)`
-          : `${mod.color}15`,
-        border: `1px solid ${hovered ? mod.color + "88" : mod.color + "33"}`,
-        transition: "all 0.3s ease",
-        filter: hovered ? `drop-shadow(0 0 14px ${mod.color})` : "none",
-      }}>
+      <div
+        style={{
+          width: 74,
+          height: 74,
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: hovered
+            ? `radial-gradient(circle, ${mod.glow} 0%, transparent 70%)`
+            : `${mod.color}15`,
+          border: `1px solid ${hovered ? mod.color + "88" : mod.color + "33"}`,
+          transition: "all 0.3s ease",
+          filter: hovered ? `drop-shadow(0 0 14px ${mod.color})` : "none",
+        }}
+      >
         <mod.Icon color={mod.color} />
       </div>
       <div style={{ textAlign: "center" }}>
-        <div style={{
-          fontSize: 14,
-          fontWeight: 700,
-          color: hovered ? "#ffffff" : "#f1f5f9",
-          letterSpacing: 0.3,
-          transition: "color 0.25s ease",
-          lineHeight: 1.3,
-        }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: hovered
+              ? isLight
+                ? mod.color
+                : "#ffffff"
+              : isLight
+              ? "#0f172a"
+              : "#f1f5f9",
+            letterSpacing: 0.3,
+            transition: "color 0.25s ease",
+            lineHeight: 1.3,
+          }}
+        >
           {mod.label}
         </div>
-        <div style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: hovered ? mod.color : "#94a3b8",
-          marginTop: 4,
-          transition: "color 0.25s ease",
-          lineHeight: 1.3,
-        }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: hovered
+              ? mod.color
+              : isLight
+              ? "#64748b"
+              : "#94a3b8",
+            marginTop: 4,
+            transition: "color 0.25s ease",
+            lineHeight: 1.3,
+          }}
+        >
           {mod.sub}
         </div>
       </div>
@@ -332,10 +401,10 @@ export function WelcomeScreen({ onEnter }) {
 
   // Theme state
   const [themeColor, setThemeColorState] = useState(() => {
-    return localStorage.getItem("zorion_theme") || "theme-ocean";
+    return localStorage.getItem("zorion_theme") || "theme-medical-clean";
   });
 
-  const currentTheme = THEME_PALETTES[themeColor] || THEME_PALETTES["theme-ocean"];
+  const currentTheme = THEME_PALETTES[themeColor] || THEME_PALETTES["theme-medical-clean"];
 
   const setThemeColor = (newTheme) => {
     document.documentElement.classList.remove(themeColor);
@@ -664,30 +733,31 @@ export function WelcomeScreen({ onEnter }) {
           }}
         >
           <h1 style={{
-            fontSize: 52,
+            fontSize: 48,
             fontWeight: 900,
             lineHeight: 1,
-            letterSpacing: "-0.05em",
-            margin: "0 0 4px 0",
+            letterSpacing: "-0.04em",
+            margin: "0 0 6px 0",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center"
+            justifyContent: "center",
+            gap: 6
           }}>
-            <span style={{ color: currentTheme.brandColor, transition: "color 0.4s ease" }}>ZOR</span>
-            <span style={{ color: "#ffffff" }}>ION</span>
+            <span style={{ color: currentTheme.brandColor, transition: "color 0.4s ease" }}>ZORION</span>
+            <span style={{ color: currentTheme.isLight ? "#0f172a" : "#ffffff", fontWeight: 900 }}>SAÚDE</span>
           </h1>
         </div>
         <span
           style={{
             fontSize: 11,
             fontWeight: 700,
-            color: currentTheme.accentText || "#94a3b8",
+            color: currentTheme.accentText || (currentTheme.isLight ? "#0369a1" : "#94a3b8"),
             letterSpacing: 2.5,
             textTransform: "uppercase",
             transition: "color 0.4s ease"
           }}
         >
-          Sistema de Gestão Hospitalar
+          Sistema de Gestão Farmacêutica e Hospitalar
         </span>
       </div>
 
@@ -695,7 +765,7 @@ export function WelcomeScreen({ onEnter }) {
       <p
         style={{
           fontSize: 14,
-          color: "#cbd5e1",
+          color: currentTheme.subtitleText || (currentTheme.isLight ? "#475569" : "#cbd5e1"),
           marginBottom: 24,
           fontWeight: 500,
           letterSpacing: 0.2,
@@ -786,6 +856,8 @@ export function WelcomeScreen({ onEnter }) {
           >
             <div className="grid grid-cols-1 gap-1.5">
               {[
+                { id: "theme-medical-clean", name: "Clínico Clean", colors: ["bg-sky-400", "bg-sky-100", "bg-white", "bg-blue-600"] },
+                { id: "theme-clinical-sage", name: "Sálvia & Menta", colors: ["bg-emerald-400", "bg-emerald-100", "bg-white", "bg-emerald-700"] },
                 { id: "theme-ocean", name: "Oceano", colors: ["bg-blue-600", "bg-blue-900", "bg-slate-100", "bg-white"] },
                 { id: "theme-emerald", name: "Esmeralda", colors: ["bg-emerald-600", "bg-[#064e3b]", "bg-[#f0fdf4]", "bg-white"] },
                 { id: "theme-midnight", name: "Meia-noite", colors: ["bg-slate-500", "bg-slate-900", "bg-[#020617]", "bg-slate-800"] },
@@ -798,11 +870,17 @@ export function WelcomeScreen({ onEnter }) {
                   onClick={() => setThemeColor(t.id)}
                   className={cn(
                     "flex items-center gap-3 p-2 rounded-xl transition-all border text-left cursor-pointer",
-                    themeColor === t.id ? "bg-white/15 border-white/30 text-white font-bold" : "hover:bg-white/10 border-transparent text-slate-300"
+                    themeColor === t.id
+                      ? currentTheme.isLight
+                        ? "bg-sky-100 border-sky-300 text-sky-950 font-bold"
+                        : "bg-white/15 border-white/30 text-white font-bold"
+                      : currentTheme.isLight
+                      ? "hover:bg-slate-100 border-transparent text-slate-700"
+                      : "hover:bg-white/10 border-transparent text-slate-300"
                   )}
                 >
                   <div className="flex -space-x-1 shrink-0">
-                    {t.colors.map((c, i) => <div key={i} className={cn("w-3.5 h-3.5 rounded-full ring-2 ring-slate-900", c)} />)}
+                    {t.colors.map((c, i) => <div key={i} className={cn("w-3.5 h-3.5 rounded-full ring-2 ring-slate-400/40", c)} />)}
                   </div>
                   <span className="text-[11px] font-medium transition-colors">{t.name}</span>
                 </button>
@@ -811,7 +889,7 @@ export function WelcomeScreen({ onEnter }) {
           </div>
         </div>
 
-        <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] text-slate-400 font-medium tracking-[0.2em]">
+        <div className={cn("absolute bottom-6 left-0 right-0 text-center text-[10px] font-medium tracking-[0.2em]", currentTheme.isLight ? "text-slate-500" : "text-slate-400")}>
           ZORION SAÚDE © 2026 — V1.0
         </div>
         
@@ -827,7 +905,7 @@ export function WelcomeScreen({ onEnter }) {
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "rgba(3, 7, 18, 0.78)",
+            background: currentTheme.isLight ? "rgba(15, 23, 42, 0.45)" : "rgba(3, 7, 18, 0.78)",
             backdropFilter: "blur(14px)",
             display: "flex",
             alignItems: "center",
@@ -880,10 +958,10 @@ export function WelcomeScreen({ onEnter }) {
                 <selectedModule.Icon color={selectedModule.color} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#f8fafc" }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: currentTheme.isLight ? "#0f172a" : "#f8fafc" }}>
                   {selectedModule.label}
                 </h3>
-                <span style={{ fontSize: 12, color: "#64748b" }}>
+                <span style={{ fontSize: 12, color: currentTheme.isLight ? "#64748b" : "#94a3b8" }}>
                   {selectedModule.key === "carrinho_parada"
                     ? carrinhoSubMode === "nursing" 
                       ? "Login — Enfermagem" 
@@ -898,7 +976,7 @@ export function WelcomeScreen({ onEnter }) {
             {/* SE É CARRINHO DE PARADA E AINDA NÃO ESCOLHEU O PERFIL */}
             {selectedModule.key === "carrinho_parada" && !carrinhoSubMode ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 8px 0" }}>
+                <p style={{ fontSize: 13, color: currentTheme.isLight ? "#475569" : "#94a3b8", margin: "0 0 8px 0" }}>
                   Escolha o setor para realizar o login:
                 </p>
 
@@ -911,28 +989,28 @@ export function WelcomeScreen({ onEnter }) {
                     gap: 16,
                     padding: "16px 20px",
                     borderRadius: 16,
-                    background: "rgba(59,130,246,0.1)",
-                    border: "1.5px solid rgba(59,130,246,0.3)",
-                    color: "#f8fafc",
+                    background: currentTheme.isLight ? "rgba(59,130,246,0.06)" : "rgba(59,130,246,0.1)",
+                    border: `1.5px solid ${currentTheme.isLight ? "rgba(59,130,246,0.25)" : "rgba(59,130,246,0.3)"}`,
+                    color: currentTheme.isLight ? "#0f172a" : "#f8fafc",
                     cursor: "pointer",
                     textAlign: "left",
                     transition: "all 0.2s ease"
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(59,130,246,0.2)";
+                    e.currentTarget.style.background = currentTheme.isLight ? "rgba(59,130,246,0.12)" : "rgba(59,130,246,0.2)";
                     e.currentTarget.style.borderColor = "rgba(59,130,246,0.6)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(59,130,246,0.1)";
-                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.3)";
+                    e.currentTarget.style.background = currentTheme.isLight ? "rgba(59,130,246,0.06)" : "rgba(59,130,246,0.1)";
+                    e.currentTarget.style.borderColor = currentTheme.isLight ? "rgba(59,130,246,0.25)" : "rgba(59,130,246,0.3)";
                   }}
                 >
-                  <div style={{ padding: 10, borderRadius: 12, background: "rgba(59,130,246,0.2)" }}>
-                    <IconSyringe color="#3b82f6" />
+                  <div style={{ padding: 10, borderRadius: 12, background: "rgba(59,130,246,0.15)" }}>
+                    <IconSyringe color="#2563eb" />
                   </div>
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#60a5fa" }}>Enfermagem</div>
-                    <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Checagem de enfermagem e registro de uso</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: currentTheme.isLight ? "#1d4ed8" : "#60a5fa" }}>Enfermagem</div>
+                    <div style={{ fontSize: 12, color: currentTheme.isLight ? "#64748b" : "#94a3b8", marginTop: 2 }}>Checagem de enfermagem e registro de uso</div>
                   </div>
                 </button>
 
@@ -945,28 +1023,28 @@ export function WelcomeScreen({ onEnter }) {
                     gap: 16,
                     padding: "16px 20px",
                     borderRadius: 16,
-                    background: "rgba(16,185,129,0.1)",
-                    border: "1.5px solid rgba(16,185,129,0.3)",
-                    color: "#f8fafc",
+                    background: currentTheme.isLight ? "rgba(16,185,129,0.06)" : "rgba(16,185,129,0.1)",
+                    border: `1.5px solid ${currentTheme.isLight ? "rgba(16,185,129,0.25)" : "rgba(16,185,129,0.3)"}`,
+                    color: currentTheme.isLight ? "#0f172a" : "#f8fafc",
                     cursor: "pointer",
                     textAlign: "left",
                     transition: "all 0.2s ease"
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(16,185,129,0.2)";
+                    e.currentTarget.style.background = currentTheme.isLight ? "rgba(16,185,129,0.12)" : "rgba(16,185,129,0.2)";
                     e.currentTarget.style.borderColor = "rgba(16,185,129,0.6)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(16,185,129,0.1)";
-                    e.currentTarget.style.borderColor = "rgba(16,185,129,0.3)";
+                    e.currentTarget.style.background = currentTheme.isLight ? "rgba(16,185,129,0.06)" : "rgba(16,185,129,0.1)";
+                    e.currentTarget.style.borderColor = currentTheme.isLight ? "rgba(16,185,129,0.25)" : "rgba(16,185,129,0.3)";
                   }}
                 >
-                  <div style={{ padding: 10, borderRadius: 12, background: "rgba(16,185,129,0.2)" }}>
-                    <IconPill color="#10b981" />
+                  <div style={{ padding: 10, borderRadius: 12, background: "rgba(16,185,129,0.15)" }}>
+                    <IconPill color="#059669" />
                   </div>
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#34d399" }}>Farmácia</div>
-                    <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Controle de estoque, reposição e conferência</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: currentTheme.isLight ? "#047857" : "#34d399" }}>Farmácia</div>
+                    <div style={{ fontSize: 12, color: currentTheme.isLight ? "#64748b" : "#94a3b8", marginTop: 2 }}>Controle de estoque, reposição e conferência</div>
                   </div>
                 </button>
               </div>
@@ -980,7 +1058,7 @@ export function WelcomeScreen({ onEnter }) {
                     style={{
                       background: "transparent",
                       border: "none",
-                      color: "#38bdf8",
+                      color: currentTheme.isLight ? "#0284c7" : "#38bdf8",
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: "pointer",
@@ -994,7 +1072,7 @@ export function WelcomeScreen({ onEnter }) {
                 )}
 
                 <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#94a3b8", marginBottom: 6 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: currentTheme.isLight ? "#475569" : "#94a3b8", marginBottom: 6 }}>
                     Usuário
                   </label>
                   <input
@@ -1007,9 +1085,9 @@ export function WelcomeScreen({ onEnter }) {
                       width: "100%",
                       padding: "10px 14px",
                       borderRadius: 12,
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      color: "#fff",
+                      background: currentTheme.isLight ? "#f8fafc" : "#1e293b",
+                      border: `1.5px solid ${currentTheme.isLight ? "#cbd5e1" : "#334155"}`,
+                      color: currentTheme.isLight ? "#0f172a" : "#fff",
                       fontSize: 14,
                       outline: "none"
                     }}
@@ -1017,7 +1095,7 @@ export function WelcomeScreen({ onEnter }) {
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#94a3b8", marginBottom: 6 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: currentTheme.isLight ? "#475569" : "#94a3b8", marginBottom: 6 }}>
                     Senha
                   </label>
                   <input
@@ -1030,9 +1108,9 @@ export function WelcomeScreen({ onEnter }) {
                       width: "100%",
                       padding: "10px 14px",
                       borderRadius: 12,
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      color: "#fff",
+                      background: currentTheme.isLight ? "#f8fafc" : "#1e293b",
+                      border: `1.5px solid ${currentTheme.isLight ? "#cbd5e1" : "#334155"}`,
+                      color: currentTheme.isLight ? "#0f172a" : "#fff",
                       fontSize: 14,
                       outline: "none"
                     }}
