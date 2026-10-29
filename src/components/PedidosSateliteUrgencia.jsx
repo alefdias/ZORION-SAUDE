@@ -422,7 +422,16 @@ export default function PedidosSateliteUrgencia() {
               if (loteObj) {
                 await db.entities.Lote.update(loteObj.id, {
                   quantidade_atual: (Number(loteObj.quantidade_atual) || 0) + qtdRecebida,
+                  quantidade_satelite: Math.max(0, (Number(loteObj.quantidade_satelite) || 0) - qtdRecebida),
                   status: 'disponivel'
+                });
+              }
+            } else {
+              // Se o item não tem lote específico gravado, estorna o saldo da satélite do lote com saldo
+              const loteCandidato = freshLotes.find(l => String(l.medicamento_id) === String(item.medicamento_id) && (Number(l.quantidade_satelite) || 0) > 0);
+              if (loteCandidato) {
+                await db.entities.Lote.update(loteCandidato.id, {
+                  quantidade_satelite: Math.max(0, (Number(loteCandidato.quantidade_satelite) || 0) - qtdRecebida)
                 });
               }
             }

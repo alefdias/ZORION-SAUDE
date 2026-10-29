@@ -148,9 +148,14 @@ export function calcularLotesSatelite({
           if (jaContabilizado) return;
 
           const plId = String(it.lote_id || it.loteId || "");
-          const matchLote = lotesDoMed.find(
+          let matchLote = lotesDoMed.find(
             (l) => (plId && String(l.id) === plId) || (l.numero_lote && it.numero_lote && l.numero_lote.trim().toLowerCase() === it.numero_lote.trim().toLowerCase())
           );
+
+          // Fallback para pedidos avulsos sem lote específico gravado: aloca no lote do medicamento (FEFO)
+          if (!matchLote && lotesDoMed.length > 0) {
+            matchLote = lotesDoMed.find(l => (Number(l.quantidade_satelite) || 0) > 0) || lotesDoMed[0];
+          }
 
           if (matchLote) {
             const qtd = Number(it.quantidade_atendida || it.quantidade) || 0;

@@ -952,12 +952,17 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               const medId = it.medicamento_id || it.id;
               if (qtdRecebida > 0 && medId) {
                 sqlBatch.push(
-                  `UPDATE "Medicamento" SET "estoque_satelite" = MAX(0, COALESCE("estoque_satelite", 0) - ${qtdRecebida}), "estoque_atual" = COALESCE("estoque_atual", 0) + ${qtdRecebida} WHERE "id" = ${esc(medId)};`
+                  `UPDATE "Medicamento" SET "estoque_satelite" = GREATEST(0, COALESCE("estoque_satelite", 0) - ${qtdRecebida}), "estoque_atual" = COALESCE("estoque_atual", 0) + ${qtdRecebida} WHERE "id" = ${esc(medId)};`
                 );
                 const loteId = it.lote_id || it.lote_previsto_id;
                 if (loteId) {
                   sqlBatch.push(
-                    `UPDATE "Lote" SET "quantidade_atual" = COALESCE("quantidade_atual", 0) + ${qtdRecebida}, "status" = 'disponivel' WHERE "id" = ${esc(loteId)};`
+                    `UPDATE "Lote" SET "quantidade_atual" = COALESCE("quantidade_atual", 0) + ${qtdRecebida}, "quantidade_satelite" = GREATEST(0, COALESCE("quantidade_satelite", 0) - ${qtdRecebida}), "status" = 'disponivel' WHERE "id" = ${esc(loteId)};`
+                  );
+                } else {
+                  // Se o item não tem lote específico gravado, estorna o saldo da satélite do lote com saldo
+                  sqlBatch.push(
+                    `UPDATE "Lote" SET "quantidade_satelite" = GREATEST(0, COALESCE("quantidade_satelite", 0) - ${qtdRecebida}) WHERE "id" IN (SELECT "id" FROM "Lote" WHERE "medicamento_id" = ${esc(medId)} AND COALESCE("quantidade_satelite", 0) > 0 ORDER BY "data_validade" ASC LIMIT 1);`
                   );
                 }
               }
