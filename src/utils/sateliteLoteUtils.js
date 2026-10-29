@@ -158,7 +158,7 @@ export function calcularLotesSatelite({
           }
 
           if (matchLote) {
-            const qtd = Number(it.quantidade_atendida || it.quantidade) || 0;
+            const qtd = Number(it.qtd_recebida ?? it.qtd_atendida ?? it.qtd_solicitada ?? it.quantidade_atendida ?? it.quantidade) || 0;
             mapaSaldoLote[matchLote.id] = (mapaSaldoLote[matchLote.id] || 0) + qtd;
           }
         });

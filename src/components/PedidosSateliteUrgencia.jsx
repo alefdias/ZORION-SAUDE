@@ -355,7 +355,7 @@ export default function PedidosSateliteUrgencia() {
     }
 
     if (!forceDuplicado) {
-      const todosPedidos = pedidosQuery.data || [];
+      const todosPedidos = Array.isArray(pedidos) ? pedidos : [];
       const agora = new Date().getTime();
 
       // Procura pedido avulso idêntico criado nas últimas 24 horas
