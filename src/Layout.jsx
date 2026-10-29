@@ -36,7 +36,11 @@ import {
   Calendar,
   PackagePlus,
   RotateCcw,
-  PackageMinus
+  PackageMinus,
+  UserPlus,
+  Plus,
+  Printer,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -111,7 +115,63 @@ const moduleSections = [
     menu: [
       { name: "Painel", icon: LayoutDashboard, page: "Satelite" },
       { name: "Sazonalidade", icon: TrendingUp, page: "SateliteEvolucao" },
-      { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
+      { 
+        name: "Pacientes", 
+        icon: Users, 
+        page: "PacientesMedicao",
+        subItems: [
+          {
+            name: "Lista de Pacientes",
+            desc: "Prescrições ativas e dispensação por leito",
+            action: "lista",
+            icon: Users,
+            color: "text-blue-600 bg-blue-50 dark:bg-blue-950/40"
+          },
+          {
+            name: "Novo Paciente",
+            desc: "Cadastrar paciente internado e leito",
+            action: "novo_paciente",
+            icon: UserPlus,
+            color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40"
+          },
+          {
+            name: "Nova Prescrição Fixa",
+            desc: "Prescrever aprazamento contínuo de 24h",
+            action: "nova_presc",
+            icon: Plus,
+            color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40"
+          },
+          {
+            name: "Transferir de Ala",
+            desc: "Transferência física entre enfermarias/alas",
+            action: "transferir_ala",
+            icon: ArrowLeftRight,
+            color: "text-amber-600 bg-amber-50 dark:bg-amber-950/40"
+          },
+          {
+            name: "Imprimir Prescrições",
+            desc: "Checklist de aprazamento e dispensação",
+            action: "imprimir_presc",
+            icon: Printer,
+            badge: "A4",
+            color: "text-sky-600 bg-sky-50 dark:bg-sky-950/40"
+          },
+          {
+            name: "Troca por Validade (344)",
+            desc: "Substituição e descarte com Portaria 344",
+            action: "troca_lote",
+            icon: RefreshCw,
+            color: "text-purple-600 bg-purple-50 dark:bg-purple-950/40"
+          },
+          {
+            name: "Cancelar / Estornar Baixa",
+            desc: "Reverter baixas de medicação recentes",
+            action: "estornar_baixa",
+            icon: RotateCcw,
+            color: "text-rose-600 bg-rose-50 dark:bg-rose-950/40"
+          }
+        ]
+      },
       { name: "Adiantamento", icon: CreditCard, page: "SateliteAdiantamento" },
       { 
         name: "Movimentações", 
@@ -267,6 +327,7 @@ export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentTab = new URLSearchParams(location.search).get("tab");
+  const currentAction = new URLSearchParams(location.search).get("action");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
 
@@ -443,11 +504,19 @@ export default function Layout({ children, currentPageName }) {
                         </div>
                         {item.subItems.map((sub) => {
                           const SubIcon = sub.icon;
-                          const isSubActive = isActive && currentTab === sub.tab;
+                          const isSubActive = isActive && (
+                            (sub.tab && currentTab === sub.tab) ||
+                            (sub.action && currentAction === sub.action)
+                          );
+                          const targetUrl = sub.page
+                            ? createPageUrl(sub.page)
+                            : (sub.tab
+                                ? `${createPageUrl(item.page)}?tab=${sub.tab}`
+                                : `${createPageUrl(item.page)}?action=${sub.action || ''}`);
                           return (
                             <Link
-                              key={sub.tab}
-                              to={`${createPageUrl(item.page)}?tab=${sub.tab}`}
+                              key={sub.tab || sub.action || sub.name}
+                              to={targetUrl}
                               onClick={() => {
                                 try {
                                   sessionStorage.setItem("zorion_active_section", activeSection.id);
@@ -618,11 +687,19 @@ export default function Layout({ children, currentPageName }) {
                         <div className="grid grid-cols-2 gap-1 pl-3 pt-0.5">
                           {item.subItems.map((sub) => {
                             const SubIcon = sub.icon;
-                            const isSubActive = isActive && currentTab === sub.tab;
+                            const isSubActive = isActive && (
+                              (sub.tab && currentTab === sub.tab) ||
+                              (sub.action && currentAction === sub.action)
+                            );
+                            const targetUrl = sub.page
+                              ? createPageUrl(sub.page)
+                              : (sub.tab
+                                  ? `${createPageUrl(item.page)}?tab=${sub.tab}`
+                                  : `${createPageUrl(item.page)}?action=${sub.action || ''}`);
                             return (
                               <Link
-                                key={sub.tab}
-                                to={`${createPageUrl(item.page)}?tab=${sub.tab}`}
+                                key={sub.tab || sub.action || sub.name}
+                                to={targetUrl}
                                 onClick={() => {
                                   try {
                                     sessionStorage.setItem("zorion_active_section", activeSection.id);

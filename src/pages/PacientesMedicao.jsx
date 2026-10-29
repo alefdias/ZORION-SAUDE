@@ -1,6 +1,6 @@
 import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -108,7 +108,58 @@ const getLocalDateString = () => {
 
 export default function PacientesMedicao() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+
+  // Queries fundamentais - declaradas no topo para evitar ReferenceError de inicialização
+  const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
+    queryKey: ['pacientes'],
+    queryFn: () => db.entities.Paciente.list(),
+    refetchInterval: 2000,
+  });
+
+  const { data: prescricoes = [], isLoading: loadingPrescricoes } = useQuery({
+    queryKey: ['prescricoes_paciente'],
+    queryFn: () => db.entities.PrescricaoPaciente.list(),
+    refetchInterval: 5000,
+  });
+
+  const { data: todasVisitas = [] } = useQuery({
+    queryKey: ['todas_visitas'],
+    queryFn: () => db.entities.Visita.list(),
+    refetchInterval: 2000,
+  });
+
+  const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
+    queryKey: ['medicamentos'],
+    queryFn: () => db.entities.Medicamento.list(),
+    refetchInterval: 3000,
+  });
+
+  const medicamentosComEstoque = useMemo(() => {
+    return medicamentos || [];
+  }, [medicamentos]);
+
+  const { data: lotes = [] } = useQuery({
+    queryKey: ['lotes'],
+    queryFn: () => db.entities.Lote.list(),
+    refetchInterval: 3000,
+  });
+
+  const { data: alas = [] } = useQuery({
+    queryKey: ['alas'],
+    queryFn: () => db.entities.Ala.list(),
+  });
+
+  const { data: saidas = [] } = useQuery({
+    queryKey: ['saidas'],
+    queryFn: () => db.entities.Saida.list(),
+  });
+
+  const { data: gavetas = [] } = useQuery({
+    queryKey: ['gavetas_paciente'],
+    queryFn: () => db.entities.GavetaPaciente.list ? db.entities.GavetaPaciente.list() : [],
+  });
 
   const [activeCategory, setActiveCategory] = useState("todos"); // "todos", "com_prescricao", "sem_prescricao", "altas"
   const [periodoDias, setPeriodoDias] = useState(1);
@@ -364,24 +415,33 @@ export default function PacientesMedicao() {
   const [trocaLoteModalPatientId, setTrocaLoteModalPatientId] = useState(null);
   const [trocaLoteModalPrescId, setTrocaLoteModalPrescId] = useState(null);
 
-  // Queries - com refetchInterval para sincronização automática entre Zorion Recepção e Zorion Saúde
-  const { data: pacientes = [], isLoading: loadingPacientes } = useQuery({
-    queryKey: ['pacientes'],
-    queryFn: () => db.entities.Paciente.list(),
-    refetchInterval: 2000,
-  });
+  // Tratamento de atalhos rápidos disparados pelo submenu "Pacientes" na barra de navegação
+  useEffect(() => {
+    const action = searchParams.get("action");
+    if (!action) return;
 
-  const { data: prescricoes = [], isLoading: loadingPrescricoes } = useQuery({
-    queryKey: ['prescricoes_paciente'],
-    queryFn: () => db.entities.PrescricaoPaciente.list(),
-    refetchInterval: 5000,
-  });
-
-  const { data: todasVisitas = [] } = useQuery({
-    queryKey: ['todas_visitas'],
-    queryFn: () => db.entities.Visita.list(),
-    refetchInterval: 2000,
-  });
+    if (action === "novo_paciente") {
+      handleOpenNewPatient();
+      setSearchParams({}, { replace: true });
+    } else if (action === "nova_presc") {
+      handleOpenNewPresc();
+      setSearchParams({}, { replace: true });
+    } else if (action === "transferir_ala") {
+      handleOpenTransferModal();
+      setSearchParams({}, { replace: true });
+    } else if (action === "imprimir_presc") {
+      handleOpenPrintPrescModal();
+      setSearchParams({}, { replace: true });
+    } else if (action === "troca_lote") {
+      setTrocaLoteModalPatientId(null);
+      setTrocaLoteModalPrescId(null);
+      setTrocaLoteModalOpen(true);
+      setSearchParams({}, { replace: true });
+    } else if (action === "estornar_baixa") {
+      setCancelarBaixaModalOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams]);
 
   // Suspensão automática de prescrições com período finalizado (dataFim < hoje)
   useEffect(() => {
@@ -435,39 +495,6 @@ export default function PacientesMedicao() {
       isMounted = false;
     };
   }, [prescricoes, queryClient]);
-
-  const { data: medicamentos = [], isLoading: loadingMeds } = useQuery({
-    queryKey: ['medicamentos'],
-    queryFn: () => db.entities.Medicamento.list(),
-    refetchInterval: 3000,
-  });
-
-  // Mostra todos os medicamentos, independente do estoque (Central ou Satélite), conforme solicitado.
-  // A cor no combobox indicará visualmente onde há estoque.
-  const medicamentosComEstoque = useMemo(() => {
-    return medicamentos || [];
-  }, [medicamentos]);
-
-  const { data: lotes = [] } = useQuery({
-    queryKey: ['lotes'],
-    queryFn: () => db.entities.Lote.list(),
-    refetchInterval: 3000,
-  });
-
-  const { data: alas = [] } = useQuery({
-    queryKey: ['alas'],
-    queryFn: () => db.entities.Ala.list(),
-  });
-
-  const { data: saidas = [] } = useQuery({
-    queryKey: ['saidas'],
-    queryFn: () => db.entities.Saida.list(),
-  });
-
-  const { data: gavetas = [] } = useQuery({
-    queryKey: ['gavetas_paciente'],
-    queryFn: () => db.entities.GavetaPaciente.list ? db.entities.GavetaPaciente.list() : [],
-  });
 
   const getSaidasDoPaciente = (pacienteNome, pacienteId) => {
     if (!pacienteNome && !pacienteId) return [];
