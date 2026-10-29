@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zorion Saúde - Seleção de Módulos (Comparador de Cores)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      width: 100vw;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: background 0.4s ease;
+    }
+
+    /* BARRA SUPERIOR SELETORA DE TEMAS */
+    .theme-selector-bar {
+      position: fixed;
+      top: 18px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 6px 12px;
+      border-radius: 9999px;
+    }
+
+    .dark-mode .theme-selector-bar {
+      background: rgba(30, 41, 59, 0.85);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    .theme-selector-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-right: 4px;
+      color: #64748b;
+    }
+
+    .dark-mode .theme-selector-label {
+      color: #94a3b8;
+    }
+
+    .theme-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #334155;
+    }
+
+    .dark-mode .theme-btn {
+      color: #e2e8f0;
+    }
+
+    .theme-btn:hover {
+      background: rgba(0,0,0,0.05);
+    }
+
+    .dark-mode .theme-btn:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .theme-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+    }
+
+    .theme-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* TEMA 1: AZUL SAFIRA & GELO (CLEAN MODERN) */
+    body.theme-1 {
+      background: linear-gradient(145deg, #f8fafc 0%, #f0f9ff 45%, #e0f2fe 100%);
+    }
+    body.theme-1 .spotlight {
+      background: radial-gradient(750px circle at 50% 45%, rgba(2, 132, 199, 0.12), transparent 55%);
+    }
+    body.theme-1 .ambient-glow {
+      background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
+    }
+    body.theme-1 .brand-title .part-zorion { color: #0284c7; }
+    body.theme-1 .brand-title .part-saude { color: #0f172a; }
+    body.theme-1 .brand-subtitle { color: #0369a1; }
+    body.theme-1 .module-card {
+      background: rgba(255, 255, 255, 0.88);
+      border-color: rgba(2, 132, 199, 0.18);
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.08);
+    }
+
+    /* TEMA 2: GRAFITE ESPACIAL & TITÂNIO (DARK TECH LINEAR) */
+    body.theme-2 {
+      background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    }
+    body.theme-2 .spotlight {
+      background: radial-gradient(750px circle at 50% 45%, rgba(56, 189, 248, 0.15), transparent 60%);
+    }
+    body.theme-2 .ambient-glow {
+      background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.25) 0%, transparent 70%);
+    }
+    body.theme-2 .brand-title .part-zorion { color: #38bdf8; }
+    body.theme-2 .brand-title .part-saude { color: #f8fafc; }
+    body.theme-2 .brand-subtitle { color: #7dd3fc; }
+    body.theme-2 .instruction-text { color: #94a3b8; }
+    body.theme-2 .module-card {
+      background: rgba(30, 41, 59, 0.7);
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    body.theme-2 .module-label { color: #f8fafc; }
+    body.theme-2 .module-sub { color: #94a3b8; }
+    body.theme-2 .footer-bar { color: #64748b; }
+    body.theme-2 .badge-status { background: rgba(30, 41, 59, 0.8); border-color: rgba(255,255,255,0.15); color: #cbd5e1; }
+
+    /* TEMA 3: AZUL MARINHO REAL & PLATINA (NAVY HOSPITAL) */
+    body.theme-3 {
+      background: linear-gradient(145deg, #f1f5f9 0%, #e2e8f0 45%, #cbd5e1 100%);
+    }
+    body.theme-3 .spotlight {
+      background: radial-gradient(750px circle at 50% 45%, rgba(30, 58, 138, 0.15), transparent 55%);
+    }
+    body.theme-3 .ambient-glow {
+      background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.18) 0%, transparent 70%);
+    }
+    body.theme-3 .brand-title .part-zorion { color: #1e3a8a; }
+    body.theme-3 .brand-title .part-saude { color: #090e17; }
+    body.theme-3 .brand-subtitle { color: #1d4ed8; }
+    body.theme-3 .module-card {
+      background: rgba(255, 255, 255, 0.92);
+      border-color: rgba(30, 58, 138, 0.2);
+      box-shadow: 0 8px 24px rgba(30, 58, 138, 0.1);
+    }
+
+    /* TEMA 4: MENTA SUAVE & NÉVOA (SOFT MINT) */
+    body.theme-4 {
+      background: linear-gradient(145deg, #f8fafc 0%, #f0fdf4 45%, #ecfdf5 100%);
+    }
+    body.theme-4 .spotlight {
+      background: radial-gradient(750px circle at 50% 45%, rgba(16, 185, 129, 0.12), transparent 55%);
+    }
+    body.theme-4 .ambient-glow {
+      background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.2) 0%, transparent 70%);
+    }
+    body.theme-4 .brand-title .part-zorion { color: #059669; }
+    body.theme-4 .brand-title .part-saude { color: #0f172a; }
+    body.theme-4 .brand-subtitle { color: #047857; }
+    body.theme-4 .module-card {
+      background: rgba(255, 255, 255, 0.9);
+      border-color: rgba(16, 185, 129, 0.2);
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.08);
+    }
+
+    /* Efeitos de Luz e Brilho */
+    .spotlight {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      transition: all 0.4s ease;
+    }
+
+    .ambient-glow {
+      position: absolute;
+      top: 45%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 860px;
+      height: 440px;
+      pointer-events: none;
+      filter: blur(50px);
+      z-index: 0;
+      transition: all 0.4s ease;
+    }
+
+    .content-container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: fadeIn 0.6s ease-out;
+      margin-top: 40px;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(15px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Header */
+    .brand-header {
+      margin-bottom: 20px;
+    }
+
+    .brand-title {
+      font-size: 52px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 2.8px;
+      text-transform: uppercase;
+      display: block;
+      transition: all 0.3s ease;
+    }
+
+    .instruction-text {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 30px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+
+    /* Grid de Módulos (4 módulos) */
+    .modules-grid {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+    }
+
+    /* Card de Módulo Individual */
+    .module-card {
+      width: 195px;
+      height: 205px;
+      backdrop-filter: blur(16px);
+      border-width: 1px;
+      border-style: solid;
+      border-radius: 20px;
+      padding: 22px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+      position: relative;
+    }
+
+    .icon-wrapper {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    /* Módulo 1: Central (Azul) */
+    .card-central .icon-wrapper {
+      background: rgba(96, 165, 250, 0.15);
+      border: 1px solid rgba(96, 165, 250, 0.35);
+    }
+    .card-central:hover {
+      transform: translateY(-8px) scale(1.04);
+      border-color: #3b82f6;
+      box-shadow: 0 16px 40px rgba(59, 130, 246, 0.25);
+    }
+    .card-central:hover .module-label { color: #2563eb; }
+
+    /* Módulo 2: Satélite (Verde) */
+    .card-satelite .icon-wrapper {
+      background: rgba(52, 211, 153, 0.15);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+    }
+    .card-satelite:hover {
+      transform: translateY(-8px) scale(1.04);
+      border-color: #10b981;
+      box-shadow: 0 16px 40px rgba(16, 185, 129, 0.25);
+    }
+    .card-satelite:hover .module-label { color: #059669; }
+
+    /* Módulo 3: Carrinho (Coral/Vermelho) */
+    .card-carrinho .icon-wrapper {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+    }
+    .card-carrinho:hover {
+      transform: translateY(-8px) scale(1.04);
+      border-color: #f43f5e;
+      box-shadow: 0 16px 40px rgba(244, 63, 94, 0.25);
+    }
+    .card-carrinho:hover .module-label { color: #e11d48; }
+
+    /* Módulo 4: Responsável Técnico (Roxo) */
+    .card-rt .icon-wrapper {
+      background: rgba(192, 132, 252, 0.15);
+      border: 1px solid rgba(192, 132, 252, 0.35);
+    }
+    .card-rt:hover {
+      transform: translateY(-8px) scale(1.04);
+      border-color: #a855f7;
+      box-shadow: 0 16px 40px rgba(168, 85, 247, 0.25);
+    }
+    .card-rt:hover .module-label { color: #7e22ce; }
+
+    .module-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: 0.3px;
+      transition: color 0.25s ease;
+      line-height: 1.3;
+    }
+
+    .module-sub {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+      line-height: 1.3;
+      font-weight: 500;
+      transition: color 0.25s ease;
+    }
+
+    /* Footer */
+    .footer-bar {
+      position: absolute;
+      bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .badge-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #0369a1;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+  </style>
+</head>
+<body class="theme-1">
+
+  <!-- BARRA DE SELEÇÃO INTERATIVA DE CORES -->
+  <div class="theme-selector-bar">
+    <span class="theme-selector-label">💡 Escolha a Cor:</span>
+    <button class="theme-btn active" onclick="setTheme(1, this)">
+      <span class="theme-dot" style="background: #0284c7;"></span>
+      1. Azul Safira (Clean)
+    </button>
+    <button class="theme-btn" onclick="setTheme(2, this)">
+      <span class="theme-dot" style="background: #38bdf8; border: 1px solid #fff;"></span>
+      2. Grafite Titânio (Dark Tech)
+    </button>
+    <button class="theme-btn" onclick="setTheme(3, this)">
+      <span class="theme-dot" style="background: #1e3a8a;"></span>
+      3. Azul Marinho (Hospitalar)
+    </button>
+    <button class="theme-btn" onclick="setTheme(4, this)">
+      <span class="theme-dot" style="background: #059669;"></span>
+      4. Menta Suave (Fresco)
+    </button>
+  </div>
+
+  <!-- Iluminação e Spotlight Dinâmico -->
+  <div class="spotlight"></div>
+  <div class="ambient-glow"></div>
+
+  <!-- Conteúdo Central -->
+  <div class="content-container">
+    <!-- Header Principal -->
+    <div class="brand-header">
+      <h1 class="brand-title">
+        <span class="part-zorion">ZORION</span>
+        <span class="part-saude">SAÚDE</span>
+      </h1>
+      <span class="brand-subtitle">SISTEMA INTEGRADO HOSPITALAR</span>
+    </div>
+
+    <!-- Subtítulo -->
+    <p class="instruction-text">
+      Selecione a unidade para acessar
+    </p>
+
+    <!-- Grid de Módulos (4 módulos) -->
+    <div class="modules-grid">
+      <!-- 1. Farmácia Central -->
+      <div class="module-card card-central">
+        <div class="icon-wrapper">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+            <path d="M2 7l10-5 10 5v10l-10 5L2 17V7z" stroke="#3b82f6" stroke-width="1.5" stroke-linejoin="round" fill="rgba(59,130,246,0.18)" />
+            <path d="M12 2l10 5-10 5L2 7l10-5z" stroke="#3b82f6" stroke-width="1.5" stroke-linejoin="round" fill="rgba(59,130,246,0.28)" />
+            <line x1="12" y1="12" x2="12" y2="22" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <div class="module-label">Farmácia Central</div>
+          <div class="module-sub">Dashboard & Estoque</div>
+        </div>
+      </div>
+
+      <!-- 2. Farmácia Satélite -->
+      <div class="module-card card-satelite">
+        <div class="icon-wrapper">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+            <path d="M9 3h6l1 4H8L9 3z" stroke="#10b981" stroke-width="1.5" stroke-linejoin="round" fill="rgba(16,185,129,0.22)" />
+            <path d="M8 7v9a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3V7" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" />
+            <line x1="8" y1="11" x2="16" y2="11" stroke="#10b981" stroke-width="1.2" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <div class="module-label">Farmácia Satélite</div>
+          <div class="module-sub">Dispensação & Pacientes</div>
+        </div>
+      </div>
+
+      <!-- 3. Carrinho de Parada -->
+      <div class="module-card card-carrinho">
+        <div class="icon-wrapper">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+            <rect x="4" y="6" width="16" height="12" rx="2" stroke="#f43f5e" stroke-width="1.5" fill="rgba(244,63,94,0.18)" />
+            <circle cx="8" cy="20" r="1.5" stroke="#f43f5e" stroke-width="1.2" fill="rgba(244,63,94,0.33)" />
+            <circle cx="16" cy="20" r="1.5" stroke="#f43f5e" stroke-width="1.2" fill="rgba(244,63,94,0.33)" />
+            <path d="M6 6V4h12v2" stroke="#f43f5e" stroke-width="1.2" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <div class="module-label">Carrinho de Parada</div>
+          <div class="module-sub">Checagem & Controle</div>
+        </div>
+      </div>
+
+      <!-- 4. Responsável Técnico -->
+      <div class="module-card card-rt">
+        <div class="icon-wrapper">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L4 6v6c0 5.25 3.5 9.74 8 11 4.5-1.26 8-5.75 8-11V6L12 2z" stroke="#a855f7" stroke-width="1.5" stroke-linejoin="round" fill="rgba(168,85,247,0.18)" />
+            <path d="M12 7l1.12 2.27L15.5 9.64l-1.75 1.7.41 2.41L12 12.6l-2.16 1.15.41-2.41-1.75-1.7 2.38-.37L12 7z" stroke="#a855f7" stroke-width="1" stroke-linejoin="round" fill="rgba(168,85,247,0.66)" />
+          </svg>
+        </div>
+        <div>
+          <div class="module-label">Responsável Técnico</div>
+          <div class="module-sub">Gestão & Cadastros</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-bar">
+    <div class="badge-status">
+      <span class="status-dot"></span>
+      Servidor Conectado (PostgreSQL)
+    </div>
+    <div>ZORION SAÚDE © 2026 — V1.0</div>
+  </div>
+
+  <script>
+    function setTheme(num, btn) {
+      document.body.className = 'theme-' + num + (num === 2 ? ' dark-mode' : '');
+      document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+  </script>
+</body>
+</html>

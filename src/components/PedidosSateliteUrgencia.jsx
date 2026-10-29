@@ -98,6 +98,16 @@ export default function PedidosSateliteUrgencia() {
   const [modalOpen, setModalOpen] = useState(false);
   const [filtroHistorico, setFiltroHistorico] = useState("avulsos"); // 'avulsos' | 'todos'
 
+  // Estados para Cancelamento / Reversão de Pedido com Estorno
+  const [pedidoParaReverter, setPedidoParaReverter] = useState(null);
+  const [reverterDialogOpen, setReverterDialogOpen] = useState(false);
+  const [motivoPreset, setMotivoPreset] = useState("Pedido duplicado / Solicitado incorretamente");
+  const [motivoCustom, setMotivoCustom] = useState("");
+
+  // Estados para Proteção e Alerta contra Pedido Duplicado
+  const [duplicadoAlertOpen, setDuplicadoAlertOpen] = useState(false);
+  const [pedidoDuplicadoExistente, setPedidoDuplicadoExistente] = useState(null);
+
   // Medicamentos elegíveis para pedido à Central (filtra zerados se a opção estiver ativa)
   const medicamentosDisponiveis = useMemo(() => {
     if (!apenasComEstoqueCentral) return medicamentos;
@@ -327,6 +337,8 @@ export default function PedidosSateliteUrgencia() {
       toast.success(`Pedido ${data.codigo} enviado para a Farmácia Central com sucesso!`);
       setItensPedido([]);
       setObservacaoPedido("");
+      setDuplicadoAlertOpen(false);
+      setPedidoDuplicadoExistente(null);
       queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
     },
     onError: (err) => {
@@ -334,30 +346,181 @@ export default function PedidosSateliteUrgencia() {
     }
   });
 
-  // Modal Action Mutation (Conferir e Receber Pedido)
+  // Checagem inteligente de duplicidade antes de enviar pedido
+  const handleCheckDuplicidadeEEnviar = (forceDuplicado = false) => {
+    const validItens = itensPedido.filter(i => i.qtd_solicitada > 0);
+    if (validItens.length === 0) {
+      toast.error("Adicione ao menos um medicamento com quantidade maior que zero.");
+      return;
+    }
+
+    if (!forceDuplicado) {
+      const todosPedidos = pedidosQuery.data || [];
+      const agora = new Date().getTime();
+
+      // Procura pedido avulso idêntico criado nas últimas 24 horas
+      const pedidoIdentico = todosPedidos.find(p => {
+        if (p.status === "Cancelado") return false;
+        const dt = new Date(p.data_solicitacao || p.created_at).getTime();
+        if (isNaN(dt) || (agora - dt) > (24 * 60 * 60 * 1000)) return false;
+
+        let itensP = [];
+        try { itensP = JSON.parse(p.itens_json || "[]"); } catch {}
+        if (itensP.length !== validItens.length) return false;
+
+        return validItens.every(v =>
+          itensP.some(ip => String(ip.medicamento_id) === String(v.medicamento_id) && Number(ip.qtd_solicitada) === Number(v.qtd_solicitada))
+        );
+      });
+
+      if (pedidoIdentico) {
+        setPedidoDuplicadoExistente(pedidoIdentico);
+        setDuplicadoAlertOpen(true);
+        return;
+      }
+    }
+
+    createPedidoAvulsoMutation.mutate();
+  };
+
+  // Mutation para CANCELAR e REVERTER Pedido com Estorno Completo de Estoque
+  const reverterPedidoMutation = useMutation({
+    mutationFn: async ({ pedido, motivoCancelamento }) => {
+      let itensArr = [];
+      try {
+        itensArr = typeof pedido.itens === "string" 
+          ? JSON.parse(pedido.itens) 
+          : (pedido.itens || JSON.parse(pedido.itens_json || "[]"));
+      } catch (e) {
+        itensArr = [];
+      }
+
+      const isConcluido = pedido.status === "Concluido";
+      const freshMeds = await db.entities.Medicamento.list();
+      const freshLotes = await db.entities.Lote.list();
+
+      // 1. Se o pedido já havia sido concluído e recebido na Satélite:
+      // Estorna a quantidade recebida do estoque_satelite e devolve para estoque_atual da Central
+      if (isConcluido) {
+        for (const item of itensArr) {
+          const qtdRecebida = Number(item.qtd_recebida !== undefined ? item.qtd_recebida : item.qtd_atendida) || 0;
+          if (qtdRecebida > 0) {
+            const med = freshMeds.find(m => String(m.id) === String(item.medicamento_id));
+            if (med) {
+              const currentSat = Number(med.estoque_satelite) || 0;
+              const currentCentral = Number(med.estoque_atual) || 0;
+              await db.entities.Medicamento.update(med.id, {
+                estoque_satelite: Math.max(0, currentSat - qtdRecebida),
+                estoque_atual: currentCentral + qtdRecebida
+              });
+            }
+
+            // Devolve lote se houver
+            const loteId = item.lote_id || item.lote_previsto_id;
+            if (loteId) {
+              const loteObj = freshLotes.find(l => String(l.id) === String(loteId));
+              if (loteObj) {
+                await db.entities.Lote.update(loteObj.id, {
+                  quantidade_atual: (Number(loteObj.quantidade_atual) || 0) + qtdRecebida,
+                  status: 'disponivel'
+                });
+              }
+            }
+          }
+        }
+      } else {
+        // Se ainda não estava concluído mas a Central já havia separado ou gerado saída
+        for (const item of itensArr) {
+          const qtdAtendida = Number(item.qtd_atendida) || 0;
+          if (qtdAtendida > 0 && (pedido.status === "Separado" || pedido.status === "Entregue" || pedido.saida_gerada)) {
+            const med = freshMeds.find(m => String(m.id) === String(item.medicamento_id));
+            if (med) {
+              await db.entities.Medicamento.update(med.id, {
+                estoque_atual: (Number(med.estoque_atual) || 0) + qtdAtendida
+              });
+            }
+            const loteId = item.lote_id || item.lote_previsto_id;
+            if (loteId) {
+              const loteObj = freshLotes.find(l => String(l.id) === String(loteId));
+              if (loteObj) {
+                await db.entities.Lote.update(loteObj.id, {
+                  quantidade_atual: (Number(loteObj.quantidade_atual) || 0) + qtdAtendida,
+                  status: 'disponivel'
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Atualiza transferências pendentes vinculadas para Cancelado
+      try {
+        const allTransfers = await db.entities.TransferenciaPendente.list();
+        const pedidoTransfers = (allTransfers || []).filter(
+          t => (t.pedido_id === pedido.id || t.pedido_codigo === pedido.codigo)
+        );
+        for (const tr of pedidoTransfers) {
+          await db.entities.TransferenciaPendente.update(tr.id, {
+            status: "Cancelado",
+            observacao: `[ESTORNADO/CANCELADO] ${tr.observacao || ""}`
+          });
+        }
+      } catch (e) {
+        console.warn("Erro ao atualizar status de TransferenciaPendente no cancelamento:", e);
+      }
+
+      // 3. Atualiza o status do PedidoSatelite
+      const motivoFinal = motivoCancelamento || "Cancelado e revertido pelo operador";
+      const payload = {
+        status: "Cancelado",
+        motivo_cancelamento: motivoFinal,
+        data_cancelamento: new Date().toISOString(),
+        observacao: pedido.observacao 
+          ? `[CANCELADO/REVERTIDO: ${motivoFinal}] ${pedido.observacao}`
+          : `[CANCELADO/REVERTIDO: ${motivoFinal}]`
+      };
+
+      await db.entities.PedidoSatelite.update(pedido.id, payload);
+
+      // 4. Log de auditoria
+      await db.logAction(
+        "Reversão / Cancelamento de Pedido",
+        "PedidoSatelite",
+        pedido.id,
+        `Pedido ${pedido.codigo} revertido e cancelado. Motivo: ${motivoFinal}. Estoque satélite e central estornados.`
+      );
+    },
+    onSuccess: () => {
+      toast.success("Pedido cancelado e estoque revertido/estornado com sucesso!");
+      queryClient.invalidateQueries({ queryKey: ['pedidos_satelite'] });
+      queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
+      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
+      queryClient.invalidateQueries({ queryKey: ['saidas'] });
+      queryClient.invalidateQueries({ queryKey: ['entradas'] });
+      setReverterDialogOpen(false);
+      setPedidoParaReverter(null);
+      setModalOpen(false);
+      setSelectedPedido(null);
+    },
+    onError: (err) => {
+      toast.error("Erro ao cancelar e reverter pedido: " + (err.message || err));
+    }
+  });
+
+  // Modal Action Mutation (Conferir e Receber Pedido ou Cancelar dentro do modal)
   const updatePedidoMutation = useMutation({
     mutationFn: async ({ pedido, newStatus, updatedItens, motivoCancelamento }) => {
+      if (newStatus === "Cancelado") {
+        return reverterPedidoMutation.mutateAsync({ pedido, motivoCancelamento });
+      }
+
       const payload = {
         status: newStatus,
         itens_json: JSON.stringify(updatedItens)
       };
 
-      if (newStatus === "Cancelado") {
-        payload.motivo_cancelamento = motivoCancelamento || "Cancelado pelo operador";
-        payload.data_cancelamento = new Date().toISOString();
-        payload.observacao = pedido.observacao 
-          ? `[CANCELADO: ${motivoCancelamento || "Sem motivo"}] ${pedido.observacao}`
-          : `[CANCELADO: ${motivoCancelamento || "Sem motivo"}]`;
-        
-        try {
-          await db.logAction(
-            "Cancelamento Pedido Avulso",
-            "PedidoSatelite",
-            pedido.id,
-            `Pedido ${pedido.codigo} cancelado. Motivo: ${motivoCancelamento || "Sem motivo informado"}`
-          );
-        } catch (e) {}
-      } else if (newStatus === "Concluido") {
+      if (newStatus === "Concluido") {
         payload.data_recebimento = new Date().toISOString();
 
         const freshMeds = await db.entities.Medicamento.list();
@@ -773,7 +936,7 @@ export default function PedidosSateliteUrgencia() {
             <Button
               type="button"
               disabled={itensPedido.length === 0 || createPedidoAvulsoMutation.isPending}
-              onClick={() => createPedidoAvulsoMutation.mutate()}
+              onClick={() => handleCheckDuplicidadeEEnviar(false)}
               className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 text-xs shadow-md gap-2"
             >
               <Send className="w-4 h-4" />
@@ -876,25 +1039,45 @@ export default function PedidosSateliteUrgencia() {
                       <TableCell className="text-center font-mono text-xs font-bold">{itensArr.length} item(s)</TableCell>
                       <TableCell className="text-center">{getStatusBadge(p.status)}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedPedido({
-                              ...p,
-                              itens: itensArr
-                            });
-                            setModalOpen(true);
-                          }}
-                          className={`gap-1.5 h-8 text-xs font-bold ${
-                            p.status === "Separado" || p.status === "Entregue"
-                              ? "bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-                              : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          {p.status === "Separado" || p.status === "Entregue" ? "Conferir & Receber" : "Ver Detalhes"}
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedPedido({
+                                ...p,
+                                itens: itensArr
+                              });
+                              setModalOpen(true);
+                            }}
+                            className={`gap-1.5 h-8 text-xs font-bold ${
+                              p.status === "Separado" || p.status === "Entregue"
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            {p.status === "Separado" || p.status === "Entregue" ? "Conferir & Receber" : "Ver Detalhes"}
+                          </Button>
+
+                          {p.status !== "Cancelado" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setPedidoParaReverter({ ...p, itens: itensArr });
+                                setMotivoPreset("Pedido duplicado / Solicitado incorretamente");
+                                setMotivoCustom("");
+                                setReverterDialogOpen(true);
+                              }}
+                              className="gap-1 h-8 text-xs font-bold border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 cursor-pointer"
+                              title="Cancelar ou reverter este pedido e estornar o estoque"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              {p.status === "Concluido" ? "Reverter & Cancelar" : "Cancelar"}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -921,9 +1104,185 @@ export default function PedidosSateliteUrgencia() {
               motivoCancelamento
             });
           }}
-          isPending={updatePedidoMutation.isPending}
+          isPending={updatePedidoMutation.isPending || reverterPedidoMutation.isPending}
         />
       )}
+
+      {/* ─── MODAL DE CANCELAMENTO / REVERSÃO COM ESTORNO ────────────────── */}
+      <Dialog open={reverterDialogOpen} onOpenChange={setReverterDialogOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-rose-700 flex items-center gap-2 text-base font-bold">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              {pedidoParaReverter?.status === "Concluido" 
+                ? `Reverter & Cancelar Pedido ${pedidoParaReverter?.codigo}`
+                : `Cancelar Pedido ${pedidoParaReverter?.codigo}`
+              }
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              {pedidoParaReverter?.status === "Concluido"
+                ? "Este pedido já foi recebido. Ao reverter, o estoque será ajustado automaticamente."
+                : "Confirme o cancelamento deste pedido da Farmácia Satélite."
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          {pedidoParaReverter?.status === "Concluido" ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <RotateCcw className="w-4 h-4 text-amber-700" />
+                Atenção: Estorno Automático de Estoque
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-slate-700">
+                <li>A quantidade recebida dos medicamentos será <strong>removida do estoque da Satélite</strong>.</li>
+                <li>Os itens serão <strong>devolvidos ao saldo da Farmácia Central</strong>.</li>
+                <li>O status do pedido será alterado para <strong>Cancelado</strong> no histórico.</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700">
+              O pedido será marcado como <strong>Cancelado</strong> e qualquer reserva na Farmácia Central será liberada.
+            </div>
+          )}
+
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Motivo do Cancelamento *</Label>
+              <Select value={motivoPreset} onValueChange={setMotivoPreset}>
+                <SelectTrigger className="text-xs bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Pedido duplicado / Solicitado incorretamente">
+                    Pedido duplicado / Solicitado incorretamente
+                  </SelectItem>
+                  <SelectItem value="Erro na quantidade ou seleção de medicamento">
+                    Erro na quantidade ou seleção de medicamento
+                  </SelectItem>
+                  <SelectItem value="Prescrição médica suspensa / Não mais necessário">
+                    Prescrição médica suspensa / Não mais necessário
+                  </SelectItem>
+                  <SelectItem value="Substituição terapêutica indicada pelo RT">
+                    Substituição terapêutica indicada pelo RT
+                  </SelectItem>
+                  <SelectItem value="Outro">
+                    Outro motivo (especificar abaixo)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">
+                {motivoPreset === "Outro" ? "Descreva o motivo detalhado *" : "Observação / Justificativa adicional (opcional)"}
+              </Label>
+              <Input
+                placeholder="Ex: Pedido gerado duplicado durante teste/plantão..."
+                value={motivoCustom}
+                onChange={(e) => setMotivoCustom(e.target.value)}
+                className="text-xs bg-white"
+                required={motivoPreset === "Outro"}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setReverterDialogOpen(false);
+                setPedidoParaReverter(null);
+              }}
+              disabled={reverterPedidoMutation.isPending}
+            >
+              Voltar / Não Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={reverterPedidoMutation.isPending || (motivoPreset === "Outro" && !motivoCustom.trim())}
+              onClick={() => {
+                if (!pedidoParaReverter) return;
+                const motivoFinal = motivoPreset === "Outro"
+                  ? motivoCustom.trim()
+                  : (motivoCustom.trim() ? `${motivoPreset} - ${motivoCustom.trim()}` : motivoPreset);
+
+                reverterPedidoMutation.mutate({
+                  pedido: pedidoParaReverter,
+                  motivoCancelamento: motivoFinal
+                });
+              }}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 shadow-sm"
+            >
+              <RotateCcw className="w-4 h-4" />
+              {reverterPedidoMutation.isPending 
+                ? "Estornando..." 
+                : (pedidoParaReverter?.status === "Concluido" ? "Confirmar Reversão & Estorno" : "Confirmar Cancelamento")
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL DE ALERTA: PEDIDO DUPLICADO DETECTADO ─────────────────── */}
+      <Dialog open={duplicadoAlertOpen} onOpenChange={setDuplicadoAlertOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-amber-700 flex items-center gap-2 text-base font-bold">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              Atenção: Pedido Recente Idêntico Detectado!
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Detectamos que já existe um pedido avulso com os <strong>mesmos medicamentos e quantidades</strong> enviado recentemente hoje.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pedidoDuplicadoExistente && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 space-y-1.5">
+              <div>
+                <strong>Pedido Existente:</strong> <span className="font-mono font-bold text-indigo-700">{pedidoDuplicadoExistente.codigo}</span>
+              </div>
+              <div>
+                <strong>Status Atual:</strong> {pedidoDuplicadoExistente.status}
+              </div>
+              <div>
+                <strong>Horário:</strong> {pedidoDuplicadoExistente.data_solicitacao ? format(new Date(pedidoDuplicadoExistente.data_solicitacao), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
+              </div>
+              <div className="pt-1 text-[11px] text-amber-800">
+                Para evitar duplicar estoque ou pedidos na farmácia, verifique se você realmente precisa deste pedido adicional.
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDuplicadoAlertOpen(false);
+                setPedidoDuplicadoExistente(null);
+              }}
+              className="border-slate-300 text-slate-700"
+            >
+              Não, Cancelar Envio (Evitar Duplicata)
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setDuplicadoAlertOpen(false);
+                handleCheckDuplicidadeEEnviar(true); // Força envio
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-1.5"
+            >
+              Sim, Enviar Pedido Duplicado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

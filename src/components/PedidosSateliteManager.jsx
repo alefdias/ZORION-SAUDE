@@ -940,7 +940,36 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
           ? `[CANCELADO: ${motivoCancelamento || "Sem motivo"}] ${pedido.observacao}`
           : `[CANCELADO: ${motivoCancelamento || "Sem motivo"}]`;
         
-        if (pedido.saida_gerada) {
+        // Se o pedido já estava Concluído, estorna a entrada na Satélite e devolve à Central
+        if (pedido.status === "Concluido") {
+          try {
+            const itensArr = Array.isArray(updatedItens) && updatedItens.length > 0
+              ? updatedItens 
+              : (typeof pedido.itens_json === "string" ? JSON.parse(pedido.itens_json || "[]") : (pedido.itens || []));
+
+            for (const it of itensArr) {
+              const qtdRecebida = Number(it.qtd_recebida !== undefined ? it.qtd_recebida : it.qtd_atendida) || 0;
+              const medId = it.medicamento_id || it.id;
+              if (qtdRecebida > 0 && medId) {
+                sqlBatch.push(
+                  `UPDATE "Medicamento" SET "estoque_satelite" = MAX(0, COALESCE("estoque_satelite", 0) - ${qtdRecebida}), "estoque_atual" = COALESCE("estoque_atual", 0) + ${qtdRecebida} WHERE "id" = ${esc(medId)};`
+                );
+                const loteId = it.lote_id || it.lote_previsto_id;
+                if (loteId) {
+                  sqlBatch.push(
+                    `UPDATE "Lote" SET "quantidade_atual" = COALESCE("quantidade_atual", 0) + ${qtdRecebida}, "status" = 'disponivel' WHERE "id" = ${esc(loteId)};`
+                  );
+                }
+              }
+            }
+
+            sqlBatch.push(
+              `UPDATE "TransferenciaPendente" SET "status" = 'Cancelado' WHERE ("pedido_id" = ${esc(pedido.id)} OR "pedido_codigo" = ${esc(pedido.codigo)});`
+            );
+          } catch (e) {
+            console.warn("Erro ao preparar estornos de pedido concluído:", e);
+          }
+        } else if (pedido.saida_gerada) {
           try {
             const allTransfers = await db.entities.TransferenciaPendente.list();
             const pedidoTransfers = (allTransfers || []).filter(
@@ -3889,16 +3918,26 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
               Fechar
             </Button>
 
-            {/* BOTAO CANCELAR PEDIDO */}
-            {pedido.status !== "Concluido" && pedido.status !== "Cancelado" && (
+            {/* BOTAO CANCELAR / REVERTER PEDIDO */}
+            {pedido.status !== "Cancelado" && (
               <Button
                 variant="outline"
                 onClick={() => setIsCancelDialogOpen(true)}
                 disabled={isPending}
-                className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold gap-1.5"
+                className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold gap-1.5 cursor-pointer"
+                title={pedido.status === "Concluido" ? "Reverter recebimento e estornar o estoque" : "Cancelar pedido"}
               >
-                <Ban className="w-4 h-4" />
-                Cancelar Pedido
+                {pedido.status === "Concluido" ? (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    Reverter & Cancelar
+                  </>
+                ) : (
+                  <>
+                    <Ban className="w-4 h-4" />
+                    Cancelar Pedido
+                  </>
+                )}
               </Button>
             )}
 
@@ -4005,10 +4044,13 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
             <DialogHeader>
               <DialogTitle className="text-red-700 flex items-center gap-2 text-base font-bold">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
-                Cancelar Pedido {pedido.codigo}
+                {pedido.status === "Concluido" ? `Reverter & Cancelar Pedido ${pedido.codigo}` : `Cancelar Pedido ${pedido.codigo}`}
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
-                Informe o motivo do cancelamento deste pedido. Uma notificação será enviada imediatamente para a Farmácia Satélite.
+                {pedido.status === "Concluido" 
+                  ? "Este pedido já foi recebido. Ao reverter, os medicamentos serão subtraídos do estoque da Satélite e restituídos à Farmácia Central."
+                  : "Informe o motivo do cancelamento deste pedido. As reservas serão liberadas."
+                }
               </DialogDescription>
             </DialogHeader>
 
