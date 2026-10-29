@@ -46,6 +46,7 @@ import {
   Square,
   Calendar,
   Lock,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { safeFormatDate } from "@/utils/dateUtils";
@@ -919,6 +920,347 @@ export function AjusteDiasEntregaModal({
     setCustomQtds((prev) => ({ ...prev, [prId]: q }));
   };
 
+  // ─── IMPRESSÃO DO RELATÓRIO DE AJUSTE DIÁRIO ───────────────────────────────
+  const handleImprimirRelatorio = () => {
+    if (prescAnalise.length === 0) {
+      toast.error("Nenhum medicamento disponível para impressão neste filtro.");
+      return;
+    }
+
+    const itensParaImprimir =
+      selectedPrescIds.size > 0
+        ? prescAnalise.filter((p) => selectedPrescIds.has(p.pr.id))
+        : prescAnalise.filter((p) => !p.jaDispensado && p.qtdSugerida > 0);
+
+    const listaFinal = itensParaImprimir.length > 0 ? itensParaImprimir : prescAnalise;
+
+    const dataEmissao = format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    const dataReceitaFormatada = safeFormatDate(dataFiltroReceita) || format(new Date(), "dd/MM/yyyy");
+    const dataFimCicloFormatada = safeFormatDate(dataFimCiclo) || "—";
+
+    let totalQtd = 0;
+    const rowsHtml = listaFinal
+      .map((item, index) => {
+        const { pr, med, medLotes } = item;
+        const prId = pr.id;
+        const customVal = customQtds[prId];
+        const valorFinal = customVal !== undefined ? customVal : item.qtdSugerida;
+        const diasFinais = customDias[prId] !== undefined ? customDias[prId] : item.diasFinais;
+        const loteId = selectedLotes[prId] || medLotes[0]?.id;
+        const loteObj = medLotes.find((l) => l.id === loteId) || medLotes[0];
+
+        if (!item.jaDispensado) {
+          totalQtd += Number(valorFinal) || 0;
+        }
+
+        const tipoDesc = item.isNova
+          ? "Nova Receita"
+          : item.temAumentoDose
+          ? "Aumento de Dose"
+          : item.jaDispensado
+          ? "Já Coberto"
+          : "Complemento";
+
+        const loteStr = loteObj
+          ? `Lote: <strong>${loteObj.numero_lote || "—"}</strong><br><span style="font-size: 10px; color: #64748b;">Val: ${loteObj.data_validade || "N/I"}</span>`
+          : '<span style="color: #94a3b8;">Padrão FEFO</span>';
+
+        return `
+          <tr style="border-bottom: 1px solid #e2e8f0; ${index % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
+            <td style="padding: 7px 6px; text-align: center; font-weight: bold; font-size: 11px; color: #475569;">${index + 1}</td>
+            <td style="padding: 7px 8px; text-align: left;">
+              <strong style="color: #0f172a; font-size: 12px;">${pr.medicamentoNome || med?.nome || "Medicamento"}</strong>
+              ${pr.dosagem ? `<span style="font-size: 11px; color: #475569;"> — ${pr.dosagem}</span>` : ""}
+              ${pr.viaAdministracao ? `<br><span style="font-size: 10px; color: #64748b; font-weight: 500;">Via: ${pr.viaAdministracao}</span>` : ""}
+            </td>
+            <td style="padding: 7px 8px; text-align: left; font-size: 11px; color: #334155;">
+              ${pr.posologia || "Conforme prescrição"}
+              ${pr.horarios ? `<br><span style="font-size: 10px; color: #64748b;">Horários: ${pr.horarios}</span>` : ""}
+            </td>
+            <td style="padding: 7px 6px; text-align: center;">
+              <span style="display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; ${
+                item.isNova
+                  ? 'background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;'
+                  : item.temAumentoDose
+                  ? 'background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;'
+                  : item.jaDispensado
+                  ? 'background-color: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1;'
+                  : 'background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;'
+              }">
+                ${tipoDesc}
+              </span>
+            </td>
+            <td style="padding: 7px 6px; text-align: center; font-weight: bold; font-size: 12px; color: #1e293b;">
+              ${item.jaDispensado ? "0d" : `${diasFinais}d`}
+            </td>
+            <td style="padding: 7px 8px; text-align: left; font-size: 11px;">
+              ${loteStr}
+            </td>
+            <td style="padding: 7px 8px; text-align: center;">
+              <span style="font-size: 13px; font-weight: 900; color: #1e3a8a; font-family: monospace;">
+                ${item.jaDispensado ? "0" : valorFinal} un
+              </span>
+            </td>
+            <td style="padding: 7px 6px; text-align: center; font-size: 14px; color: #94a3b8;">
+              <div style="width: 14px; height: 14px; border: 1.5px solid #64748b; border-radius: 2px; margin: 0 auto;"></div>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8">
+        <title>Relatório de Ajuste Diário de Entrega - ${patient?.nome || "Paciente"}</title>
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #0f172a;
+            background: #ffffff;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .header-box {
+            border-bottom: 2px solid #1e3a8a;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+          }
+          .title-area h1 {
+            font-size: 16px;
+            font-weight: 900;
+            color: #1e3a8a;
+            margin: 0 0 2px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+          }
+          .title-area p {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            margin: 0;
+          }
+          .meta-info {
+            text-align: right;
+            font-size: 10px;
+            color: #64748b;
+          }
+          .patient-box {
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 9px 12px;
+            margin-bottom: 12px;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1.5fr;
+            gap: 8px 12px;
+            font-size: 11px;
+          }
+          .patient-box .field-label {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+            display: block;
+            margin-bottom: 1px;
+          }
+          .patient-box .field-value {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 12px;
+          }
+          .cycle-badge-box {
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 5px;
+            padding: 6px 10px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #312e81;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 14px;
+          }
+          th {
+            background-color: #1e3a8a;
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 7px 6px;
+            border: 1px solid #1e3a8a;
+          }
+          .summary-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 8px 14px;
+            margin-bottom: 24px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #1e293b;
+          }
+          .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+            page-break-inside: avoid;
+          }
+          .sig-box {
+            border-top: 1px solid #0f172a;
+            padding-top: 5px;
+            text-align: center;
+            font-size: 10px;
+            color: #334155;
+          }
+          .sig-box strong {
+            font-size: 11px;
+            display: block;
+            color: #0f172a;
+            margin-bottom: 1px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header-box">
+          <div class="title-area">
+            <h1>ZORION SAÚDE — FARMÁCIA HOSPITALAR</h1>
+            <p>Guia de Ajuste Diário de Entrega & Complemento de Ciclo</p>
+          </div>
+          <div class="meta-info">
+            <strong>Emissão:</strong> ${dataEmissao}<br>
+            <strong>Origem:</strong> Farmácia Satélite
+          </div>
+        </div>
+
+        <div class="patient-box">
+          <div>
+            <span class="field-label">Paciente</span>
+            <span class="field-value">${patient?.nome || "Paciente Não Informado"}</span>
+          </div>
+          <div>
+            <span class="field-label">Prontuário</span>
+            <span class="field-value" style="font-family: monospace;">${patient?.prontuario || "S/ Prontuário"}</span>
+          </div>
+          <div>
+            <span class="field-label">Leito / Quarto</span>
+            <span class="field-value">${patient?.leito || "S/L"}</span>
+          </div>
+          <div>
+            <span class="field-label">Ala / Setor</span>
+            <span class="field-value">${cicloAlaInfo?.alaNome || patient?.alaNome || "Geral"}</span>
+          </div>
+        </div>
+
+        <div class="cycle-badge-box">
+          <div>
+            <strong>Data da Receita / Alteração:</strong> ${dataReceitaFormatada}
+            <span style="margin: 0 6px; color: #94a3b8;">•</span>
+            <strong>Fechamento do Ciclo até:</strong> ${dataFimCicloFormatada} (${diasRestantesCiclo}d)
+          </div>
+          <div>
+            <strong>Ciclo da Ala:</strong> do dia ${cicloAlaInfo?.dataInicioYFormatada || "—"} até ${cicloAlaInfo?.dataFimPFormatada || "—"}
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 25px; text-align: center;">#</th>
+              <th style="text-align: left;">Medicamento / Dosagem / Via</th>
+              <th style="text-align: left;">Posologia / Horários</th>
+              <th style="width: 85px; text-align: center;">Motivo</th>
+              <th style="width: 45px; text-align: center;">Dias</th>
+              <th style="width: 120px; text-align: left;">Lote / Validade</th>
+              <th style="width: 75px; text-align: center;">Qtd</th>
+              <th style="width: 35px; text-align: center;">Conf.</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+
+        <div class="summary-bar">
+          <div>
+            Total de Medicações Listadas: <strong>${listaFinal.length} item(ns)</strong>
+          </div>
+          <div>
+            Total de Unidades Dispensadas: <strong style="color: #1e3a8a; font-size: 13px; font-family: monospace;">${totalQtd} un</strong>
+          </div>
+        </div>
+
+        <div class="signatures">
+          <div class="sig-box">
+            <strong>Dispensado por (Farmácia Hospitalar / Satélite)</strong>
+            <span>Assinatura / Carimbo / Data</span>
+          </div>
+          <div class="sig-box">
+            <strong>Recebido por (Equipe de Enfermagem / Setor)</strong>
+            <span>Assinatura / Coren / Data</span>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    toast.info("Abrindo formulário de impressão do relatório de ajuste...");
+
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "none";
+    iframe.style.zIndex = "-9999";
+    document.body.appendChild(iframe);
+
+    iframe.contentWindow.document.open();
+    iframe.contentWindow.document.write(printHtml);
+    iframe.contentWindow.document.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error("Erro ao imprimir relatório:", err);
+      }
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe);
+        } catch {}
+      }, 1500);
+    }, 300);
+  };
+
   const handleConfirm = async () => {
     if (selectedPrescIds.size === 0) {
       toast.error("Selecione ao menos um medicamento para entregar o complemento.");
@@ -1117,7 +1459,14 @@ export function AjusteDiasEntregaModal({
       }
 
       toast.success(
-        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`
+        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`,
+        {
+          action: {
+            label: "Imprimir Relatório",
+            onClick: () => handleImprimirRelatorio(),
+          },
+          duration: 8000,
+        }
       );
 
       if (onSuccess) {
@@ -1334,9 +1683,23 @@ export function AjusteDiasEntregaModal({
                   </Button>
                 )}
               </div>
-              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
-                {selectedPrescIds.size} selecionado(s)
-              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleImprimirRelatorio}
+                  disabled={prescAnalise.length === 0}
+                  className="h-7 px-2.5 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border-indigo-200 gap-1.5 shadow-2xs"
+                  title="Imprimir relatório deste ajuste diário para conferência"
+                >
+                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                  Imprimir Relatório
+                </Button>
+                <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                  {selectedPrescIds.size} selecionado(s)
+                </span>
+              </div>
             </div>
 
             {prescAnalise.length === 0 ? (
@@ -1729,17 +2092,30 @@ export function AjusteDiasEntregaModal({
           </div>
         </div>
 
-        <DialogFooter className="flex items-center justify-between sm:justify-between border-t pt-3">
+        <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t pt-3">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+              className="text-xs font-semibold"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleImprimirRelatorio}
+              disabled={prescAnalise.length === 0}
+              className="text-xs font-bold text-indigo-700 border-indigo-300 hover:bg-indigo-50 gap-1.5 shadow-2xs"
+              title="Imprimir relatório deste ajuste diário para conferência física"
+            >
+              <Printer className="w-4 h-4 text-indigo-600" />
+              Imprimir Relatório de Ajuste
+            </Button>
+          </div>
           <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-            className="text-xs font-semibold"
-          >
-            Cancelar
-          </Button>
-          <Button
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-2 shadow-sm"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-2 shadow-sm w-full sm:w-auto"
             onClick={handleConfirm}
             disabled={isSubmitting || selectedPrescIds.size === 0}
           >
