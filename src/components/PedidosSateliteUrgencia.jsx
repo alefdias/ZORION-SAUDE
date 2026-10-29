@@ -176,16 +176,20 @@ export default function PedidosSateliteUrgencia() {
         toast.error(`A quantidade total solicitada (${novaQtdTotal} un) excede o estoque disponível na Farmácia Central (${saldoCentral} un).`);
         return;
       }
-      const next = [...itensPedido];
-      next[existingIndex].qtd_solicitada = novaQtdTotal;
-      next[existingIndex].qtd_atendida = novaQtdTotal;
-      if (chosenLote) {
-        next[existingIndex].lote_id = chosenLote.id;
-        next[existingIndex].lote_previsto = chosenLote.numero_lote;
-        next[existingIndex].lote_previsto_id = chosenLote.id;
-        next[existingIndex].lote_previsto_validade = chosenLote.data_validade;
-      }
-      setItensPedido(next);
+      const updatedItem = {
+        ...itensPedido[existingIndex],
+        qtd_solicitada: novaQtdTotal,
+        qtd_atendida: novaQtdTotal,
+        ...(chosenLote ? {
+          lote_id: chosenLote.id,
+          lote_previsto: chosenLote.numero_lote,
+          lote_previsto_id: chosenLote.id,
+          lote_previsto_validade: chosenLote.data_validade
+        } : {})
+      };
+      // Move o item atualizado para o topo da lista
+      const rest = itensPedido.filter((_, idx) => idx !== existingIndex);
+      setItensPedido([updatedItem, ...rest]);
       toast.info(`Quantidade de ${selectedMedObj.nome} atualizada (+${qtd}).`);
     } else {
       const newItem = {
@@ -211,8 +215,9 @@ export default function PedidosSateliteUrgencia() {
         is_psicotropico: isPsico ? 1 : 0,
         portaria_344: portariaList
       };
-      setItensPedido([...itensPedido, newItem]);
-      toast.success(`${selectedMedObj.nome} adicionado.`);
+      // Adiciona o item recente no topo para ir descendo os anteriores
+      setItensPedido([newItem, ...itensPedido]);
+      toast.success(`${selectedMedObj.nome} adicionado ao topo da lista.`);
     }
 
     // Reset selector

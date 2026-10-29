@@ -1,5 +1,6 @@
 import { normalizeSearch } from "@/utils/searchUtils";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -66,8 +67,20 @@ export function getApresentacaoEConcentracao(med) {
 }
 
 export default function Medicamentos() {
+  const [searchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("padronizados");
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl && ["padronizados", "nao_padronizados", "adiantamento"].includes(tabFromUrl)
+      ? tabFromUrl
+      : "padronizados"
+  );
+
+  useEffect(() => {
+    if (tabFromUrl && ["padronizados", "nao_padronizados", "adiantamento"].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingMed, setEditingMed] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });

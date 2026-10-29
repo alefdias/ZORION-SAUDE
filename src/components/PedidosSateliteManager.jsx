@@ -2501,19 +2501,317 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
   );
 }
 
+// ─── GERADOR DIRETO E ISOLADO DE IMPRESSÃO A4 (VIA IFRAME) ───────────────────
+export function imprimirGuiaPedido(pedido, lotes = []) {
+  if (!pedido) return;
+
+  let rawItens = pedido.itens || pedido.itens_json || [];
+  if (typeof rawItens === "string") {
+    try { rawItens = JSON.parse(rawItens); } catch {}
+  }
+  const itensArr = Array.isArray(rawItens) ? rawItens : [];
+  if (itensArr.length === 0) {
+    toast.error("Este pedido não possui itens para impressão.");
+    return;
+  }
+
+  const codigo = pedido.codigo || "PED-CENTRAL";
+  const alaNome = pedido.ala_nome || pedido.alaNome || "Farmácia Satélite";
+  const status = pedido.status || "Pendente";
+  const prioridade = pedido.prioridade || "Normal";
+  const observacao = pedido.observacoes || pedido.observacao || "";
+  let formattedDate = format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+  try {
+    if (pedido.data_solicitacao || pedido.dataSolicitacao) {
+      formattedDate = format(new Date(pedido.data_solicitacao || pedido.dataSolicitacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    }
+  } catch {}
+
+  const safeValidade = (raw) => {
+    if (!raw) return "-";
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return "-";
+      return format(d, "dd/MM/yyyy");
+    } catch {
+      return "-";
+    }
+  };
+
+  // Separar itens entre Clínicos e Psicotrópicos
+  const clinicos = [];
+  const psicotropicos = [];
+
+  itensArr.forEach((item, idx) => {
+    const isPsico = Boolean(
+      item.is_psicotropico !== undefined ? Number(item.is_psicotropico) === 1 :
+      item.isPsicotropico !== undefined ? Boolean(item.isPsicotropico) :
+      isPsicotropico(item.medicamento_nome || item.nome)
+    );
+
+    // Extrair Lotes e Validades
+    let lotesFormatados = [];
+    if (Array.isArray(item.alocacoes_lote) && item.alocacoes_lote.length > 0) {
+      const valid = item.alocacoes_lote.filter(a => Number(a.quantidade || a.qtd) > 0 || a.numero_lote);
+      if (valid.length > 0) {
+        lotesFormatados = valid.map(a => {
+          const v = safeValidade(a.data_validade);
+          return `Lote: <strong>${a.numero_lote || a.lote || "S/L"}</strong> &bull; Val: <strong>${v}</strong> [${a.quantidade || a.qtd} un]`;
+        });
+      }
+    }
+
+    if (lotesFormatados.length === 0 && (item.lote_previsto || item.numero_lote || item.lote)) {
+      const num = item.lote_previsto || item.numero_lote || item.lote;
+      const vRaw = item.lote_previsto_validade || item.data_validade;
+      const v = safeValidade(vRaw);
+      lotesFormatados.push(`Lote: <strong>${num}</strong> &bull; Val: <strong>${v}</strong>`);
+    }
+
+    if (lotesFormatados.length === 0) {
+      const medId = item.medicamento_id || item.id;
+      const medLotes = (lotes || [])
+        .filter(l => (String(l.medicamento_id) === String(medId) || String(l.medicamentoId) === String(medId)) && (Number(l.quantidade_atual) || 0) > 0 && l.status !== "Inativo")
+        .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
+      if (medLotes.length > 0) {
+        const fefo = medLotes[0];
+        const v = safeValidade(fefo.data_validade);
+        lotesFormatados.push(`⭐ FEFO: <strong>${fefo.numero_lote}</strong> &bull; Val: <strong>${v}</strong> &bull; Disp: ${fefo.quantidade_atual} un`);
+      } else {
+        lotesFormatados.push(`<span style="color:#94a3b8; font-style:italic;">Aguardando alocação Central</span>`);
+      }
+    }
+
+    const itemProcessado = {
+      idx: idx + 1,
+      codigo: item.codigo || "-",
+      nome: item.medicamento_nome || item.medicamentoNome || item.nome || "Medicamento",
+      concentracao: item.concentracao || "",
+      apresentacao: item.apresentacao || "",
+      isPsicotropico: isPsico,
+      portaria: item.portaria_344 || (isPsico ? getPortaria344List(item.medicamento_nome || item.nome) : ""),
+      qtdSolicitada: Number(item.qtd_solicitada !== undefined ? item.qtd_solicitada : (item.qtdSolicitada ?? 0)),
+      qtdEnviada: Number(item.qtd_atendida !== undefined ? item.qtd_atendida : (item.qtdAtendida ?? item.qtd_solicitada ?? 0)),
+      lotesText: lotesFormatados.join("<br/>")
+    };
+
+    if (isPsico) {
+      psicotropicos.push(itemProcessado);
+    } else {
+      clinicos.push(itemProcessado);
+    }
+  });
+
+  const renderTabela = (lista, isPsico) => {
+    const totalSol = lista.reduce((a, b) => a + b.qtdSolicitada, 0);
+    const totalEnv = lista.reduce((a, b) => a + b.qtdEnviada, 0);
+
+    const rows = lista.map((it, i) => `
+      <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+        <td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; font-family:monospace; font-size:11px;">${i + 1}</td>
+        <td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; font-family:monospace; font-size:11px;">${it.codigo}</td>
+        <td style="border:1px solid #cbd5e1; padding:6px 8px;">
+          <strong style="color:#0f172a; font-size:12px;">${it.nome}</strong>
+          ${it.concentracao ? `<span style="color:#475569; font-size:11px;"> (${it.concentracao})</span>` : ''}
+          ${it.apresentacao ? `<div style="color:#64748b; font-size:10px;">[${it.apresentacao}]</div>` : ''}
+        </td>
+        ${isPsico ? `<td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; font-weight:bold; color:#6b21a8; font-size:10px; background:#faf5ff;">${it.portaria || 'Portaria 344'}</td>` : ''}
+        <td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; font-family:monospace; font-weight:bold; font-size:12px;">${it.qtdSolicitada} un</td>
+        <td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; font-family:monospace; font-weight:bold; font-size:12px; color:#1e40af; background:#eff6ff;">${it.qtdEnviada} un</td>
+        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-size:11px; font-family:monospace; color:#1e293b; background:#fffbeb;">
+          ${it.lotesText}
+        </td>
+        <td style="border:1px solid #cbd5e1; padding:6px 4px; text-align:center; color:#94a3b8; font-family:monospace; font-size:11px;">[ &nbsp; &nbsp; ]</td>
+      </tr>
+    `).join('');
+
+    return `
+      <table style="width:100%; border-collapse:collapse; margin-bottom:14px; font-size:11px;">
+        <thead>
+          <tr style="background:${isPsico ? '#f3e8ff' : '#f1f5f9'}; color:#0f172a; font-weight:bold;">
+            <th style="border:1px solid #94a3b8; padding:6px 4px; width:28px; text-align:center;">#</th>
+            <th style="border:1px solid #94a3b8; padding:6px 4px; width:55px; text-align:center;">Cód.</th>
+            <th style="border:1px solid #94a3b8; padding:6px 8px; text-align:left;">Medicamento / Concentração</th>
+            ${isPsico ? '<th style="border:1px solid #94a3b8; padding:6px 4px; width:85px; text-align:center;">Portaria 344</th>' : ''}
+            <th style="border:1px solid #94a3b8; padding:6px 4px; width:80px; text-align:center;">Qtd Solicitada</th>
+            <th style="border:1px solid #94a3b8; padding:6px 4px; width:80px; text-align:center; background:#dbeafe;">Qtd Enviada</th>
+            <th style="border:1px solid #94a3b8; padding:6px 8px; text-align:left; background:#fef3c7;">Lote(s) & Validade (Central)</th>
+            <th style="border:1px solid #94a3b8; padding:6px 4px; width:45px; text-align:center;">Visto</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+        <tfoot>
+          <tr style="background:${isPsico ? '#f3e8ff' : '#f1f5f9'}; font-weight:bold;">
+            <td colspan="${isPsico ? 4 : 3}" style="border:1px solid #94a3b8; padding:6px 8px; text-align:right; font-size:11px; text-transform:uppercase;">
+              Totais (${lista.length} ${lista.length === 1 ? 'item' : 'itens'}):
+            </td>
+            <td style="border:1px solid #94a3b8; padding:6px 4px; text-align:center; font-family:monospace; font-size:12px;">${totalSol} un</td>
+            <td style="border:1px solid #94a3b8; padding:6px 4px; text-align:center; font-family:monospace; font-size:13px; color:#1e40af; background:#bfdbfe;">${totalEnv} un</td>
+            <td colspan="2" style="border:1px solid #94a3b8; padding:6px 8px;"></td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+  };
+
+  const renderCabecalho = (tipoTitulo, corTitulo) => `
+    <div style="border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h1 style="margin:0; font-size:15px; font-weight:900; letter-spacing:-0.5px; text-transform:uppercase; color:#0f172a;">ZORION SAÚDE &bull; FARMÁCIA HOSPITALAR</h1>
+        <h2 style="margin:2px 0 0 0; font-size:12px; font-weight:bold; text-transform:uppercase; color:${corTitulo};">${tipoTitulo}</h2>
+        <div style="margin-top:4px; font-size:11px; color:#334155;">
+          Origem: <strong style="color:#0f172a;">${alaNome}</strong> &bull; Pedido: <strong style="color:#0f172a; font-family:monospace;">${codigo}</strong> &bull; Status: <strong style="color:#0f172a;">${status}</strong>
+        </div>
+      </div>
+      <div style="text-align:right; font-size:11px; color:#334155; font-family:monospace;">
+        <div>Emissão: <strong style="color:#0f172a;">${formattedDate}</strong></div>
+        <div>Prioridade: <strong style="color:#0f172a; text-transform:uppercase;">${prioridade}</strong></div>
+        ${observacao ? `<div style="margin-top:2px; font-size:10px; color:#64748b; max-width:280px;">Obs: ${observacao}</div>` : ''}
+      </div>
+    </div>
+  `;
+
+  const renderAssinaturas = (isPsico) => `
+    <div style="margin-top:20px; padding-top:10px; border-top:1px solid #cbd5e1; display:flex; justify-content:space-around; text-align:center; font-size:11px; page-break-inside:avoid; break-inside:avoid;">
+      <div>
+        <div style="border-bottom:1px solid #475569; width:190px; margin:0 auto 4px auto;"></div>
+        <div style="font-weight:bold; color:#0f172a;">Solicitante (Satélite)</div>
+        <div style="font-size:9px; color:#64748b;">Assinatura / Data</div>
+      </div>
+      ${isPsico ? `
+      <div>
+        <div style="border-bottom:1px solid #6b21a8; width:190px; margin:0 auto 4px auto;"></div>
+        <div style="font-weight:bold; color:#6b21a8;">Farmacêutico(a) Resp. Central</div>
+        <div style="font-size:9px; color:#7e22ce;">Carimbo e CRF (Portaria 344)</div>
+      </div>
+      ` : ''}
+      <div>
+        <div style="border-bottom:1px solid #475569; width:190px; margin:0 auto 4px auto;"></div>
+        <div style="font-weight:bold; color:#0f172a;">Separador Central</div>
+        <div style="font-size:9px; color:#64748b;">Assinatura / Data</div>
+      </div>
+    </div>
+  `;
+
+  let bodyHtml = "";
+
+  // FOLHA 1: CLÍNICOS
+  if (clinicos.length > 0) {
+    bodyHtml += `
+      <div class="folha-deposito" style="page-break-after: ${psicotropicos.length > 0 ? 'always' : 'auto'}; break-after: ${psicotropicos.length > 0 ? 'page' : 'auto'}; margin-bottom: 24px;">
+        <div style="background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:11px; margin-bottom:8px; display:flex; justify-content:space-between;">
+          <span>🏥 DEPÓSITO 1: MEDICAMENTOS CLÍNICOS E GERAIS</span>
+          <span>${clinicos.length} ${clinicos.length === 1 ? 'item' : 'itens'}</span>
+        </div>
+        ${renderCabecalho("REQUISIÇÃO DE MEDICAMENTOS • DEPÓSITO CLÍNICO", "#0369a1")}
+        ${renderTabela(clinicos, false)}
+        ${renderAssinaturas(false)}
+      </div>
+    `;
+  }
+
+  // FOLHA 2: PSICOTRÓPICOS
+  if (psicotropicos.length > 0) {
+    bodyHtml += `
+      <div class="folha-deposito" style="margin-top:${clinicos.length > 0 ? '20px' : '0'};">
+        <div style="background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:11px; margin-bottom:8px; display:flex; justify-content:space-between;">
+          <span>🧠 DEPÓSITO 2: MEDICAMENTOS PSICOTRÓPICOS & CONTROLADOS (PORTARIA SVS/MS 344/98)</span>
+          <span>${psicotropicos.length} ${psicotropicos.length === 1 ? 'item' : 'itens'}</span>
+        </div>
+        <div style="background:#fffbeb; border-left:4px solid #f59e0b; padding:6px 10px; font-size:10px; color:#92400e; margin-bottom:8px; border-radius:4px;">
+          ⚠️ <strong>AVISO LEGAL - PORTARIA SVS/MS 344/98:</strong> Medicamentos sujeitos a controle especial. Separação restrita ao cofre/depósito de controlados com conferência obrigatória de lote, validade e visto farmacêutico.
+        </div>
+        ${renderCabecalho("REQUISIÇÃO DE MEDICAMENTOS • DEPÓSITO PSICOTRÓPICOS (PORTARIA 344)", "#6b21a8")}
+        ${renderTabela(psicotropicos, true)}
+        ${renderAssinaturas(true)}
+      </div>
+    `;
+  }
+
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="utf-8" />
+      <title>Pedido_${codigo}</title>
+      <style>
+        @page {
+          size: A4 portrait;
+          margin: 8mm;
+        }
+        * {
+          box-sizing: border-box;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          margin: 0;
+          padding: 8px;
+          color: #0f172a;
+          background: #ffffff;
+        }
+        table {
+          page-break-inside: auto;
+        }
+        tr {
+          page-break-inside: avoid;
+          page-break-after: auto;
+        }
+        @media print {
+          body {
+            padding: 0;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      ${bodyHtml}
+    </body>
+    </html>
+  `;
+
+  toast.info("Abrindo formulário de impressão do pedido...");
+
+  // Criar iframe temporário para acionar a impressão física com total isolamento
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "none";
+  iframe.style.zIndex = "-9999";
+  document.body.appendChild(iframe);
+
+  iframe.contentWindow.document.open();
+  iframe.contentWindow.document.write(fullHtml);
+  iframe.contentWindow.document.close();
+
+  iframe.contentWindow.focus();
+  setTimeout(() => {
+    try {
+      iframe.contentWindow.print();
+    } catch (err) {
+      console.error("Erro ao imprimir pedido:", err);
+    }
+    setTimeout(() => {
+      try { document.body.removeChild(iframe); } catch {}
+    }, 1500);
+  }, 300);
+}
+
 // ─── SUBCOMPONENTE DE FOLHA A4 INDIVIDUAL POR DEPÓSITO ───────────────────────
 function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
   const isPsico = tipo === "psicotropico";
-  const totalPrescrito = (itens || []).reduce(
-    (acc, item) => acc + (Number(item.qtdPrescrita) || 0),
-    0
-  );
-  const totalEstoqueSatelite = (itens || []).reduce(
-    (acc, item) => acc + (Number(item.estoqueSatelite) || 0),
-    0
-  );
-  const totalUnidades = (itens || []).reduce(
+  const totalSolicitado = (itens || []).reduce(
     (acc, item) => acc + (Number(item.qtdSolicitada) || 0),
+    0
+  );
+  const totalEnviado = (itens || []).reduce(
+    (acc, item) => acc + (Number(item.qtdEnviada !== undefined ? item.qtdEnviada : item.qtdSolicitada) || 0),
     0
   );
 
@@ -2538,7 +2836,7 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
 
       {isPsico && (
         <div className="mb-4 p-2 bg-amber-50 border-l-4 border-amber-500 rounded text-[11px] text-amber-950 font-medium">
-          ⚠️ <strong>AVISO LEGAL - PORTARIA SVS/MS 344/98:</strong> Medicamentos sujeitos a controle especial. Separação restrita ao cofre/depósito de controlados. Conferência obrigatória de lote, validade e assinatura com CRF do farmacêutico.
+          ⚠️ <strong>AVISO LEGAL - PORTARIA SVS/MS 344/98:</strong> Medicamentos sujeitos a controle especial. Separação restrita ao cofre/depósito de controlados. Conferência obrigatória de lote, validade e visto farmacêutico com CRF.
         </div>
       )}
 
@@ -2606,16 +2904,14 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
             {isPsico && (
               <th className="border border-slate-300 p-1.5 text-center w-24">Portaria 344</th>
             )}
-            <th className="border border-slate-300 p-1.5 text-center w-16">Prescr.</th>
-            <th className="border border-slate-300 p-1.5 text-center w-14">Est. Sat.</th>
-            <th className={cn(
-              "border border-slate-300 p-1.5 text-center w-20 font-black text-slate-950",
-              isPsico ? "bg-purple-100/80" : "bg-blue-100/80"
-            )}>
-              Qtd Pedido
+            <th className="border border-slate-300 p-1.5 text-center w-20 font-bold text-slate-900">
+              Qtd Solicitada
             </th>
-            <th className="border border-slate-300 p-1.5 text-left w-56 font-bold text-slate-900 bg-amber-50/70">
-              Lote(s) FEFO & Validade (Central)
+            <th className="border border-slate-300 p-1.5 text-center w-20 font-bold text-blue-900 bg-blue-100/70">
+              Qtd Enviada
+            </th>
+            <th className="border border-slate-300 p-1.5 text-left w-60 font-bold text-slate-900 bg-amber-50/70">
+              Lote(s) & Validade (Central)
             </th>
             <th className="border border-slate-300 p-1.5 text-center w-14">
               Visto
@@ -2637,16 +2933,14 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
                   {item.portariaList || "Portaria 344"}
                 </td>
               )}
-              <td className="border border-slate-300 p-1 text-center font-mono text-slate-800">{item.qtdPrescrita} un</td>
-              <td className="border border-slate-300 p-1 text-center font-mono text-slate-800">{item.estoqueSatelite} un</td>
-              <td className={cn(
-                "border border-slate-300 p-1 text-center font-mono font-black text-sm text-slate-950",
-                isPsico ? "bg-purple-50/50" : "bg-blue-50/50"
-              )}>
+              <td className="border border-slate-300 p-1 text-center font-mono font-bold text-xs text-slate-900">
                 {item.qtdSolicitada} un
               </td>
+              <td className="border border-slate-300 p-1 text-center font-mono font-black text-xs text-blue-900 bg-blue-50/50">
+                {item.qtdEnviada !== undefined ? item.qtdEnviada : item.qtdSolicitada} un
+              </td>
               <td className="border border-slate-300 p-1 text-left font-mono text-[10px] text-slate-900 font-semibold bg-amber-50/30 leading-tight">
-                {item.loteDesc || <span className="text-slate-400 italic text-[9px]">Lote FEFO na separação</span>}
+                {item.loteDesc || <span className="text-slate-400 italic text-[9px]">Aguardando alocação Central</span>}
               </td>
               <td className="border border-slate-300 p-1 text-center font-mono text-slate-400 text-[10px]">
                 [     ]
@@ -2663,16 +2957,10 @@ function SingleDepotSheet({ data, tipo, itens, formattedDate }) {
               Totais ({itens.length} {itens.length === 1 ? "item" : "itens"}):
             </td>
             <td className="border border-slate-300 p-2 text-center font-mono text-xs font-bold text-slate-900">
-              {totalPrescrito} un
+              {totalSolicitado} un
             </td>
-            <td className="border border-slate-300 p-2 text-center font-mono text-xs text-slate-700">
-              {totalEstoqueSatelite} un
-            </td>
-            <td className={cn(
-              "border border-slate-300 p-2 text-center font-mono text-sm font-black text-slate-950",
-              isPsico ? "bg-purple-200/90" : "bg-blue-200/90"
-            )}>
-              {totalUnidades} un
+            <td className="border border-slate-300 p-2 text-center font-mono text-xs font-black text-blue-900 bg-blue-100/70">
+              {totalEnviado} un
             </td>
             <td className="border border-slate-300 p-2 font-mono text-[10px] text-slate-500"></td>
             <td className="border border-slate-300 p-2"></td>
@@ -3637,8 +3925,11 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
             <Button
               type="button"
               variant="outline"
-              onClick={() => onPrint?.({ ...pedido, itens: itensState })}
-              className="gap-1.5 font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
+              onClick={() => {
+                imprimirGuiaPedido({ ...pedido, itens: itensState }, lotes);
+              }}
+              className="gap-1.5 font-bold border-slate-300 text-slate-700 hover:bg-slate-100 shadow-sm cursor-pointer"
+              title="Imprimir folha de separação com lotes, validades e separação de clínicos e psicotrópicos"
             >
               <Printer className="w-4 h-4 text-slate-600" />
               Imprimir Pedido

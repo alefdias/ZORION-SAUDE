@@ -249,8 +249,81 @@ export default function PacientesMedicao() {
   const [altaPacienteId, setAltaPacienteId] = useState(null);
   const [altaTipo, setAltaTipo] = useState("Alta Médica");
   const [altaDiasMedicao, setAltaDiasMedicao] = useState(0);
+  const [altaBaixaEstoque, setAltaBaixaEstoque] = useState(true);
   const [altaReportData, setAltaReportData] = useState(null);
   const [altaDevolucoes, setAltaDevolucoes] = useState({}); // { [prescId]: { qtd: number, motivo: string } }
+
+  const altaPacienteObj = useMemo(() => {
+    if (!altaPacienteId) return null;
+    return pacientes.find(p => p.id === altaPacienteId) || null;
+  }, [altaPacienteId, pacientes]);
+
+  const altaCalculoCobertura = useMemo(() => {
+    if (!altaPacienteObj || !altaPacienteObj.ciclo_coberto_ate) {
+      return { diasCobertos: 0, cobAteFormatada: null, status: "sem_ciclo" };
+    }
+    try {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const str = altaPacienteObj.ciclo_coberto_ate.split("T")[0];
+      const cobAte = new Date(str + "T00:00:00");
+      if (isNaN(cobAte.getTime()) || cobAte < hoje) {
+        return { diasCobertos: 0, cobAteFormatada: null, status: "expirado" };
+      }
+      // Diferença em dias: se cobAte for hoje -> 1 dia; se for amanhã -> 2 dias (hoje e amanhã)
+      const diffDias = Math.round((cobAte.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      return {
+        diasCobertos: Math.max(1, diffDias),
+        cobAteFormatada: format(cobAte, "dd/MM/yyyy"),
+        status: "coberto"
+      };
+    } catch {
+      return { diasCobertos: 0, cobAteFormatada: null, status: "erro" };
+    }
+  }, [altaPacienteObj]);
+
+  const altaDiasCobertos = altaCalculoCobertura.diasCobertos;
+
+  const altaDiasFaltantes = useMemo(() => {
+    return Math.max(0, altaDiasMedicao - altaDiasCobertos);
+  }, [altaDiasMedicao, altaDiasCobertos]);
+
+  const altaPrescricoesAtivas = useMemo(() => {
+    if (!altaPacienteId) return [];
+    return prescricoes.filter(pr => (pr.pacienteId === altaPacienteId || pr.paciente_id === altaPacienteId) && (pr.status === "Ativa" || !pr.status));
+  }, [altaPacienteId, prescricoes]);
+
+  const altaItensCalculados = useMemo(() => {
+    if (!altaPrescricoesAtivas || altaPrescricoesAtivas.length === 0) return [];
+    return altaPrescricoesAtivas.map(pr => {
+      const d08 = getDoseForHora(pr.horarios, "08:00");
+      const d14 = getDoseForHora(pr.horarios, "14:00");
+      const d22 = getDoseForHora(pr.horarios, "22:00");
+      const d06 = getDoseForHora(pr.horarios, "06:00");
+      const calculatedDaily = d08 + d14 + d22 + d06;
+      const totalDiario = calculatedDaily > 0 ? calculatedDaily : (parseFloat(pr.totalDiario) || 0);
+      const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
+      const qtdLeito = totalDiario * altaDiasCobertos;
+      const qtdEntregar = totalDiario * altaDiasFaltantes;
+      const qtdTotal = totalDiario * altaDiasMedicao;
+      return {
+        prescId: pr.id,
+        medNome: med ? med.nome : pr.medicamentoNome,
+        concentracao: pr.concentracao || med?.concentracao || "",
+        posologia: `${d08}-${d14}-${d22}-${d06}`,
+        totalDiario,
+        qtdLeito,
+        qtdEntregar,
+        qtdTotal,
+        estoqueSatelite: med ? (med.estoque_satelite || 0) : 0,
+        medId: med?.id
+      };
+    });
+  }, [altaPrescricoesAtivas, altaDiasCobertos, altaDiasFaltantes, altaDiasMedicao, medicamentos]);
+
+  const altaTotalUnidadesEntregar = useMemo(() => {
+    return altaItensCalculados.reduce((acc, item) => acc + item.qtdEntregar, 0);
+  }, [altaItensCalculados]);
 
   // Estados de Exclusão Auditada com Motivo & Pacientes de Alta
   const [deleteLogModalOpen, setDeleteLogModalOpen] = useState(false);
@@ -1090,7 +1163,7 @@ export default function PacientesMedicao() {
 
   // Mutation para Dar Alta ao Paciente
   const darAltaPacienteMutation = useMutation({
-    mutationFn: async ({ pacienteId, tipo, dias, devolucoes }) => {
+    mutationFn: async ({ pacienteId, tipo, dias, devolucoes, darBaixaEstoque }) => {
       const pac = pacientes.find(p => p.id === pacienteId);
       if (!pac) return null;
 
@@ -1101,6 +1174,21 @@ export default function PacientesMedicao() {
       await db.entities.Paciente.update(pacienteId, {
         status: "Alta"
       });
+
+      // Identificar quantos dias já estão cobertos pelo ciclo no leito
+      let diasJaCobertos = 0;
+      if (pac.ciclo_coberto_ate) {
+        try {
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+          const cobAte = new Date(pac.ciclo_coberto_ate.split("T")[0] + "T00:00:00");
+          if (!isNaN(cobAte.getTime()) && cobAte >= hoje) {
+            diasJaCobertos = Math.max(0, Math.round((cobAte.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+          }
+        } catch {}
+      }
+
+      const diasFaltantesEntregar = Math.max(0, dias - diasJaCobertos);
 
       // 2. Coletar e Suspender todas as prescrições do paciente
       const userPrescs = prescricoes.filter(pr => (pr.pacienteId === pacienteId || pr.paciente_id === pacienteId) && (pr.status === "Ativa" || !pr.status));
@@ -1115,14 +1203,49 @@ export default function PacientesMedicao() {
           const d22 = getDoseForHora(pr.horarios, "22:00");
           const d06 = getDoseForHora(pr.horarios, "06:00");
           const totalDiario = d08 + d14 + d22 + d06;
+          const totalEntregar = totalDiario * diasFaltantesEntregar;
           
           if (totalDiario > 0) {
             const med = medicamentos.find(m => m.id === (pr.medicamentoId || pr.medicamento_id));
             relatorioAlta.push({
               medNome: med ? med.nome : pr.medicamentoNome,
               posologia: `${d08}-${d14}-${d22}-${d06}`,
-              total: totalDiario * dias
+              totalDiario,
+              diasFaltantes: diasFaltantesEntregar,
+              diasCobertos: diasJaCobertos,
+              diasSolicitados: dias,
+              total: totalEntregar
             });
+
+            // Dar baixa automática no estoque satélite se a opção estiver marcada e houver necessidade de entrega
+            if (darBaixaEstoque && totalEntregar > 0 && med) {
+              await db.entities.Medicamento.update(med.id, {
+                estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - totalEntregar)
+              });
+
+              const loteDoMed = lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id) && (Number(l.quantidade_atual) > 0));
+              if (loteDoMed) {
+                await db.entities.Lote.update(loteDoMed.id, {
+                  quantidade_atual: Math.max(0, (loteDoMed.quantidade_atual || 0) - totalEntregar)
+                });
+              }
+
+              await db.entities.Saida.create({
+                medicamento_id: med.id,
+                medicamento_nome: med.nome,
+                lote_id: loteDoMed ? loteDoMed.id : null,
+                numero_lote: loteDoMed ? loteDoMed.numero_lote : "SATÉLITE",
+                quantidade: totalEntregar,
+                data_saida: todayDateStr,
+                destino: `Paciente: ${pac.nome} (Kit Alta ${diasFaltantesEntregar}d)`,
+                paciente_nome: pac.nome,
+                paciente_id: pac.id,
+                motivo: `Alta Hospitalar (${tipo}) - ${diasFaltantesEntregar} dia(s) para levar para casa`,
+                observacao: `Dispensação de Alta. Dias prescritos: ${dias}. Dias já cobertos no leito: ${diasJaCobertos}. Dias entregues: ${diasFaltantesEntregar}.`,
+                tipo: "Dispensação de Alta",
+                created_at: nowStr
+              });
+            }
           }
         }
 
@@ -1210,17 +1333,31 @@ export default function PacientesMedicao() {
         `${tipo} concedida ao paciente '${pac.nome}' (Prontuário: ${pac.prontuario || 'N/A'}, Leito: ${pac.leito || '-'}). Prescrições ativas suspensas.`
       );
 
-      return { pac, tipo, dias, relatorioAlta };
+      return { 
+        pac, 
+        tipo, 
+        dias, 
+        diasCobertos: diasJaCobertos, 
+        diasFaltantes: diasFaltantesEntregar, 
+        relatorioAlta, 
+        darBaixaEstoque 
+      };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       queryClient.invalidateQueries({ queryKey: ['prescricoes_paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['lotes'] });
       queryClient.invalidateQueries({ queryKey: ['saidas'] });
       queryClient.invalidateQueries({ queryKey: ['gavetas_paciente'] });
       if (viewPatientDetails) setViewPatientDetails(null);
       setAltaModalOpen(false);
       
-      toast.success("Alta do paciente registrada! Prescrições suspensas.");
+      if (data?.darBaixaEstoque && data?.relatorioAlta?.some(r => r.total > 0)) {
+        toast.success(`Alta de ${data?.pac?.nome || 'paciente'} registrada com sucesso! Baixa do kit efetuada no estoque satélite.`);
+      } else {
+        toast.success("Alta do paciente registrada! Prescrições suspensas com sucesso.");
+      }
 
       if (data && data.dias > 0 && data.relatorioAlta.length > 0) {
         setAltaReportData(data);
@@ -4606,16 +4743,20 @@ export default function PacientesMedicao() {
 
       {/* ─── MODAL DE CONFIRMAÇÃO DE ALTA ─────────────────────────── */}
       <Dialog open={altaModalOpen} onOpenChange={setAltaModalOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl">Dar Alta Hospitalar</DialogTitle>
-            <DialogDescription>
-              Selecione o tipo de alta e a necessidade de levar medicação para casa.
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-indigo-950 dark:text-indigo-200">
+              <LogOut className="w-5 h-5 text-indigo-600" />
+              Dar Alta Hospitalar — {altaPacienteObj?.nome || "Paciente"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Prontuário: <strong className="font-mono text-slate-800 dark:text-slate-200">{altaPacienteObj?.prontuario || "N/A"}</strong> • Leito: <strong className="font-mono text-slate-800 dark:text-slate-200">{altaPacienteObj?.leito || "-"}</strong> • Setor: <strong className="text-slate-800 dark:text-slate-200">{altaPacienteObj?.alaNome || "-"}</strong>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Tipo de Alta</Label>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="font-semibold text-xs text-slate-700 dark:text-slate-300">Tipo de Alta</Label>
               <Select value={altaTipo} onValueChange={(val) => {
                 setAltaTipo(val);
                 if (val === "Alta a Pedido" || val === "Óbito" || val === "Evasão") {
@@ -4636,21 +4777,148 @@ export default function PacientesMedicao() {
             </div>
             
             {altaTipo !== "Alta a Pedido" && altaTipo !== "Óbito" && altaTipo !== "Evasão" && (
-              <div className="space-y-2 border-t border-slate-100 pt-3">
-                <Label>Kit de Separação (Dias de Medicação para levar)</Label>
-                <Input 
-                  type="number" 
-                  min="0" 
-                  value={altaDiasMedicao} 
-                  onChange={e => setAltaDiasMedicao(Number(e.target.value))} 
-                />
-                <p className="text-xs text-slate-500">
-                  Se maior que zero, um relatório de separação será gerado. O estoque <strong>NÃO</strong> será baixado automaticamente, você usará o relatório para separar na Farmácia.
-                </p>
+              <div className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Pill className="w-4 h-4 text-indigo-600" />
+                      Dias de Medicação Prescritos para Alta
+                    </Label>
+                    <p className="text-[11px] text-slate-500">
+                      Informe o total de dias receitados pelo médico para levar para casa.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      type="number" 
+                      min="0" 
+                      className="w-20 h-9 font-bold text-center text-base"
+                      value={altaDiasMedicao} 
+                      onChange={e => setAltaDiasMedicao(Math.max(0, Number(e.target.value)))} 
+                    />
+                    <span className="text-xs font-semibold text-slate-500">dias</span>
+                  </div>
+                </div>
+
+                {/* Card de Análise Inteligente de Ciclo de Medicação */}
+                {altaDiasMedicao > 0 && (
+                  <div className="rounded-lg border p-3.5 space-y-3 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 dark:from-indigo-950/40 dark:to-blue-950/30 border-indigo-200 dark:border-indigo-800">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-1.5 bg-indigo-100 dark:bg-indigo-900 rounded-md text-indigo-700 dark:text-indigo-300 mt-0.5">
+                        <CalendarCheck className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 text-xs">
+                        {altaCalculoCobertura.diasCobertos > 0 ? (
+                          <>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-indigo-950 dark:text-indigo-200 text-sm">
+                                Ciclo no leito coberto até: {altaCalculoCobertura.cobAteFormatada}
+                              </span>
+                              <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-900 dark:text-indigo-200 text-[11px] font-semibold">
+                                {altaCalculoCobertura.diasCobertos} {altaCalculoCobertura.diasCobertos === 1 ? 'dia coberto' : 'dias cobertos'}
+                              </Badge>
+                            </div>
+                            <p className="text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                              O paciente já possui doses dispensadas no leito cobrindo <strong>{altaCalculoCobertura.diasCobertos === 1 ? 'o dia de hoje' : `hoje e mais ${altaCalculoCobertura.diasCobertos - 1} dia(s)`}</strong>. O sistema calcula apenas a diferença faltante para o Kit de Alta.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                              Paciente sem ciclo de dispensação ativo no leito
+                            </span>
+                            <p className="text-slate-500 dark:text-slate-400 mt-0.5">
+                              Será necessário fornecer todos os {altaDiasMedicao} dia(s) no kit de alta.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Resumo Comparativo */}
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-indigo-200/70 dark:border-indigo-800/70 text-center">
+                      <div className="p-2 bg-white/80 dark:bg-slate-900/80 rounded border border-indigo-100 dark:border-indigo-900">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Alta Prescrita</span>
+                        <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{altaDiasMedicao}d</span>
+                      </div>
+                      <div className="p-2 bg-white/80 dark:bg-slate-900/80 rounded border border-indigo-100 dark:border-indigo-900">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Já no Leito</span>
+                        <span className="text-sm font-extrabold text-blue-700 dark:text-blue-400">{altaCalculoCobertura.diasCobertos}d</span>
+                      </div>
+                      <div className="p-2 bg-emerald-50 dark:bg-emerald-950/50 rounded border border-emerald-300 dark:border-emerald-800">
+                        <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 block">A Entregar</span>
+                        <span className="text-sm font-extrabold text-emerald-800 dark:text-emerald-300">{altaDiasFaltantes}d</span>
+                      </div>
+                    </div>
+
+                    {/* Tabela de Itens a Dispensar no Kit */}
+                    {altaItensCalculados.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                          <span>Quantidades a Fornecer no Kit de Alta:</span>
+                          <span className="text-emerald-700 font-extrabold">Total: {altaTotalUnidadesEntregar} un</span>
+                        </span>
+                        <div className="max-h-36 overflow-y-auto border border-indigo-200/60 dark:border-indigo-800 rounded bg-white dark:bg-slate-900">
+                          <table className="w-full text-xs">
+                            <thead className="bg-slate-100 dark:bg-slate-800 border-b text-[10px] uppercase text-slate-500">
+                              <tr>
+                                <th className="p-1.5 text-left">Medicamento</th>
+                                <th className="p-1.5 text-center">Dose/Dia</th>
+                                <th className="p-1.5 text-center text-blue-700">Leito ({altaCalculoCobertura.diasCobertos}d)</th>
+                                <th className="p-1.5 text-center font-bold text-emerald-700">Entregar ({altaDiasFaltantes}d)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {altaItensCalculados.map(item => (
+                                <tr key={item.prescId}>
+                                  <td className="p-1.5 font-medium text-slate-800 dark:text-slate-200">
+                                    {item.medNome} {item.concentracao && `(${item.concentracao})`}
+                                  </td>
+                                  <td className="p-1.5 text-center font-mono text-slate-600">{item.totalDiario} un</td>
+                                  <td className="p-1.5 text-center font-mono text-blue-700">{item.qtdLeito} un</td>
+                                  <td className="p-1.5 text-center font-mono font-bold text-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/20">
+                                    {item.qtdEntregar} un
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Opção de Baixa Automática no Estoque */}
+                    <div className="flex items-start gap-3 p-3 bg-white/95 dark:bg-slate-900/95 rounded-md border border-indigo-200 dark:border-indigo-800 shadow-sm">
+                      <input 
+                        type="checkbox" 
+                        id="altaBaixaEstoqueCheckbox"
+                        checked={altaBaixaEstoque}
+                        onChange={e => setAltaBaixaEstoque(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 accent-indigo-600 cursor-pointer rounded"
+                      />
+                      <label htmlFor="altaBaixaEstoqueCheckbox" className="text-xs cursor-pointer select-none">
+                        <span className="font-bold text-indigo-950 dark:text-indigo-200 block">
+                          Dar baixa automática no estoque satélite no nome do paciente
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-400 block mt-0.5 leading-tight">
+                          {altaBaixaEstoque ? (
+                            <>
+                              O sistema deduzirá <strong>{altaTotalUnidadesEntregar} un</strong> da Farmácia Satélite e gerará registro de saída de alta para <strong>{altaPacienteObj?.nome}</strong>.
+                            </>
+                          ) : (
+                            <>
+                              Nenhuma baixa será realizada no estoque. Apenas o relatório de separação será gerado.
+                            </>
+                          )}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Nova Seção de Devolução na Alta */}
+            {/* Seção de Devolução Rápida */}
             <div className="space-y-3 border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
               <Label className="font-bold text-indigo-700 flex items-center gap-1.5">
                 <Undo2 className="w-4 h-4" />
@@ -4660,7 +4928,7 @@ export default function PacientesMedicao() {
                 Se o paciente está devolvendo medicações neste momento, informe abaixo. As quantidades serão repostas no Estoque Satélite.
               </p>
               
-              <div className="max-h-[220px] overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-md">
+              <div className="max-h-[180px] overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-md">
                 <Table className="text-xs w-full">
                   <TableHeader className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-10">
                     <TableRow>
@@ -4724,11 +4992,17 @@ export default function PacientesMedicao() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setAltaModalOpen(false)}>Cancelar</Button>
             <Button
-              className="bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => darAltaPacienteMutation.mutate({ pacienteId: altaPacienteId, tipo: altaTipo, dias: altaDiasMedicao, devolucoes: altaDevolucoes })}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+              onClick={() => darAltaPacienteMutation.mutate({ 
+                pacienteId: altaPacienteId, 
+                tipo: altaTipo, 
+                dias: altaDiasMedicao, 
+                devolucoes: altaDevolucoes,
+                darBaixaEstoque: altaBaixaEstoque
+              })}
               disabled={darAltaPacienteMutation.isPending}
             >
               {darAltaPacienteMutation.isPending ? "Registrando Alta..." : "Confirmar Alta"}
@@ -4744,31 +5018,61 @@ export default function PacientesMedicao() {
             <DialogTitle>Relatório de Separação - Alta Hospitalar</DialogTitle>
           </DialogHeader>
           <div id="print-alta-area" className="p-6 bg-white text-slate-900 mt-2 print:absolute print:inset-0 print:p-12 print:block">
-            <div className="border-b-2 border-indigo-900 pb-4 mb-6 flex justify-between items-end">
+            <div className="border-b-2 border-indigo-900 pb-4 mb-5 flex justify-between items-end">
               <div>
                 <h1 className="text-xl font-black text-indigo-950 uppercase tracking-tight">KITS DE ALTA — {altaReportData?.tipo?.toUpperCase()}</h1>
-                <p className="text-sm font-bold text-slate-600 mt-1">Paciente: {altaReportData?.pac?.nome}</p>
-                <p className="text-xs text-slate-600 font-mono">Prontuário: {altaReportData?.pac?.prontuario} • Leito: {altaReportData?.pac?.leito}</p>
+                <p className="text-sm font-bold text-slate-800 mt-1">Paciente: {altaReportData?.pac?.nome}</p>
+                <p className="text-xs text-slate-600 font-mono">Prontuário: {altaReportData?.pac?.prontuario} • Leito: {altaReportData?.pac?.leito} • Ala: {altaReportData?.pac?.alaNome || "-"}</p>
               </div>
               <div className="text-right text-xs text-slate-600 font-mono">
                 <p>Emissão: <strong>{format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</strong></p>
-                <p>Medicação para: <strong>{altaReportData?.dias} Dias</strong></p>
+                <p>Prescrição Alta: <strong>{altaReportData?.dias} Dias</strong></p>
+                <p className="text-indigo-800 font-bold">
+                  {altaReportData?.darBaixaEstoque ? "✓ Baixa Efetuada no Estoque Satélite" : "Sem Baixa Automática"}
+                </p>
               </div>
             </div>
+
+            {/* Resumo da Cobertura de Ciclo */}
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-300 rounded text-xs flex justify-between items-center">
+              <div>
+                <span className="font-bold text-slate-700">Cobertura de Ciclo no Leito: </span>
+                <span className="font-mono">{altaReportData?.diasCobertos || 0} dia(s)</span>
+              </div>
+              <div>
+                <span className="font-bold text-slate-700">Dias Dispensados no Kit: </span>
+                <span className="font-mono font-bold text-indigo-700">{altaReportData?.diasFaltantes ?? altaReportData?.dias} dia(s)</span>
+              </div>
+              <div>
+                <span className="font-bold text-slate-700">Total Itens no Kit: </span>
+                <span className="font-mono font-bold text-emerald-700">
+                  {altaReportData?.relatorioAlta?.reduce((acc, r) => acc + (r.total || 0), 0) || 0} un
+                </span>
+              </div>
+            </div>
+
             <Table className="border border-slate-300 w-full text-xs">
               <TableHeader className="bg-slate-100">
                 <TableRow>
                   <TableHead className="font-bold border border-slate-300">Medicamento</TableHead>
-                  <TableHead className="font-bold text-center border border-slate-300">Posologia</TableHead>
-                  <TableHead className="font-bold text-center border border-slate-300">Total ({altaReportData?.dias}D)</TableHead>
+                  <TableHead className="font-bold text-center border border-slate-300">Posologia Diária</TableHead>
+                  <TableHead className="font-bold text-center border border-slate-300">No Leito ({altaReportData?.diasCobertos || 0}D)</TableHead>
+                  <TableHead className="font-bold text-center border border-slate-300 text-indigo-800">Entregar no Kit ({altaReportData?.diasFaltantes ?? altaReportData?.dias}D)</TableHead>
+                  <TableHead className="font-bold text-center border border-slate-300 w-20">Visto</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {altaReportData?.relatorioAlta?.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell className="border border-slate-300 font-medium">{item.medNome}</TableCell>
-                    <TableCell className="border border-slate-300 text-center font-mono">{item.posologia}</TableCell>
-                    <TableCell className="border border-slate-300 text-center font-bold text-indigo-700 font-mono text-base">{item.total} un</TableCell>
+                    <TableCell className="border border-slate-300 text-center font-mono">{item.posologia} ({item.totalDiario} un/dia)</TableCell>
+                    <TableCell className="border border-slate-300 text-center font-mono text-slate-600">
+                      {(item.totalDiario || 0) * (item.diasCobertos || 0)} un
+                    </TableCell>
+                    <TableCell className="border border-slate-300 text-center font-bold text-indigo-700 font-mono text-base bg-indigo-50/40">
+                      {item.total} un
+                    </TableCell>
+                    <TableCell className="border border-slate-300 text-center font-mono">[ &nbsp; ]</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
