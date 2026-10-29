@@ -100,6 +100,24 @@ const IconUsers = ({ color }) => (
 // ─── Paletas Completas de Temas Visuais (Elegantes e Harmoniosas) ───────────
 
 const THEME_PALETTES = {
+  "theme-hospital-navy": {
+    name: "Azul Marinho Hospitalar",
+    isLight: true,
+    screenGradient: "linear-gradient(145deg, #f1f5f9 0%, #e2e8f0 45%, #cbd5e1 100%)",
+    spotlight: "rgba(30, 58, 138, 0.15)",
+    ambientGlow: "radial-gradient(ellipse at 50% 40%, rgba(59, 130, 246, 0.18) 0%, transparent 70%)",
+    brandColor: "#1e3a8a",
+    accentText: "#1d4ed8",
+    subtitleText: "#475569",
+    modalBg: "linear-gradient(145deg, #ffffff 0%, #f1f5f9 100%)",
+    modalBorder: "rgba(30, 58, 138, 0.25)",
+    modalGlow: "rgba(30, 58, 138, 0.15)",
+    badgeBg: "rgba(30, 58, 138, 0.1)",
+    badgeBorder: "rgba(30, 58, 138, 0.25)",
+    badgeText: "#1e3a8a",
+    textColor: "#0f172a",
+    textMuted: "#64748b",
+  },
   "theme-medical-clean": {
     name: "Clínico Clean",
     isLight: true,
@@ -401,10 +419,10 @@ export function WelcomeScreen({ onEnter }) {
 
   // Theme state
   const [themeColor, setThemeColorState] = useState(() => {
-    return localStorage.getItem("zorion_theme") || "theme-medical-clean";
+    return localStorage.getItem("zorion_theme") || "theme-hospital-navy";
   });
 
-  const currentTheme = THEME_PALETTES[themeColor] || THEME_PALETTES["theme-medical-clean"];
+  const currentTheme = THEME_PALETTES[themeColor] || THEME_PALETTES["theme-hospital-navy"];
 
   const setThemeColor = (newTheme) => {
     document.documentElement.classList.remove(themeColor);
