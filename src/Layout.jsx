@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "./utils";
 import { ServerConnectionBadge } from "@/components/ServerConnectionBadge";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -33,7 +33,10 @@ import {
   ShieldCheck,
   ClipboardList,
   ClipboardCheck,
-  Calendar
+  Calendar,
+  PackagePlus,
+  RotateCcw,
+  PackageMinus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,7 +68,34 @@ const moduleSections = [
     menu: [
       { name: "Dashboard", icon: LayoutDashboard, page: "Dashboard" },
       { name: "Medicamentos", icon: Package, page: "Medicamentos" },
-      { name: "Movimentações", icon: ArrowLeftRight, page: "Movimentacoes" },
+      { 
+        name: "Movimentações", 
+        icon: ArrowLeftRight, 
+        page: "Movimentacoes",
+        subItems: [
+          {
+            name: "Entradas",
+            desc: "Entrada de notas fiscais e lotes",
+            tab: "entradas",
+            icon: PackagePlus,
+            color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40"
+          },
+          {
+            name: "Pedidos Satélite",
+            desc: "Separação e atendimento aos pedidos",
+            tab: "pedidos_satelite",
+            icon: ShoppingCart,
+            color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40"
+          },
+          {
+            name: "Transferência",
+            desc: "Transferência física entre estoques",
+            tab: "transferencia",
+            icon: ArrowLeftRight,
+            color: "text-amber-600 bg-amber-50 dark:bg-amber-950/40"
+          }
+        ]
+      },
       { name: "Estoque", icon: Boxes, page: "Estoque" },
       { name: "Balanço", icon: ClipboardCheck, page: "Inventario" },
       { name: "Vencimentos", icon: CalendarX2, page: "Vencimentos" },
@@ -83,7 +113,50 @@ const moduleSections = [
       { name: "Sazonalidade", icon: TrendingUp, page: "SateliteEvolucao" },
       { name: "Pacientes", icon: Users, page: "PacientesMedicao" },
       { name: "Adiantamento", icon: CreditCard, page: "SateliteAdiantamento" },
-      { name: "Movimentações", icon: ArrowLeftRight, page: "SateliteMovimentacoes" },
+      { 
+        name: "Movimentações", 
+        icon: ArrowLeftRight, 
+        page: "SateliteMovimentacoes",
+        subItems: [
+          {
+            name: "Pedidos à Central",
+            desc: "Solicitação avulsa / urgente à Farmácia Central",
+            tab: "pedidos_urgencia",
+            icon: PackagePlus,
+            badge: "Manual",
+            color: "text-blue-600 bg-blue-50 dark:bg-blue-950/40"
+          },
+          {
+            name: "Devoluções",
+            desc: "Devolução de medicamentos e materiais",
+            tab: "devolucoes",
+            icon: RotateCcw,
+            color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40"
+          },
+          {
+            name: "Saídas",
+            desc: "Dispensação e saídas gerais de estoque",
+            tab: "saidas",
+            icon: PackageMinus,
+            color: "text-rose-600 bg-rose-50 dark:bg-rose-950/40"
+          },
+          {
+            name: "Passagem de Plantão",
+            desc: "Registro e conferência de troca de turno",
+            tab: "passagem_plantao",
+            icon: ClipboardList,
+            color: "text-purple-600 bg-purple-50 dark:bg-purple-950/40"
+          },
+          {
+            name: "Mapa Mensal de Dispensação",
+            desc: "Relatório impresso A4 por leito/paciente",
+            tab: "mapa_mensal",
+            icon: Calendar,
+            badge: "A4",
+            color: "text-sky-600 bg-sky-50 dark:bg-sky-950/40"
+          }
+        ]
+      },
       { name: "Portaria 344", icon: Book, page: "LivroRegistro" },
       { name: "Estoque", icon: Package, page: "SateliteEstoque" },
       { name: "Balanço", icon: ClipboardCheck, page: "SateliteInventario" },
@@ -192,6 +265,8 @@ function LiveClock() {
 
 export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentTab = new URLSearchParams(location.search).get("tab");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
 
@@ -325,31 +400,91 @@ export default function Layout({ children, currentPageName }) {
           </div>
 
           {/* CENTER: Clean Light Navigation Items (Vertical/Compact to save horizontal space) */}
-          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60 overflow-x-auto no-scrollbar">
+          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60 overflow-visible">
             {activeSection.menu.map((item) => {
               const isActive = currentPageName === item.page;
+              const hasSubItems = item.subItems && item.subItems.length > 0;
+
               return (
-                <Link
-                  key={item.page}
-                  to={createPageUrl(item.page)}
-                  onClick={() => {
-                    try {
-                      sessionStorage.setItem("zorion_active_section", activeSection.id);
-                    } catch (e) {}
-                  }}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-0.5 px-2.5 xl:px-3 py-1 min-w-[54px] xl:min-w-[62px] rounded-xl transition-all whitespace-nowrap cursor-pointer",
-                    isActive
-                      ? "bg-white text-sky-700 shadow-sm font-bold"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium"
+                <div key={item.page} className="relative group">
+                  <Link
+                    to={createPageUrl(item.page)}
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem("zorion_active_section", activeSection.id);
+                      } catch (e) {}
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-0.5 px-2.5 xl:px-3 py-1 min-w-[54px] xl:min-w-[62px] rounded-xl transition-all whitespace-nowrap cursor-pointer",
+                      isActive
+                        ? "bg-white text-sky-700 shadow-sm font-bold"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium"
+                    )}
+                  >
+                    <div className="flex items-center gap-1">
+                      <item.icon className={cn(
+                        "w-4 h-4 shrink-0 transition-colors",
+                        isActive ? "text-sky-600" : "text-slate-500"
+                      )} />
+                      {hasSubItems && (
+                        <ChevronDown className="w-2.5 h-2.5 opacity-40 group-hover:opacity-90 group-hover:rotate-180 transition-transform duration-200" />
+                      )}
+                    </div>
+                    <span className="text-[10px] leading-tight tracking-tight">{item.name}</span>
+                  </Link>
+
+                  {/* Dropdown Popover ao passar o mouse */}
+                  {hasSubItems && (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 pt-1.5 opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-200 ease-out z-50">
+                      <div className="w-72 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 p-1.5 space-y-0.5">
+                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100/90 mb-1 flex items-center justify-between">
+                          <span>{item.name}</span>
+                          <span className="text-[9px] font-medium text-slate-400 lowercase">atalhos rápidos</span>
+                        </div>
+                        {item.subItems.map((sub) => {
+                          const SubIcon = sub.icon;
+                          const isSubActive = isActive && currentTab === sub.tab;
+                          return (
+                            <Link
+                              key={sub.tab}
+                              to={`${createPageUrl(item.page)}?tab=${sub.tab}`}
+                              onClick={() => {
+                                try {
+                                  sessionStorage.setItem("zorion_active_section", activeSection.id);
+                                } catch (e) {}
+                              }}
+                              className={cn(
+                                "flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-all cursor-pointer group/sub",
+                                isSubActive
+                                  ? "bg-sky-50 text-sky-900 font-semibold border border-sky-100"
+                                  : "hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-transparent"
+                              )}
+                            >
+                              <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover/sub:scale-110 shadow-xs", sub.color)}>
+                                <SubIcon className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-semibold leading-tight truncate">
+                                    {sub.name}
+                                  </span>
+                                  {sub.badge && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                      {sub.badge}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="block text-[10px] text-slate-400 truncate mt-0.5">
+                                  {sub.desc}
+                                </span>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                >
-                  <item.icon className={cn(
-                    "w-4 h-4 shrink-0 transition-colors",
-                    isActive ? "text-sky-600" : "text-slate-500"
-                  )} />
-                  <span className="text-[10px] leading-tight tracking-tight">{item.name}</span>
-                </Link>
+                </div>
               );
             })}
           </nav>
@@ -451,29 +586,64 @@ export default function Layout({ children, currentPageName }) {
               <div className="grid grid-cols-2 gap-1.5">
                 {activeSection.menu.map((item) => {
                   const isActive = currentPageName === item.page;
+                  const hasSubItems = item.subItems && item.subItems.length > 0;
                   return (
-                    <Link
-                      key={item.page}
-                      to={createPageUrl(item.page)}
-                      onClick={() => {
-                        try {
-                          sessionStorage.setItem("zorion_active_section", activeSection.id);
-                        } catch (e) {}
-                        setMobileMenuOpen(false);
-                      }}
-                      className={cn(
-                        "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all",
-                        isActive
-                          ? "bg-sky-50 text-sky-700 border border-sky-200"
-                          : "text-slate-600 hover:bg-slate-100"
+                    <div key={item.page} className={hasSubItems ? "col-span-2 space-y-1" : ""}>
+                      <Link
+                        to={createPageUrl(item.page)}
+                        onClick={() => {
+                          try {
+                            sessionStorage.setItem("zorion_active_section", activeSection.id);
+                          } catch (e) {}
+                          if (!hasSubItems) setMobileMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all",
+                          isActive
+                            ? "bg-sky-50 text-sky-700 border border-sky-200"
+                            : "text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        <item.icon className={cn(
+                          "w-4 h-4",
+                          isActive ? "text-sky-600" : "text-slate-400"
+                        )} />
+                        <span className="truncate">{item.name}</span>
+                        {hasSubItems && (
+                          <ChevronDown className="w-3 h-3 text-slate-400 ml-auto" />
+                        )}
+                      </Link>
+
+                      {hasSubItems && (
+                        <div className="grid grid-cols-2 gap-1 pl-3 pt-0.5">
+                          {item.subItems.map((sub) => {
+                            const SubIcon = sub.icon;
+                            const isSubActive = isActive && currentTab === sub.tab;
+                            return (
+                              <Link
+                                key={sub.tab}
+                                to={`${createPageUrl(item.page)}?tab=${sub.tab}`}
+                                onClick={() => {
+                                  try {
+                                    sessionStorage.setItem("zorion_active_section", activeSection.id);
+                                  } catch (e) {}
+                                  setMobileMenuOpen(false);
+                                }}
+                                className={cn(
+                                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors border",
+                                  isSubActive
+                                    ? "bg-sky-100 text-sky-800 border-sky-200 font-bold"
+                                    : "bg-slate-50 text-slate-600 hover:bg-sky-50 hover:text-sky-700 border-slate-100"
+                                )}
+                              >
+                                <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                                <span className="truncate">{sub.name}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
                       )}
-                    >
-                      <item.icon className={cn(
-                        "w-4 h-4",
-                        isActive ? "text-sky-600" : "text-slate-400"
-                      )} />
-                      <span className="truncate">{item.name}</span>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
