@@ -372,9 +372,15 @@ export default function Inventario() {
         }
     };
 
-    // Carregar itens do inventário em andamento
+    // Carregar itens do inventário em andamento.
+    // Chave estável e sem refetch ao voltar o foco: antes a recarga rodava de
+    // novo quando a lista de medicamentos terminava de carregar e sobrescrevia
+    // a quantidade que o usuário estava digitando.
     useQuery({
-        queryKey: ['inventario-items', inventarioEmAndamento?.id, medicamentos.length],
+        queryKey: ['inventario-items', inventarioEmAndamento?.id],
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        staleTime: Infinity,
         queryFn: async () => {
             const items = await db.entities.InventarioItem.list();
             const filtered = items.filter(i => i.inventario_id === inventarioEmAndamento.id);
@@ -391,7 +397,19 @@ export default function Inventario() {
             });
 
             originaisRef.current = new Map(healed.map(i => [i.id, i.quantidade_fisica]));
-            setInventarioItems(healed);
+
+            // Preserva edições locais que ainda não foram lançadas.
+            setInventarioItems(prev => {
+                if (!prev || prev.length === 0) return healed;
+                const local = new Map(prev.map(i => [i.id, i]));
+                return healed.map(item => {
+                    const atual = local.get(item.id);
+                    if (atual && atual.quantidade_fisica !== null && atual.quantidade_fisica !== item.quantidade_fisica) {
+                        return { ...item, quantidade_fisica: atual.quantidade_fisica, divergencia: atual.divergencia, ajustado: atual.ajustado };
+                    }
+                    return item;
+                });
+            });
             return healed;
         },
         enabled: !!inventarioEmAndamento,
