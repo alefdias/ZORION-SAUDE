@@ -96,11 +96,11 @@ export async function cancelarEstornarBaixaGrupo({
   for (const [loteId, qtdDevolver] of Object.entries(devolucoesLote)) {
     const lote = loteMap.get(loteId);
     if (lote) {
-      const novoSaldo = (Number(lote.quantidade_atual) || 0) + qtdDevolver;
+      // A dispensação sai do SATÉLITE: o estorno devolve só para ele.
+      // (antes somava também em quantidade_atual e inflava a central)
       const novoSaldoSat = (Number(lote.quantidade_satelite) || 0) + qtdDevolver;
       sqlStatements.push(
         db.buildUpdateSql("Lote", lote.id, {
-          quantidade_atual: novoSaldo,
           quantidade_satelite: novoSaldoSat,
           status: "ativo",
         })
@@ -191,11 +191,10 @@ export async function cancelarEstornarSaidaIndividual({ saida, usuarioNome = "Fa
   if (loteId && qtd > 0) {
     const lote = await db.entities.Lote.get(loteId).catch(() => null);
     if (lote) {
-      const novoSaldo = (Number(lote.quantidade_atual) || 0) + qtd;
+      // idem: devolve apenas ao satélite
       const novoSaldoSat = (Number(lote.quantidade_satelite) || 0) + qtd;
       sqlStatements.push(
         db.buildUpdateSql("Lote", lote.id, {
-          quantidade_atual: novoSaldo,
           quantidade_satelite: novoSaldoSat,
           status: "ativo",
         })

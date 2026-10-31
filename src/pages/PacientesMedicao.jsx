@@ -968,9 +968,20 @@ export default function PacientesMedicao() {
         const numeroLote = loteEscolhido ? (loteEscolhido.numero_lote || "S/ Lote") : "S/ Lote";
 
         if (loteId && loteEscolhido) {
-          const novaQtdSat = Math.max(0, (Number(loteEscolhido.quantidade_satelite) || 0) - qtdSaida);
+          const saldoSat = Number(loteEscolhido.quantidade_satelite) || 0;
+
+          // A dispensação sai do satélite. Se não há saldo lá, NÃO grava zero
+          // silenciosamente: para e avisa que a transferência tem de ser feita.
+          if (saldoSat < qtdSaida) {
+            throw new Error(
+              `Sem saldo no satélite para ${pr.medicamentoNome || pr.medicamento_nome || 'medicamento'} ` +
+              `(lote ${numeroLote}): disponível ${saldoSat}, necessário ${qtdSaida}. ` +
+              `Faça a transferência da central para o satélite antes da baixa.`
+            );
+          }
+
           sqlStatements.push(
-            db.buildUpdateSql("Lote", loteId, { quantidade_satelite: novaQtdSat })
+            db.buildUpdateSql("Lote", loteId, { quantidade_satelite: saldoSat - qtdSaida })
           );
         }
 
