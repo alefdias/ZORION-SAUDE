@@ -35,7 +35,10 @@ SELECT coalesce(sum(coalesce(estoque_atual, 0)), 0)    AS central,
 -- ---------------------------------------------------------------------
 CREATE TEMP TABLE plano ON COMMIT DROP AS
 WITH dup AS (
-  SELECT upper(btrim(nome)) AS nome
+  -- NOME + CONCENTRAÇÃO + APRESENTAÇÃO: 25 MG e 100 MG não são duplicados
+  SELECT upper(btrim(nome)) || '|' ||
+         upper(btrim(coalesce(concentracao,''))) || '|' ||
+         upper(btrim(coalesce(apresentacao,''))) AS nome
     FROM "Medicamento"
    WHERE deleted_at IS NULL
    GROUP BY 1 HAVING count(*) > 1

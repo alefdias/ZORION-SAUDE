@@ -37,7 +37,7 @@ WITH dup AS (
    GROUP BY 1 HAVING count(*) > 1
 ),
 r AS (
-  SELECT m.id, upper(btrim(m.nome)) AS n, m.created_at,
+  SELECT m.id, upper(btrim(m.nome)) || '|' || upper(btrim(coalesce(m.concentracao,''))) || '|' || upper(btrim(coalesce(m.apresentacao,''))) AS n, m.created_at,
          coalesce(m.estoque_atual,0) + coalesce(m.estoque_satelite,0) AS total,
          (SELECT count(*) FROM "Lote" l WHERE l.medicamento_id = m.id)
        + (SELECT count(*) FROM "Saida" s WHERE s.medicamento_id = m.id)
