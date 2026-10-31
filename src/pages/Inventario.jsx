@@ -277,6 +277,101 @@ export default function Inventario() {
         }
     };
 
+    const handleDeletarRegistroSemReverter = async () => {
+        if (!deleteBalançoId) return;
+        try {
+            toast.loading("Excluindo registro...");
+            
+            // 1. Deletar itens do inventário para evitar órfãos
+            const itens = await db.entities.InventarioItem.list();
+            const itensDesteBalanço = itens.filter(i => i.inventario_id === deleteBalançoId);
+            for (const item of itensDesteBalanço) {
+                await db.entities.InventarioItem.delete(item.id);
+            }
+
+            // 2. Deletar o registro de inventário
+            await db.entities.Inventario.delete(deleteBalançoId);
+
+            await queryClient.invalidateQueries({ queryKey: ['inventarios'] });
+            toast.dismiss();
+            toast.success("Registro excluído com sucesso (Estoque mantido).");
+            setDeleteBalançoId(null);
+        } catch (error) {
+            console.error(error);
+            toast.dismiss();
+            toast.error("Erro ao excluir registro: " + error.message);
+        }
+    };
+
+    const cancelarInventario = async () => {
+        if (!confirm("Tem certeza que deseja cancelar este balanço? Todos os dados de contagem atuais serão perdidos.")) return;
+
+        try {
+            toast.loading("Cancelando balanço...");
+            const id = inventarioEmAndamento.id;
+
+            // Opcional: Deletar itens órfãos
+            for (const item of inventarioItems) {
+                await db.entities.InventarioItem.delete(item.id);
+            }
+
+            await db.entities.Inventario.delete(id);
+
+            await queryClient.invalidateQueries({ queryKey: ['inventarios'] });
+            toast.dismiss();
+            toast.success("Balanço cancelado.");
+            setActiveTab("historico");
+        } catch (error) {
+            toast.dismiss();
+            toast.error("Erro ao cancelar: " + error.message);
+        }
+    };
+
+    const reverterInventario = async (id) => {
+        if (!confirm("Aviso Crítico: Tem certeza que deseja reverter este balanço? Isso irá recompor o estoque exatamente como estava antes do balanço ser finalizado e marcará este balanço como cancelado.")) return;
+
+        try {
+            toast.loading("Revertendo balanço...");
+
+            const itens = await db.entities.InventarioItem.list();
+            const itensDesteBalanço = itens.filter(i => i.inventario_id === id && i.ajustado === 1 && i.divergencia !== 0);
+
+            for (const item of itensDesteBalanço) {
+                // Reverter o Lote
+                const lote = lotes.find(l => l.id === item.lote_id);
+                if (lote) {
+                    const novaQtd = (lote.quantidade_atual || 0) - item.divergencia;
+                    await db.entities.Lote.update(lote.id, {
+                        quantidade_atual: Math.max(0, novaQtd),
+                        status: novaQtd > 0 ? 'disponivel' : 'esgotado'
+                    });
+
+                    // Reverter o Medicamento
+                    const med = medicamentos.find(m => m.id === item.medicamento_id);
+                    if (med) {
+                        const novoEstoqueMed = (med.estoque_atual || 0) - item.divergencia;
+                        await db.entities.Medicamento.update(med.id, {
+                            estoque_atual: Math.max(0, novoEstoqueMed)
+                        });
+                    }
+                }
+            }
+
+            // Marcar o inventário como cancelado
+            await db.entities.Inventario.update(id, {
+                status: 'cancelado'
+            });
+
+            await queryClient.invalidateQueries();
+            toast.dismiss();
+            toast.success("Balanço revertido e estoque restaurado.");
+        } catch (error) {
+            console.error(error);
+            toast.dismiss();
+            toast.error("Erro ao reverter o balanço: " + error.message);
+        }
+    };
+
     // Carregar itens do inventário em andamento
     useQuery({
         queryKey: ['inventario-items', inventarioEmAndamento?.id, medicamentos.length],
