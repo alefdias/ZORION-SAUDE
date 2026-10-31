@@ -155,15 +155,12 @@ export async function initializeApp() {
                         ) sub
                         WHERE m."id" = sub."medicamento_id" AND m."estoque_atual" != sub.total_central;
 
-                        UPDATE "Medicamento" m
-                        SET "estoque_satelite" = sub.total_satelite
-                        FROM (
-                            SELECT "medicamento_id", SUM(COALESCE("quantidade_satelite", 0)) AS total_satelite
-                            FROM "Lote"
-                            WHERE ("status" != 'Inativo' OR "status" IS NULL) AND "medicamento_id" IS NOT NULL
-                            GROUP BY "medicamento_id"
-                        ) sub
-                        WHERE m."id" = sub."medicamento_id" AND m."estoque_satelite" != sub.total_satelite;
+                        -- O satelite NAO e reconciliado automaticamente aqui.
+                        -- Em banco antigo a coluna Lote.quantidade_satelite esta zerada
+                        -- e o saldo real mora em Medicamento.estoque_satelite; esse
+                        -- UPDATE zerava o satelite inteiro a cada abertura do app.
+                        -- A reconciliacao do satelite e feita apenas por transferencia
+                        -- (que grava no lote e no cadastro) e pelo balanco do satelite.
                     `
                 });
             } catch (e) {

@@ -1,4 +1,4 @@
-import { normalizeSearch } from "@/utils/searchUtils";
+import { normalizeSearch, matchesSearchLoose } from "@/utils/searchUtils";
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "@/api/db";
@@ -216,10 +216,8 @@ export default function Estoque() {
     });
 
   const filteredEstoque = estoquePorMedicamento.filter(med => {
-    const q = normalizeSearch(search);
-    const terms = q ? q.split(/\s+/).filter(Boolean) : [];
-    const fullText = normalizeSearch(`${med.nome || ""} ${med.principio_ativo || ""} ${med.codigo || ""}`);
-    const matchSearch = terms.length === 0 || terms.every(t => fullText.includes(t));
+    const fullText = `${med.nome || ""} ${med.principio_ativo || ""} ${med.codigo || ""} ${med.concentracao || ""} ${med.apresentacao || ""} ${med.unidade_medida || ""}`;
+    const matchSearch = matchesSearchLoose(fullText, search);
 
     if (filterStatus === "all") return matchSearch;
     if (filterStatus === "baixo") return matchSearch && med.temAlerta;

@@ -1,4 +1,4 @@
-import { normalizeSearch } from "@/utils/searchUtils";
+import { normalizeSearch, matchesSearchLoose } from "@/utils/searchUtils";
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { db } from "@/api/db";
@@ -213,10 +213,8 @@ export default function Medicamentos() {
     
     // Search filter
     if (search.trim()) {
-      const q = normalizeSearch(search);
-      const terms = q.split(/\s+/).filter(Boolean);
-      const fullText = normalizeSearch(`${m.nome || ""} ${m.principio_ativo || ""} ${m.codigo || ""} ${m.nota_fiscal || ""} ${m.fornecedor_nome || ""}`);
-      return terms.every(t => fullText.includes(t));
+      const fullText = `${m.nome || ""} ${m.principio_ativo || ""} ${m.codigo || ""} ${m.concentracao || ""} ${m.apresentacao || ""} ${m.unidade_medida || ""} ${m.nota_fiscal || ""} ${m.fornecedor_nome || ""}`;
+      return matchesSearchLoose(fullText, search);
     }
     return true;
   }).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
