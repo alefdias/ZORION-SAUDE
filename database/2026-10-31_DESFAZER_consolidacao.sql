@@ -17,6 +17,28 @@
 -- Nada é apagado. Rode com o aplicativo fechado.
 -- =====================================================================
 
+-- 0. CONFERÊNCIA PRÉVIA (não altera nada) -----------------------------
+-- Mostra exatamente quem será reativado. O cadastro que SOBREVIVEU ao merge
+-- não está nesta tabela — por isso ele não é tocado e não há duplicação.
+SELECT nome, concentracao, apresentacao, estoque_atual, estoque_satelite
+  FROM "Medicamento_arquivo_consolidado_2026_10_31"
+ ORDER BY nome, concentracao;
+
+DO $$
+DECLARE
+    conflito integer;
+BEGIN
+    -- Trava: ninguém pode ser absorvido e sobrevivente ao mesmo tempo.
+    SELECT count(*) INTO conflito
+      FROM "Medicamento_arquivo_consolidado_2026_10_31" a
+      JOIN "Medicamento_arquivo_consolidado_2026_10_31" b ON b.id_sobrevivente = a.id;
+
+    IF conflito > 0 THEN
+        RAISE EXCEPTION
+            'ABORTADO: % cadastro(s) aparecem como absorvido e sobrevivente. Nada foi alterado.', conflito;
+    END IF;
+END $$;
+
 BEGIN;
 
 -- 1. reativar os cadastros absorvidos --------------------------------
