@@ -53,6 +53,8 @@ export default function Inventario() {
     const [isNewInventarioOpen, setIsNewInventarioOpen] = useState(false);
     const [currentInventario, setCurrentInventario] = useState(null);
     const [inventarioItems, setInventarioItems] = useState([]);
+    // fotografia do que veio do banco: o "salvar progresso" grava só o que mudou
+    const originaisRef = useRef(new Map());
     const [isFinishing, setIsFinishing] = useState(false);
     const [deleteBalançoId, setDeleteBalançoId] = useState(null);
     const [visibleColumns, setVisibleColumns] = useState({
@@ -131,33 +133,66 @@ export default function Inventario() {
         }
     };
 
+    // Campo vazio = item AINDA NÃO CONTADO (quantidade_fisica = null).
+    // Antes, qualquer tecla virava 0 e o item passava a contar como conferido.
     const handleUpdateFisico = (itemId, value) => {
+        const limpo = String(value ?? "").trim();
         setInventarioItems(prev => prev.map(item => {
-            if (item.id === itemId) {
-                const fis = parseInt(value) || 0;
-                return {
-                    ...item,
-                    quantidade_fisica: fis,
-                    divergencia: fis - item.quantidade_sistema
-                };
+            if (item.id !== itemId) return item;
+
+            if (limpo === "") {
+                return { ...item, quantidade_fisica: null, divergencia: 0 };
             }
-            return item;
+
+            const fis = parseInt(limpo, 10);
+            if (Number.isNaN(fis)) return item;
+
+            const quantidade = Math.max(0, fis);
+            return {
+                ...item,
+                quantidade_fisica: quantidade,
+                divergencia: quantidade - item.quantidade_sistema
+            };
         }));
     };
 
+    // Grava o que já foi contado e permite continuar depois: o balanço fica
+    // "em andamento" e os itens contados são reconhecidos ao reabrir a tela.
     const saveProgresso = async () => {
         try {
-            toast.loading("Salvando progresso...");
-            for (const item of inventarioItems) {
-                if (item.quantidade_fisica !== null) {
-                    await db.entities.InventarioItem.update(item.id, {
-                        quantidade_fisica: item.quantidade_fisica,
-                        divergencia: item.divergencia
-                    });
-                }
+            if (!inventarioEmAndamento) {
+                toast.error("Nenhum balanço em andamento para salvar.");
+                return;
             }
+
+            const alterados = inventarioItems.filter(
+                item => originaisRef.current.get(item.id) !== item.quantidade_fisica
+            );
+
+            if (alterados.length === 0) {
+                toast.dismiss();
+                toast.error("Nada novo para salvar.");
+                return;
+            }
+
+            toast.loading(`Salvando ${alterados.length} contagem(ns)...`);
+
+            for (const item of alterados) {
+                await db.entities.InventarioItem.update(item.id, {
+                    quantidade_fisica: item.quantidade_fisica,
+                    divergencia: item.quantidade_fisica === null ? 0 : item.divergencia
+                });
+                originaisRef.current.set(item.id, item.quantidade_fisica);
+            }
+
+            const contados = inventarioItems.filter(i => i.quantidade_fisica !== null).length;
+            const pendentes = inventarioItems.length - contados;
+
             toast.dismiss();
-            toast.success("Progresso salvo!");
+            toast.success(
+                `${alterados.length} contagem(ns) salva(s) · ${contados} de ${inventarioItems.length} contados` +
+                (pendentes > 0 ? ` · ${pendentes} pendentes` : " · balanço completo")
+            );
         } catch (error) {
             toast.dismiss();
             toast.error("Erro ao salvar: " + error.message);
@@ -166,6 +201,15 @@ export default function Inventario() {
 
     const finalizarInventario = async () => {
         try {
+            const pendentes = inventarioItems.filter(i => i.quantidade_fisica === null).length;
+            if (pendentes > 0) {
+                toast.error(
+                    `Faltam ${pendentes} itens sem contagem. ` +
+                    `Salve o progresso e continue depois — o balanço só fecha com todos contados.`
+                );
+                return;
+            }
+
             setIsFinishing(true);
             toast.loading("Finalizando e ajustando estoque...");
 
@@ -335,6 +379,7 @@ export default function Inventario() {
                 return item;
             });
 
+            originaisRef.current = new Map(healed.map(i => [i.id, i.quantidade_fisica]));
             setInventarioItems(healed);
             return healed;
         },
@@ -361,10 +406,15 @@ export default function Inventario() {
             }
         });
 
+        const contados = inventarioItems.filter(i => i.quantidade_fisica !== null).length;
+        const pendentes = inventarioEmAndamento ? inventarioItems.length - contados : 0;
+
         return {
             total: rawList.length,
             clinicos,
-            psicotropicos
+            psicotropicos,
+            contados,
+            pendentes
         };
     }, [inventarioEmAndamento, inventarioItems, lotes, medicamentos]);
 
@@ -398,6 +448,8 @@ export default function Inventario() {
                 const isCtrl = (med && (med.portaria_344 || isPsicotropico(med.grupo_terapeutico))) || item.portaria_344;
                 return !isCtrl;
             });
+        } else if (filterType === "pendentes") {
+            baseList = baseList.filter(item => item.quantidade_fisica === null);
         } else if (filterType === "psicotropicos") {
             baseList = baseList.filter(item => {
                 const med = medicamentos.find(m => m.id === item.medicamento_id);
@@ -427,6 +479,8 @@ export default function Inventario() {
                 const med = medicamentos.find(m => m.id === item.medicamento_id);
                 return !(med?.portaria_344 || isPsicotropico(med?.grupo_terapeutico));
             });
+        } else if (filterType === "pendentes") {
+            list = list.filter(item => item.quantidade_fisica === null);
         } else if (filterType === "psicotropicos") {
             list = list.filter(item => {
                 const med = medicamentos.find(m => m.id === item.medicamento_id);
@@ -537,6 +591,27 @@ export default function Inventario() {
                                     {statsCentral.psicotropicos}
                                 </span>
                             </button>
+                            {inventarioEmAndamento && (
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterType("pendentes")}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                                        filterType === "pendentes"
+                                            ? "bg-white text-rose-600 shadow-xs font-bold"
+                                            : "text-slate-600 hover:text-slate-900"
+                                    )}
+                                    title="Itens que ainda não foram contados neste balanço"
+                                >
+                                    <span>Pendentes</span>
+                                    <span className={cn(
+                                        "px-1.5 py-0.5 rounded-full text-[10px] font-mono",
+                                        filterType === "pendentes" ? "bg-rose-100 text-rose-700 font-bold" : "bg-slate-200 text-slate-600"
+                                    )}>
+                                        {statsCentral.pendentes}
+                                    </span>
+                                </button>
+                            )}
                         </div>
 
                         <TabsList className="grid w-full sm:w-[320px] grid-cols-2">
