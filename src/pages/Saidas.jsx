@@ -169,7 +169,9 @@ export default function Saidas({ isTab = false }) {
           motivo: commonData.motivo || (pacNomeLimpo ? `Dispensação Paciente: ${pacNomeLimpo}` : `Dispensação Clínicos (${alaNomeLimpa})`),
           responsavel: commonData.responsavel || responsavel,
           responsavel_crf: commonData.responsavel_crf || responsavelCrf,
-          usuario_nome: responsavel
+          usuario_nome: responsavel,
+          // dispensação de paciente sai do satélite por padrão
+          origem: commonData.origem || "satelite"
         };
         
         // 1. Criar a saída

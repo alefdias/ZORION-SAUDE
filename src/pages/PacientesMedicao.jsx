@@ -823,6 +823,9 @@ export default function PacientesMedicao() {
               usuario_nome: responsavel,
               is_baixa_lote_paciente: true,
               baixa_grupo_id: baixaGrupoId,
+              // dispensação sempre sai do satélite (o lote é debitado em
+              // quantidade_satelite na etapa 4)
+              origem: "satelite",
             })
           );
         }
@@ -1250,10 +1253,18 @@ export default function PacientesMedicao() {
                 estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - totalEntregar)
               });
 
-              const loteDoMed = lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id) && (Number(l.quantidade_atual) > 0));
+              // Dispensação sai do SATÉLITE: debita quantidade_satelite,
+              // nunca a central (que só perde por transferência).
+              const loteDoMed = lotes
+                .filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id))
+                .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade))
+                .find(l => Number(l.quantidade_satelite) > 0)
+                || lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
+
               if (loteDoMed) {
                 await db.entities.Lote.update(loteDoMed.id, {
-                  quantidade_atual: Math.max(0, (loteDoMed.quantidade_atual || 0) - totalEntregar)
+                  quantidade_atual: loteDoMed.quantidade_atual,
+                  quantidade_satelite: Math.max(0, (Number(loteDoMed.quantidade_satelite) || 0) - totalEntregar)
                 });
               }
 
@@ -1270,6 +1281,7 @@ export default function PacientesMedicao() {
                 motivo: `Alta Hospitalar (${tipo}) - ${diasFaltantesEntregar} dia(s) para levar para casa`,
                 observacao: `Dispensação de Alta. Dias prescritos: ${dias}. Dias já cobertos no leito: ${diasJaCobertos}. Dias entregues: ${diasFaltantesEntregar}.`,
                 tipo: "Dispensação de Alta",
+                origem: "satelite",
                 created_at: nowStr
               });
             }
