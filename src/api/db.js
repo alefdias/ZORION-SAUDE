@@ -531,14 +531,38 @@ const ensureTableQuery = {
   `
 };
 
+// Versão do conjunto de colunas acima. Ao acrescentar colunas em
+// `ensureTableQuery`, troque a data: os terminais reaplicam o lote uma vez.
+const VERSAO_SCHEMA = "2026-10-31";
+const schemaGarantido = new Set();
+
+/** O erro é "coluna/tabela não existe" (vale tentar corrigir o schema)? */
+function ehErroDeSchema(erro) {
+  const texto = String((erro && erro.message) || erro || "");
+  return /42P01|42703|undefined_column|undefined_table|column .* does not exist|relation .* does not exist|não existe|nao existe/i.test(
+    texto
+  );
+}
+
 async function autoEnsureTable(entityName) {
   const query = ensureTableQuery[entityName];
   if (!query) return;
+
+  // Antes, cada `list()` de Medicamento reexecutava o lote inteiro de ALTER
+  // TABLE (191 comandos por boot em cada terminal). Além de lento, um erro no
+  // meio do lote deixa o schema em estado imprevisível.
+  const chave = `zorion_schema_${VERSAO_SCHEMA}_${entityName}`;
+  try {
+    if (schemaGarantido.has(entityName) || localStorage.getItem(chave) === "ok") return;
+  } catch (e) {}
+
   const { ip, dbName, password } = getPgConfig();
   if (ip && dbName) {
     try {
       // 1. Tenta executar o lote inteiro de uma única vez (rápido e sem abrir dezenas de conexões TCP)
       await invoke("execute_postgres", { ip, dbName, password, query });
+      schemaGarantido.add(entityName);
+      try { localStorage.setItem(chave, "ok"); } catch (e) {}
     } catch(batchErr) {
       // 2. Se falhar em lote, executa individualmente com proteção
       try {
@@ -765,6 +789,12 @@ const createEntityProxy = (entityName) => ({
       }
       return data;
     } catch (e) {
+      // Só reaplica quando o problema é estrutura (coluna/tabela ausente).
+      // Em erro de rede/timeout o INSERT pode ter sido gravado: repetir aqui
+      // criava a segunda linha idêntica — uma das origens da duplicidade.
+      if (!ehErroDeSchema(e)) {
+        throw new Error(`${e} | QUERY: ${query}`);
+      }
       await autoEnsureTable(entityName);
       try {
         await invoke("execute_postgres", { ip, dbName, password, query });
@@ -801,6 +831,12 @@ const createEntityProxy = (entityName) => ({
       }
       return data;
     } catch (e) {
+      // Só reaplica quando o problema é estrutura (coluna/tabela ausente).
+      // Em erro de rede/timeout o INSERT pode ter sido gravado: repetir aqui
+      // criava a segunda linha idêntica — uma das origens da duplicidade.
+      if (!ehErroDeSchema(e)) {
+        throw new Error(`${e} | QUERY: ${query}`);
+      }
       await autoEnsureTable(entityName);
       try {
         await invoke("execute_postgres", { ip, dbName, password, query });
@@ -864,6 +900,12 @@ const createEntityProxy = (entityName) => ({
       }
       return id;
     } catch (e) {
+      // Só reaplica quando o problema é estrutura (coluna/tabela ausente).
+      // Em erro de rede/timeout o INSERT pode ter sido gravado: repetir aqui
+      // criava a segunda linha idêntica — uma das origens da duplicidade.
+      if (!ehErroDeSchema(e)) {
+        throw new Error(`${e} | QUERY: ${query}`);
+      }
       await autoEnsureTable(entityName);
       try {
         await invoke("execute_postgres", { ip, dbName, password, query });

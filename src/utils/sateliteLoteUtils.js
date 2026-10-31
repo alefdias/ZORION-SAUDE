@@ -243,49 +243,43 @@ export function calcularLotesSatelite({
   });
 
   // 6. Filtra estritamente lotes que possuem saldo comprovado na Satélite
-  let lotesComSaldo = lotesDoMed
+  const lotesComSaldo = lotesDoMed
     .map((l) => ({
       ...l,
       saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
     }))
     .filter((l) => l.saldoSatelite > 0);
 
-  // Reconciliação inteligente: Garante que o saldo total dos lotes bata 100% com o saldoTotalSat
+  // ---------------------------------------------------------------------
+  // ATENÇÃO — aqui ficava a "reconciliação inteligente".
+  //
+  // Quando a soma dos lotes não fechava com o saldo gravado do medicamento
+  // (`med.estoque_satelite`), a diferença era empurrada para o último lote —
+  // ou um lote era inventado com o saldo órfão inteiro. A tela sempre
+  // "fechava", o número errado era gravado de volta e o lote inflava a cada
+  // leitura. É a origem da duplicidade deste banco.
+  //
+  // Agora aparece o que existe, e a divergência é devolvida em
+  // `lotesComSaldo.divergenciaSaldo` para a tela avisar (inventário).
+  // ---------------------------------------------------------------------
   const somaLotes = lotesComSaldo.reduce((s, l) => s + l.saldoSatelite, 0);
+  const divergencia = somaLotes - saldoSat;
 
-  if (somaLotes < saldoSat) {
-    const diff = saldoSat - somaLotes;
-    if (lotesComSaldo.length > 0) {
-      // Acrescenta a diferença não alocada ao lote com validade mais distante ou com maior saldo
-      lotesComSaldo[lotesComSaldo.length - 1].saldoSatelite += diff;
-    } else {
-      // Se não havia lote com histórico comprovado, utiliza os lotes cadastrados do medicamento
-      // ordenados por FEFO para não deixar o saldo órfão sem lote na Satélite
-      const lotesCandidatos = [...lotesDoMed].sort((a, b) => {
-        const da = safeParseISO(a.data_validade);
-        const db = safeParseISO(b.data_validade);
-        if (!da) return 1;
-        if (!db) return -1;
-        return da - db;
-      });
-      const loteEscolhido = lotesCandidatos.find(l => (Number(l.quantidade_satelite) || 0) > 0) || lotesCandidatos[0];
-      if (loteEscolhido) {
-        lotesComSaldo = [{
-          ...loteEscolhido,
-          saldoSatelite: saldoSat
-        }];
-      }
-    }
-  } else if (somaLotes > saldoSat) {
-    // Ajusta proporcionalmente para não exceder o saldo total
-    let excesso = somaLotes - saldoSat;
-    for (let i = lotesComSaldo.length - 1; i >= 0 && excesso > 0; i--) {
-      const deduzir = Math.min(lotesComSaldo[i].saldoSatelite, excesso);
-      lotesComSaldo[i].saldoSatelite -= deduzir;
-      excesso -= deduzir;
-    }
-    lotesComSaldo = lotesComSaldo.filter((l) => l.saldoSatelite > 0);
+  if (Math.abs(divergencia) > 1e-9) {
+    console.warn(
+      `[satelite] divergência de saldo em ${medNome || medId}: lotes somam ${somaLotes}, ` +
+        `saldo gravado ${saldoSat} (diferença ${divergencia}). Nada foi ajustado.`
+    );
   }
+
+  Object.defineProperty(lotesComSaldo, "divergenciaSaldo", {
+    value: divergencia,
+    enumerable: false,
+  });
+  Object.defineProperty(lotesComSaldo, "saldoGravado", {
+    value: saldoSat,
+    enumerable: false,
+  });
 
   // Ordena por validade (FEFO)
   lotesComSaldo.sort((a, b) => {
