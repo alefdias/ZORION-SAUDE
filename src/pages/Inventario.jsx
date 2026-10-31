@@ -113,7 +113,7 @@ export default function Inventario() {
                         quantidade_sistema: l.quantidade_atual,
                         quantidade_fisica: null,
                         divergencia: 0,
-                        ajustado: 0
+                        ajustado: false
                     };
                 });
 
@@ -238,7 +238,7 @@ export default function Inventario() {
 
                     // Marcar item como ajustado
                     await db.entities.InventarioItem.update(item.id, {
-                        ajustado: 1,
+                        ajustado: true,
                         quantidade_fisica: item.quantidade_fisica,
                         divergencia: item.divergencia
                     });
