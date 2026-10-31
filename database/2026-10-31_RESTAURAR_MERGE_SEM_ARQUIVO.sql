@@ -1,0 +1,269 @@
+-- =====================================================================
+-- ZORION SAUDE - RESTAURAR OS 54 CADASTROS ABSORVIDOS PELO MERGE DE 31/10
+-- =====================================================================
+-- Nao depende de nenhuma tabela de arquivo: a lista dos 54 cadastros e o
+-- mapa dos 79 lotes vieram do backup pre-merge (31/10 08:10).
+--
+-- A quantidade NAO e copiada do backup: o estoque central de cada cadastro
+-- restaurado passa a ser a soma dos lotes que existem HOJE.
+--
+-- Idempotente. Tudo em UMA transacao; aborta se o total de estoque mudar.
+-- Rode com o aplicativo FECHADO, depois do backup.
+-- =====================================================================
+
+BEGIN;
+
+CREATE TEMP TABLE tot_antes ON COMMIT DROP AS
+SELECT coalesce(sum(coalesce(estoque_atual,0)),0)    AS central,
+       coalesce(sum(coalesce(estoque_satelite,0)),0) AS satelite
+  FROM "Medicamento" WHERE deleted_at IS NULL;
+
+-- 0. raio-x dos medicamentos reclamados (antes de qualquer alteracao) ---
+SELECT '=== SITUACAO ATUAL DOS RECLAMADOS ===' AS etapa;
+SELECT nome, concentracao, apresentacao, estoque_atual, estoque_satelite,
+       ativo, deleted_at
+  FROM "Medicamento"
+ WHERE upper(nome) LIKE '%LEVOMEPROMAZINA%'
+    OR upper(nome) LIKE '%CLORPROMAZINA%'
+    OR upper(nome) LIKE '%DIPIRONA%'
+    OR upper(nome) LIKE '%CLORETO DE S%'
+    OR upper(nome) LIKE '%BROMOPRIDA%'
+ ORDER BY nome, concentracao, apresentacao;
+
+-- 1. os 54 absorvidos e quem ficou com o estoque deles ------------------
+CREATE TEMP TABLE alvo (id text, sobrevivente text, sat_arquivo int) ON COMMIT DROP;
+INSERT INTO alvo (id, sobrevivente, sat_arquivo) VALUES
+  ('0141e8cd-7b4a-4e4b-ada1-b497b4fc2a3b','e2d91853-8823-4d54-b35d-895ad7e8ed9c',200),
+  ('0d68a243-dec6-4efb-8161-39da4826d0e8','2e04c835-984a-44a9-bd10-b7c10c255e55',0),
+  ('0edfdbc8-c0ab-4c10-9ba0-dc4e0bcc22ee','cdf8426b-9601-4fa4-af05-50a40ddc400c',0),
+  ('11d94f77-8146-475d-85b4-2b1f7e997283','e626e1b0-7db2-4b08-aec8-533a470d21cb',0),
+  ('1a14e2a3-14db-421a-870b-d290d9a408fd','e2d91853-8823-4d54-b35d-895ad7e8ed9c',0),
+  ('1be75689-a1e6-4b6a-85bf-c93957a71cfa','e626e1b0-7db2-4b08-aec8-533a470d21cb',0),
+  ('25ac7b76-b499-4c4b-b42c-647d1558fe3f','e5695167-7a33-4cc4-9ea1-f186841e781f',0),
+  ('2fd80054-0f9e-41a9-b485-eb95b2db237d','2abb411a-f3af-4e8c-9444-ac38dbf2bb63',0),
+  ('3009f7c4-c5d2-4e2b-8af2-4faabb403334','74eefea8-69df-430f-98b9-8803e54a6247',0),
+  ('33941521-b55b-4780-a50d-3f567ce9152c','03af46e6-0c6c-4674-be56-efa9935cd74d',0),
+  ('3fac5ddd-303c-4a5f-baf9-f2fa316285ff','607364c9-c3a2-4a4f-bc20-6b4b55522ab9',0),
+  ('45073dba-b777-4c79-8f11-3a731e55b41e','13fcb695-dbf5-491d-97e1-1197bcc1ab64',0),
+  ('451f1b19-e84a-4b9a-85bd-cc117564f0ab','587971d4-c24d-49b0-815a-ca953382d869',0),
+  ('45ec12ca-de53-4b6b-bb27-ac314b30468a','e626e1b0-7db2-4b08-aec8-533a470d21cb',0),
+  ('4afb86c6-4f58-4063-95f9-b7894a8167cd','9f957822-5eff-4474-a6a7-74b8ff800fdf',0),
+  ('4ea3b0ca-3f0a-4b22-845e-35f05dc81dbf','e5695167-7a33-4cc4-9ea1-f186841e781f',0),
+  ('5106d44a-d4cc-4da1-b263-7c7be807e4b2','f39528fb-914f-4de7-8b76-e729010f0de3',0),
+  ('5175b0fb-fef0-4080-9335-9101066771d1','d1c8c012-fe2f-4028-aee3-0a36a4920d95',0),
+  ('540a497d-5632-4ab0-ab6c-6d496c21450a','220f4694-4b0b-481a-9a1a-9218b4bcb34f',0),
+  ('61e4e94d-ac89-47fe-a418-f8f0ab65a6ac','f569dcbb-644b-4c03-9c69-f69043046d6c',0),
+  ('61f7a298-59fc-406f-9f62-091ff94f760d','cdf8426b-9601-4fa4-af05-50a40ddc400c',0),
+  ('61f8671d-467a-4c09-b544-50b107a86fcc','24ba227e-6a1a-469c-a53d-5dbb9ea11968',0),
+  ('626574b3-10ce-4931-9fc6-ba9d311ba80d','59300a8d-defb-4039-bfdd-6943412a54c5',0),
+  ('6cc15f5a-3a85-431c-a129-281c445ce915','db801763-cfb8-44d9-b46b-6738874c850d',0),
+  ('6ee1e983-75cb-468b-af5a-79eaaa28c446','220f4694-4b0b-481a-9a1a-9218b4bcb34f',0),
+  ('746b09ac-236e-4e23-9e08-4277376d69d5','c9bd5445-ae91-40e5-924e-42dcc825eb57',0),
+  ('74c28e54-02d2-40ed-88dd-1ebeb145abb8','be84d479-fcbb-4912-b851-e73d40bf1c32',0),
+  ('83f6c9c0-37db-4006-b7a5-8c19d2ed6b3c','6b3775ad-abb2-4b75-8bd4-c89730e1c96f',0),
+  ('91eccbd9-e21a-4478-aedc-ebcc9f289c5c','b624ba4f-75ec-422c-ad64-945113778a0c',6),
+  ('96e7f336-404f-4252-a266-b7fc4af13bc1','9db3d732-be10-4090-8872-40b3db605627',0),
+  ('973bedd4-6af6-4d48-b990-177522eeb542','13fcb695-dbf5-491d-97e1-1197bcc1ab64',0),
+  ('994c71ac-aa6e-49e6-b4b1-f387380199cc','80720927-19da-42fa-a1e2-081e274ce5ca',0),
+  ('9f1be289-13ea-4ea4-be9c-7a7ac3254bce','21e8e560-2a21-4480-b28f-8f8f74aa8e51',0),
+  ('a243d654-1842-45bd-8d41-052c377d6e46','aa352af6-96fd-4000-b47a-451903b34f0b',0),
+  ('a3db1979-832e-454a-900d-fbd1db43c1f0','a373d8a5-5f7a-4173-934b-aba8dc926cd4',0),
+  ('b747d235-e11a-42ef-b3c2-ea7729d50c44','4a9fb29b-f583-434e-9b86-8c5fa94f5273',0),
+  ('bc34d0ca-1ab4-4513-a4ad-042c1f72bdfc','930de064-53ed-44e1-8c55-9c61488a0b86',0),
+  ('bee7c7d4-2600-4f6f-8dfd-b8c40cecb8cd','e626e1b0-7db2-4b08-aec8-533a470d21cb',0),
+  ('c2300ec4-11b1-4a7a-832c-7b13f78c35aa','607364c9-c3a2-4a4f-bc20-6b4b55522ab9',0),
+  ('ca468dcd-6bc2-4a08-b856-51ad20a2cfca','d5c1ee19-695f-426a-9020-6172137c4307',0),
+  ('cd0c9e93-e0df-41cc-ba13-da0eff7033c9','a88e217d-4cab-46cc-b415-2cf3578020be',0),
+  ('d344562b-919b-41a0-8d8f-61603a4b7398','9ff08321-acc0-45df-9627-8879cac2a1ee',0),
+  ('d53b0b7a-65f3-4f8d-86e3-5189ff6ee3b9','26302c64-4133-4f83-b7a5-2fef2307808e',0),
+  ('d9cc9635-174a-48d2-9cc0-d7ec62e06df4','f39528fb-914f-4de7-8b76-e729010f0de3',0),
+  ('dd1e6d50-9c1a-4137-ac91-7e1d9012db72','e36fc525-2a34-4fd0-a56e-dd117f4c8489',0),
+  ('df7d2445-aef2-43ef-bb98-c96148af6749','a8619a3e-57ae-4940-b292-364ec4dbbfc7',0),
+  ('e4a9cfe4-e752-4913-933b-5a673d4d7578','8d02b25b-e8d9-4344-8d60-6eaae31b7823',0),
+  ('e71105c7-d75c-407a-9037-0e7ba3ca9a27','91ae7d8d-6b9f-4b98-b2ff-67cd69bb0452',0),
+  ('edd1c952-c62a-46c0-b3d4-49f38aaed3a4','03af46e6-0c6c-4674-be56-efa9935cd74d',0),
+  ('ef1baf4d-4934-4408-ba0b-a0e70845f006','bfabaae8-9d7c-4b8c-b23a-bba01ca5bca5',13),
+  ('f0344c4e-57e5-47d4-ad5c-fdf38bea6a25','8ca80d7f-f48b-4b28-bf22-f65f6c07c7fd',0),
+  ('f44870b1-90b3-47e5-a06c-cc003dafb2d5','3a24a981-9e23-4d68-9f37-e3919e34af48',0),
+  ('fcd12f9e-13a9-4982-8c14-9323fd7049a4','a373d8a5-5f7a-4173-934b-aba8dc926cd4',0),
+  ('fe029982-3854-45c8-97a4-0ba354027bdc','c1446d2e-ea9f-427c-ae7e-cf9f0de0683a',0);
+
+CREATE TEMP TABLE volta ON COMMIT DROP AS
+SELECT a.*
+  FROM alvo a
+ WHERE NOT EXISTS (
+       SELECT 1 FROM "Medicamento" m
+        WHERE m.id = a.id AND m.deleted_at IS NULL AND coalesce(m.ativo,false));
+
+SELECT '=== CADASTROS QUE VAO VOLTAR ===' AS etapa;
+SELECT m.nome, m.concentracao, m.apresentacao
+  FROM "Medicamento" m JOIN volta v ON v.id = m.id
+ ORDER BY m.nome, m.concentracao, m.apresentacao;
+
+-- 2. reativar -----------------------------------------------------------
+UPDATE "Medicamento" m
+   SET ativo = true, deleted_at = NULL
+  FROM volta v WHERE m.id = v.id;
+
+DO $$
+DECLARE falta int;
+BEGIN
+  SELECT count(*) INTO falta
+    FROM volta v
+   WHERE NOT EXISTS (SELECT 1 FROM "Medicamento" m
+                      WHERE m.id = v.id AND m.deleted_at IS NULL AND coalesce(m.ativo,false));
+  IF falta > 0 THEN
+    RAISE EXCEPTION 'ABORTADO: % cadastro(s) nao existem mais na tabela "Medicamento" (apagados de fato). Nada gravado.', falta;
+  END IF;
+END $$;
+
+-- 3. mapa lote -> cadastro de origem (do backup pre-merge) -------------
+CREATE TEMP TABLE mapa (lote_id text, med_id text) ON COMMIT DROP;
+INSERT INTO mapa (lote_id, med_id) VALUES
+  ('0a7f7803-1091-4f74-8a96-121afeecd1ac','0edfdbc8-c0ab-4c10-9ba0-dc4e0bcc22ee'),
+  ('0eb9d729-9e7b-4652-bcba-cded2baf09d1','45073dba-b777-4c79-8f11-3a731e55b41e'),
+  ('0f7702cf-4142-456c-a594-feeb65a3ca2b','0d68a243-dec6-4efb-8161-39da4826d0e8'),
+  ('125a4c57-f0a2-42fa-9067-d1ed56d24ca6','4afb86c6-4f58-4063-95f9-b7894a8167cd'),
+  ('12b50308-7764-4852-b339-899d744cd2d4','c2300ec4-11b1-4a7a-832c-7b13f78c35aa'),
+  ('20035354-34c6-4be1-84a5-c6c90dc85567','5175b0fb-fef0-4080-9335-9101066771d1'),
+  ('21ddb832-a4e9-446b-a9cc-db7fc76b9c08','4afb86c6-4f58-4063-95f9-b7894a8167cd'),
+  ('24227061-e1da-4aec-949b-9c5f8aa3774b','83f6c9c0-37db-4006-b7a5-8c19d2ed6b3c'),
+  ('258a2d9f-23f2-41d0-93d5-05577b789589','61f8671d-467a-4c09-b544-50b107a86fcc'),
+  ('298fa975-f8a8-4bb9-bc9d-c774a688b998','5106d44a-d4cc-4da1-b263-7c7be807e4b2'),
+  ('2aae4b31-e70b-451f-a12e-7dbb44ebbd93','5106d44a-d4cc-4da1-b263-7c7be807e4b2'),
+  ('2b958d52-3a52-41d3-9982-f0448d2d07f9','4ea3b0ca-3f0a-4b22-845e-35f05dc81dbf'),
+  ('2c389aee-c53f-4d46-b3fe-60ffc6704620','b747d235-e11a-42ef-b3c2-ea7729d50c44'),
+  ('308d3956-aa9a-4416-9907-a47d23b6e524','f0344c4e-57e5-47d4-ad5c-fdf38bea6a25'),
+  ('3b560e11-fc55-4bce-95ce-7cdde9d34943','994c71ac-aa6e-49e6-b4b1-f387380199cc'),
+  ('3ba40e39-3e0b-4d9f-b69e-ef4019c853ae','a243d654-1842-45bd-8d41-052c377d6e46'),
+  ('3df4b819-574b-49cc-bfd2-21bf08f7c15c','1be75689-a1e6-4b6a-85bf-c93957a71cfa'),
+  ('3f52e324-cbe6-4d1d-bb98-aecfa1337fcb','5175b0fb-fef0-4080-9335-9101066771d1'),
+  ('403d5c75-1c35-4d7e-809d-f2c2ea2ebdba','540a497d-5632-4ab0-ab6c-6d496c21450a'),
+  ('4060de83-5c33-47b3-a5ae-401078cf6918','2fd80054-0f9e-41a9-b485-eb95b2db237d'),
+  ('40eede1f-9de6-4afd-8bf6-1f129c3be69d','74c28e54-02d2-40ed-88dd-1ebeb145abb8'),
+  ('421a1bec-c054-4233-8339-99f90f8fa2c1','e71105c7-d75c-407a-9037-0e7ba3ca9a27'),
+  ('44108738-5ce0-4666-9d2f-0a67b254f0f7','3fac5ddd-303c-4a5f-baf9-f2fa316285ff'),
+  ('44ab960a-36f3-49a4-87aa-06c04f83f65d','d344562b-919b-41a0-8d8f-61603a4b7398'),
+  ('46573da9-27b8-4799-b037-d14046079707','11d94f77-8146-475d-85b4-2b1f7e997283'),
+  ('4bfaae2f-f284-44e6-a5ed-f37cac0bf1ad','e4a9cfe4-e752-4913-933b-5a673d4d7578'),
+  ('4d020fc7-5403-44c2-993a-fccc983d2775','33941521-b55b-4780-a50d-3f567ce9152c'),
+  ('52dde427-10c5-4d3a-8712-7146b8a1860a','9f1be289-13ea-4ea4-be9c-7a7ac3254bce'),
+  ('52ef2d13-0911-465a-a9eb-a27e42ce0b1c','cd0c9e93-e0df-41cc-ba13-da0eff7033c9'),
+  ('544d3bf9-52ef-4819-bd74-65a5d72b7d48','6cc15f5a-3a85-431c-a129-281c445ce915'),
+  ('560b1403-a62b-4c90-be6d-3cd6ecc1b8c3','11d94f77-8146-475d-85b4-2b1f7e997283'),
+  ('5887cc1a-e58c-4bb8-a78f-1a4b7e09fa7e','6cc15f5a-3a85-431c-a129-281c445ce915'),
+  ('5a814e19-8332-41b5-8003-b4863cda5c9b','626574b3-10ce-4931-9fc6-ba9d311ba80d'),
+  ('5ae6511f-f0e7-4e45-a0af-c985d2c1f571','25ac7b76-b499-4c4b-b42c-647d1558fe3f'),
+  ('5b078bd5-57fa-4f8e-9496-3dfd8cd35deb','45ec12ca-de53-4b6b-bb27-ac314b30468a'),
+  ('5c25b2ba-cd20-4480-9395-b93e685f56e5','61f7a298-59fc-406f-9f62-091ff94f760d'),
+  ('63c08e51-079c-4a7b-943f-666e1fd9cbee','83f6c9c0-37db-4006-b7a5-8c19d2ed6b3c'),
+  ('68021feb-225d-43cc-892e-ed16a6e8a010','6cc15f5a-3a85-431c-a129-281c445ce915'),
+  ('6a6a8311-abde-4c8b-a45e-cb82d22eb47c','5175b0fb-fef0-4080-9335-9101066771d1'),
+  ('6b248dac-15f9-4d34-96a1-a06110a7946e','83f6c9c0-37db-4006-b7a5-8c19d2ed6b3c'),
+  ('753ca3cf-abec-4f49-a142-3ecc94a910dc','cd0c9e93-e0df-41cc-ba13-da0eff7033c9'),
+  ('78db9134-79d4-4f3c-a582-f9d6e6ae4f84','61e4e94d-ac89-47fe-a418-f8f0ab65a6ac'),
+  ('7a39a921-ed68-4a00-aa56-e8f6d3e8c7fa','dd1e6d50-9c1a-4137-ac91-7e1d9012db72'),
+  ('7b0b6072-96aa-43b8-a33f-84638b2b56ff','74c28e54-02d2-40ed-88dd-1ebeb145abb8'),
+  ('7be9eb7c-e353-40ad-b464-30bc7051c54e','1be75689-a1e6-4b6a-85bf-c93957a71cfa'),
+  ('81502151-d6c0-45a7-9d7f-415418f496de','f0344c4e-57e5-47d4-ad5c-fdf38bea6a25'),
+  ('87e0526e-196e-4628-a430-6bd6034253b7','973bedd4-6af6-4d48-b990-177522eeb542'),
+  ('885505a4-c219-4bb4-86d2-09f54c7f7f3d','451f1b19-e84a-4b9a-85bd-cc117564f0ab'),
+  ('89708f7c-a1fd-480b-a1a5-0d52935b3657','540a497d-5632-4ab0-ab6c-6d496c21450a'),
+  ('89c2fe5a-ce1d-4f4e-b2be-b103ecdc6964','746b09ac-236e-4e23-9e08-4277376d69d5'),
+  ('98b85207-77bf-4996-8136-3917398f6023','df7d2445-aef2-43ef-bb98-c96148af6749'),
+  ('99f7b216-25ad-44c8-9e2c-f5c92b63c27d','6ee1e983-75cb-468b-af5a-79eaaa28c446'),
+  ('9a0c156c-d234-4752-b2a2-fb425785c6b5','e71105c7-d75c-407a-9037-0e7ba3ca9a27'),
+  ('9ffae2a1-ed48-48ed-800d-e8999f53b32c','3fac5ddd-303c-4a5f-baf9-f2fa316285ff'),
+  ('a3daf062-723a-49af-8fd5-bd5e719e4c62','96e7f336-404f-4252-a266-b7fc4af13bc1'),
+  ('a97cded0-9768-408f-815a-90ec01f12a70','4ea3b0ca-3f0a-4b22-845e-35f05dc81dbf'),
+  ('ab75d9a4-2ec4-4860-a79c-262444ec4e50','fcd12f9e-13a9-4982-8c14-9323fd7049a4'),
+  ('ac21b6e7-6d49-440f-8d02-b259e0eb28a6','fcd12f9e-13a9-4982-8c14-9323fd7049a4'),
+  ('add408fb-b613-4820-a210-b6db19b72554','df7d2445-aef2-43ef-bb98-c96148af6749'),
+  ('b755df04-06dd-42b1-be9a-0b847a474286','6ee1e983-75cb-468b-af5a-79eaaa28c446'),
+  ('b9b4de9c-55fe-4794-a8c7-806d824ab704','0d68a243-dec6-4efb-8161-39da4826d0e8'),
+  ('bc855fcc-e8da-46d0-9ab5-606e79bb916f','bee7c7d4-2600-4f6f-8dfd-b8c40cecb8cd'),
+  ('bce00451-f633-45ab-99c9-f1518f367929','626574b3-10ce-4931-9fc6-ba9d311ba80d'),
+  ('c266c17c-b3b6-4a6d-ad3f-ff25a8116bef','74c28e54-02d2-40ed-88dd-1ebeb145abb8'),
+  ('c66abb8c-8460-48e6-99eb-5dcf6ddc7979','cd0c9e93-e0df-41cc-ba13-da0eff7033c9'),
+  ('cc8a9dfd-b4c8-4c45-9dc5-596f0fdbbc72','96e7f336-404f-4252-a266-b7fc4af13bc1'),
+  ('ce0f51ae-bd07-44c7-b5d3-f067325d7c96','1be75689-a1e6-4b6a-85bf-c93957a71cfa'),
+  ('ce6bffa8-7c7b-4ff2-9537-a9f4f4aea890','2fd80054-0f9e-41a9-b485-eb95b2db237d'),
+  ('d6d277cd-98b8-4e9e-9a0d-3c385a99d60e','746b09ac-236e-4e23-9e08-4277376d69d5'),
+  ('e46832b6-50af-4c4c-bc5b-0363526f43b9','d9cc9635-174a-48d2-9cc0-d7ec62e06df4'),
+  ('e66c4cb8-b5b3-4781-a3c7-a44b3eba6e97','d53b0b7a-65f3-4f8d-86e3-5189ff6ee3b9'),
+  ('e7006a55-415e-425f-9eac-4f9698b4b28e','3fac5ddd-303c-4a5f-baf9-f2fa316285ff'),
+  ('e7207f1b-cc20-42af-8ef4-2d223863bd09','61f7a298-59fc-406f-9f62-091ff94f760d'),
+  ('f10106d6-b914-4994-afd4-e9a77d4dac6c','e4a9cfe4-e752-4913-933b-5a673d4d7578'),
+  ('f29c3d76-ec04-4f89-912c-5563934cc201','45ec12ca-de53-4b6b-bb27-ac314b30468a'),
+  ('f370edf2-506a-48d9-8223-4752defe5a3c','9f1be289-13ea-4ea4-be9c-7a7ac3254bce'),
+  ('f76e5e80-f5d0-48fd-9b25-8c27a05617eb','45073dba-b777-4c79-8f11-3a731e55b41e'),
+  ('f7b03e92-488b-49d8-aa9a-c141f056e914','33941521-b55b-4780-a50d-3f567ce9152c'),
+  ('fad60f5c-d617-483d-93e6-a7fe0aeb0755','a3db1979-832e-454a-900d-fbd1db43c1f0');
+
+CREATE TEMP TABLE mov ON COMMIT DROP AS
+SELECT l.id AS lote_id, l.medicamento_id AS atual, mp.med_id AS destino,
+       coalesce(l.quantidade_satelite,0) AS qs
+  FROM "Lote" l
+  JOIN mapa mp ON mp.lote_id = l.id
+ WHERE mp.med_id IN (SELECT id FROM volta)
+   AND l.medicamento_id IS DISTINCT FROM mp.med_id;
+
+SELECT '=== LOTES DEVOLVIDOS ===' AS etapa;
+SELECT count(*) AS lotes, coalesce(sum(qs),0) AS satelite FROM mov;
+
+UPDATE "Lote" l SET medicamento_id = mv.destino
+  FROM mov mv WHERE l.id = mv.lote_id;
+
+-- 4. estoque central = soma dos lotes atuais ---------------------------
+UPDATE "Medicamento" m
+   SET estoque_atual = coalesce((
+           SELECT sum(coalesce(l.quantidade_atual,0))
+             FROM "Lote" l
+            WHERE l.medicamento_id = m.id AND l.deleted_at IS NULL), 0)
+ WHERE m.id IN (SELECT id FROM volta UNION SELECT atual FROM mov);
+
+-- 5. satelite preso nos lotes devolvidos -------------------------------
+UPDATE "Medicamento" m
+   SET estoque_satelite = greatest(0, coalesce(m.estoque_satelite,0) - d.qs)
+  FROM (SELECT atual AS id, sum(qs) AS qs FROM mov GROUP BY atual HAVING sum(qs)>0) d
+ WHERE m.id = d.id;
+
+UPDATE "Medicamento" m
+   SET estoque_satelite = coalesce(m.estoque_satelite,0) + d.qs
+  FROM (SELECT destino AS id, sum(qs) AS qs FROM mov GROUP BY destino HAVING sum(qs)>0) d
+ WHERE m.id = d.id;
+
+-- 6. satelite que so existia no cadastro: sai do sobrevivente -----------
+UPDATE "Medicamento" m
+   SET estoque_satelite = greatest(0, coalesce(m.estoque_satelite,0) - v.sat_arquivo)
+  FROM volta v
+ WHERE m.id = v.sobrevivente
+   AND v.sat_arquivo > 0
+   AND NOT EXISTS (SELECT 1 FROM "Lote" l WHERE l.medicamento_id = v.id AND l.deleted_at IS NULL);
+
+-- 7. conferencia: o total nao pode mudar -------------------------------
+DO $$
+DECLARE ac int; as_ int; dc int; ds int;
+BEGIN
+  SELECT central, satelite INTO ac, as_ FROM tot_antes;
+  SELECT coalesce(sum(coalesce(estoque_atual,0)),0),
+         coalesce(sum(coalesce(estoque_satelite,0)),0)
+    INTO dc, ds FROM "Medicamento" WHERE deleted_at IS NULL;
+  IF dc <> ac OR ds <> as_ THEN
+    RAISE EXCEPTION 'ABORTADO: total mudaria (central % -> %, satelite % -> %). Nada gravado.',
+      ac, dc, as_, ds;
+  END IF;
+  RAISE NOTICE 'Conferencia OK: central % e satelite % preservados', dc, ds;
+END $$;
+
+SELECT '=== SALDO DOS CADASTROS QUE VOLTARAM ===' AS etapa;
+SELECT m.nome, m.concentracao, m.apresentacao, m.estoque_atual
+  FROM "Medicamento" m JOIN volta v ON v.id = m.id
+ ORDER BY m.nome, m.concentracao, m.apresentacao;
+
+SELECT '=== TOTAIS ===' AS etapa;
+SELECT coalesce(sum(estoque_atual),0) AS central,
+       coalesce(sum(estoque_satelite),0) AS satelite
+  FROM "Medicamento" WHERE deleted_at IS NULL;
+
+COMMIT;
