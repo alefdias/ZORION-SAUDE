@@ -20,7 +20,6 @@ import {
   ShieldCheck, 
   ShieldAlert,
   Building2,
-  RefreshCw 
 } from "lucide-react";
 import RelatorioConsolidadoEstoque from "@/components/estoque/RelatorioConsolidadoEstoque";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -360,21 +359,6 @@ export default function Estoque() {
     }
   };
 
-  const [isReconciling, setIsReconciling] = useState(false);
-  const handleReconciliarEstoque = async () => {
-    setIsReconciling(true);
-    try {
-      await db.reconciliarEstoqueComLotes();
-      await queryClient.invalidateQueries({ queryKey: ['medicamentos'] });
-      await queryClient.invalidateQueries({ queryKey: ['lotes'] });
-      toast.success("Estoque Central e Satélite reconciliados com a soma dos lotes físicos com sucesso!");
-    } catch (err) {
-      toast.error("Erro ao reconciliar estoque: " + (err?.message || err));
-    } finally {
-      setIsReconciling(false);
-    }
-  };
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -383,16 +367,6 @@ export default function Estoque() {
           <p className="text-slate-500">Visão geral do almoxarifado, satélite e transferências.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button 
-            onClick={handleReconciliarEstoque} 
-            variant="outline" 
-            disabled={isReconciling}
-            className="bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
-            title="Sincroniza o saldo de todos os medicamentos no banco de dados para bater exatamente com a soma dos lotes físicos"
-          >
-            <RefreshCw className={cn("w-4 h-4 mr-2", isReconciling && "animate-spin")} />
-            {isReconciling ? "Reconciliando..." : "Reconciliar com Lotes"}
-          </Button>
           <Button onClick={handleExportCSV} variant="outline" className="bg-white">
             <Download className="w-4 h-4 mr-2" />
             Exportar
