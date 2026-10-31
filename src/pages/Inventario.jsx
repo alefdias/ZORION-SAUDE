@@ -107,7 +107,8 @@ export default function Inventario() {
                     return {
                         inventario_id: id,
                         medicamento_id: l.medicamento_id,
-                        medicamento_nome: l.medicamento_nome,
+                        // lote.medicamento_nome pode vir nulo no banco antigo
+                        medicamento_nome: l.medicamento_nome || med?.nome || "SEM NOME",
                         lote_id: l.id,
                         numero_lote: l.numero_lote,
                         quantidade_sistema: l.quantidade_atual,
@@ -156,104 +157,115 @@ export default function Inventario() {
         }));
     };
 
-    // Grava o que já foi contado e permite continuar depois: o balanço fica
-    // "em andamento" e os itens contados são reconhecidos ao reabrir a tela.
-    const saveProgresso = async () => {
+    // Lança no estoque SÓ os itens contados e ainda não lançados.
+    // Cada item atualiza o lote e o medicamento na hora — dá para contar 5,
+    // lançar, sair, e continuar depois pelo resto.
+    const lancarContagens = async () => {
         try {
             if (!inventarioEmAndamento) {
-                toast.error("Nenhum balanço em andamento para salvar.");
+                toast.error("Nenhum balanço em andamento.");
                 return;
             }
 
-            const alterados = inventarioItems.filter(
-                item => originaisRef.current.get(item.id) !== item.quantidade_fisica
+            const paraLancar = inventarioItems.filter(
+                item => item.quantidade_fisica !== null && !item.ajustado
             );
 
-            if (alterados.length === 0) {
-                toast.dismiss();
-                toast.error("Nada novo para salvar.");
+            if (paraLancar.length === 0) {
+                toast.error("Nenhuma contagem nova para lançar (as já lançadas não são mexidas).");
                 return;
             }
 
-            toast.loading(`Salvando ${alterados.length} contagem(ns)...`);
+            toast.loading(`Lançando ${paraLancar.length} contagem(ns)...`);
 
-            for (const item of alterados) {
-                await db.entities.InventarioItem.update(item.id, {
-                    quantidade_fisica: item.quantidade_fisica,
-                    divergencia: item.quantidade_fisica === null ? 0 : item.divergencia
+            // estoque corrente por medicamento (dois lotes do mesmo remédio somam)
+            const estoque = new Map();
+            medicamentos.forEach(m => estoque.set(m.id, Number(m.estoque_atual) || 0));
+
+            for (const item of paraLancar) {
+                const fisico = item.quantidade_fisica;
+                const diff = fisico - item.quantidade_sistema;
+
+                await db.entities.Lote.update(item.lote_id, {
+                    quantidade_atual: fisico,
+                    status: fisico > 0 ? "disponivel" : "esgotado",
                 });
-                originaisRef.current.set(item.id, item.quantidade_fisica);
+
+                if (diff !== 0 && estoque.has(item.medicamento_id)) {
+                    const novo = Math.max(0, (estoque.get(item.medicamento_id) || 0) + diff);
+                    estoque.set(item.medicamento_id, novo);
+                    await db.entities.Medicamento.update(item.medicamento_id, {
+                        estoque_atual: novo,
+                    });
+                }
+
+                await db.entities.InventarioItem.update(item.id, {
+                    quantidade_fisica: fisico,
+                    divergencia: diff,
+                    ajustado: true,
+                });
             }
 
+            const lancados = new Set(paraLancar.map(i => i.id));
+            setInventarioItems(prev =>
+                prev.map(i =>
+                    lancados.has(i.id)
+                        ? {
+                              ...i,
+                              divergencia: i.quantidade_fisica - i.quantidade_sistema,
+                              ajustado: true,
+                          }
+                        : i
+                )
+            );
+
+            await queryClient.invalidateQueries({ queryKey: ["medicamentos"] });
+            await queryClient.invalidateQueries({ queryKey: ["lotes"] });
+
             const contados = inventarioItems.filter(i => i.quantidade_fisica !== null).length;
-            const pendentes = inventarioItems.length - contados;
+            const restantes = inventarioItems.length - contados;
 
             toast.dismiss();
             toast.success(
-                `${alterados.length} contagem(ns) salva(s) · ${contados} de ${inventarioItems.length} contados` +
-                (pendentes > 0 ? ` · ${pendentes} pendentes` : " · balanço completo")
+                `${paraLancar.length} item(ns) lançado(s) no estoque · ` +
+                `${contados}/${inventarioItems.length} contados` +
+                (restantes > 0 ? ` · ${restantes} restantes` : " · completo")
             );
         } catch (error) {
             toast.dismiss();
-            toast.error("Erro ao salvar: " + error.message);
+            toast.error("Erro ao lançar: " + (error.message || error));
         }
     };
 
     const finalizarInventario = async () => {
         try {
-            const pendentes = inventarioItems.filter(i => i.quantidade_fisica === null).length;
-            if (pendentes > 0) {
+            const semContagem = inventarioItems.filter(i => i.quantidade_fisica === null).length;
+            if (semContagem > 0) {
                 toast.error(
-                    `Faltam ${pendentes} itens sem contagem. ` +
-                    `Salve o progresso e continue depois — o balanço só fecha com todos contados.`
+                    `Faltam ${semContagem} itens sem contagem. ` +
+                    `Conte o restante (os já lançados continuam gravados) — o balanço só fecha completo.`
                 );
                 return;
             }
 
-            setIsFinishing(true);
-            toast.loading("Finalizando e ajustando estoque...");
-
-            const id = inventarioEmAndamento.id;
-
-            for (const item of inventarioItems) {
-                // Se houver divergência, ajustar o lote e o medicamento
-                if (item.quantidade_fisica !== null && item.divergencia !== 0) {
-                    // 1. Atualizar o Lote
-                    const lote = lotes.find(l => l.id === item.lote_id);
-                    if (lote) {
-                        await db.entities.Lote.update(lote.id, {
-                            quantidade_atual: item.quantidade_fisica,
-                            status: item.quantidade_fisica > 0 ? 'disponivel' : 'esgotado'
-                        });
-
-                        // 2. Atualizar o Medicamento (estoque_atual)
-                        const med = medicamentos.find(m => m.id === item.medicamento_id);
-                        if (med) {
-                            const novoEstoqueMed = (med.estoque_atual || 0) + item.divergencia;
-                            await db.entities.Medicamento.update(med.id, {
-                                estoque_atual: Math.max(0, novoEstoqueMed)
-                            });
-                        }
-                    }
-
-                    // Marcar item como ajustado
-                    await db.entities.InventarioItem.update(item.id, {
-                        ajustado: true,
-                        quantidade_fisica: item.quantidade_fisica,
-                        divergencia: item.divergencia
-                    });
-                }
+            const naoLancados = inventarioItems.filter(i => !i.ajustado).length;
+            if (naoLancados > 0) {
+                toast.error(`Há ${naoLancados} item(ns) contados e não lançados. Use "Lançar contagens" antes de finalizar.`);
+                return;
             }
 
-            // Finalizar o inventário
-            await db.entities.Inventario.update(id, {
+            setIsFinishing(true);
+            toast.loading("Fechando o balanço...");
+
+            // O ajuste de lote/estoque já foi feito item a item no lançamento.
+            await db.entities.Inventario.update(inventarioEmAndamento.id, {
                 status: 'concluido',
                 data_fim: new Date().toISOString()
             });
 
             await queryClient.invalidateQueries();
             toast.dismiss();
-            toast.success("Balanço finalizado e estoque ajustado!");
+            toast.success("Balanço concluído.");
             setActiveTab("historico");
         } catch (error) {
             console.error("Erro ao finalizar:", error);
@@ -262,102 +274,6 @@ export default function Inventario() {
             toast.error("Erro ao finalizar: " + errorMsg);
         } finally {
             setIsFinishing(false);
-            setIsNewInventarioOpen(false);
-        }
-    };
-
-    const cancelarInventario = async () => {
-        if (!confirm("Tem certeza que deseja cancelar este balanço? Todos os dados de contagem atuais serão perdidos.")) return;
-
-        try {
-            toast.loading("Cancelando balanço...");
-            const id = inventarioEmAndamento.id;
-
-            // Opcional: Deletar itens órfãos
-            for (const item of inventarioItems) {
-                await db.entities.InventarioItem.delete(item.id);
-            }
-
-            await db.entities.Inventario.delete(id);
-
-            await queryClient.invalidateQueries({ queryKey: ['inventarios'] });
-            toast.dismiss();
-            toast.success("Balanço cancelado.");
-            setActiveTab("historico");
-        } catch (error) {
-            toast.dismiss();
-            toast.error("Erro ao cancelar: " + error.message);
-        }
-    };
-
-    const reverterInventario = async (id) => {
-        if (!confirm("Aviso Crítico: Tem certeza que deseja reverter este balanço? Isso irá recompor o estoque exatamente como estava antes do balanço ser finalizado e marcará este balanço como cancelado.")) return;
-
-        try {
-            toast.loading("Revertendo balanço...");
-
-            const itens = await db.entities.InventarioItem.list();
-            const itensDesteBalanço = itens.filter(i => i.inventario_id === id && i.ajustado === 1 && i.divergencia !== 0);
-
-            for (const item of itensDesteBalanço) {
-                // Reverter o Lote
-                const lote = lotes.find(l => l.id === item.lote_id);
-                if (lote) {
-                    const novaQtd = (lote.quantidade_atual || 0) - item.divergencia;
-                    await db.entities.Lote.update(lote.id, {
-                        quantidade_atual: Math.max(0, novaQtd),
-                        status: novaQtd > 0 ? 'disponivel' : 'esgotado'
-                    });
-
-                    // Reverter o Medicamento
-                    const med = medicamentos.find(m => m.id === item.medicamento_id);
-                    if (med) {
-                        const novoEstoqueMed = (med.estoque_atual || 0) - item.divergencia;
-                        await db.entities.Medicamento.update(med.id, {
-                            estoque_atual: Math.max(0, novoEstoqueMed)
-                        });
-                    }
-                }
-            }
-
-            // Marcar o inventário como cancelado
-            await db.entities.Inventario.update(id, {
-                status: 'cancelado'
-            });
-
-            await queryClient.invalidateQueries();
-            toast.dismiss();
-            toast.success("Balanço revertido e estoque restaurado.");
-        } catch (error) {
-            console.error(error);
-            toast.dismiss();
-            toast.error("Erro ao reverter o balanço: " + error.message);
-        }
-    };
-
-    const handleDeletarRegistroSemReverter = async () => {
-        if (!deleteBalançoId) return;
-        try {
-            toast.loading("Excluindo registro...");
-            
-            // 1. Deletar itens do inventário para evitar órfãos
-            const itens = await db.entities.InventarioItem.list();
-            const itensDesteBalanço = itens.filter(i => i.inventario_id === deleteBalançoId);
-            for (const item of itensDesteBalanço) {
-                await db.entities.InventarioItem.delete(item.id);
-            }
-
-            // 2. Deletar o registro de inventário
-            await db.entities.Inventario.delete(deleteBalançoId);
-
-            await queryClient.invalidateQueries({ queryKey: ['inventarios'] });
-            toast.dismiss();
-            toast.success("Registro excluído com sucesso (Estoque mantido).");
-            setDeleteBalançoId(null);
-        } catch (error) {
-            console.error(error);
-            toast.dismiss();
-            toast.error("Erro ao excluir registro: " + error.message);
         }
     };
 
@@ -458,7 +374,9 @@ export default function Inventario() {
             });
         }
 
-        return [...baseList].sort((a, b) => a.medicamento_nome.localeCompare(b.medicamento_nome));
+        return [...baseList].sort((a, b) =>
+            String(a.medicamento_nome || "").localeCompare(String(b.medicamento_nome || ""))
+        );
     }, [inventarioEmAndamento, inventarioItems, lotes, medicamentos, filterType]);
 
     const handlePrintManual = (blind = false) => {
@@ -754,9 +672,14 @@ export default function Inventario() {
                                             <Printer className="w-4 h-4" />
                                             Folha de Contagem
                                         </Button>
-                                        <Button variant="outline" onClick={saveProgresso} className="gap-2">
+                                        <Button
+                                            variant="outline"
+                                            onClick={lancarContagens}
+                                            className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-semibold"
+                                            title="Grava no estoque as contagens preenchidas e ainda não lançadas"
+                                        >
                                             <Save className="w-4 h-4" />
-                                            Salvar Progresso
+                                            Lançar contagens
                                         </Button>
                                         <Button
                                             variant="destructive"
