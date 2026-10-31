@@ -26,7 +26,15 @@ SELECT count(*) AS dispensacoes_a_reclassificar,
    AND (paciente_id IS NOT NULL OR paciente_nome IS NOT NULL)
    AND coalesce(medicamento_nome,'') NOT LIKE '[LOG%'
    AND lote_id IS NOT NULL
-   AND coalesce(quantidade,0) > 0;
+   AND coalesce(quantidade,0) > 0
+   AND NOT EXISTS (
+       SELECT 1 FROM "TransferenciaPendente" t
+        WHERE t.lote_id = "Saida".lote_id
+          AND t.direcao = 'para_satelite'
+          AND t.status = 'Aceito'
+          AND coalesce(t.deleted_at, '') = ''
+          AND t.data_aceite::date <= "Saida".data_saida::date
+   );
 
 BEGIN;
 
@@ -57,6 +65,14 @@ SELECT 'migr-' || s.id,
    AND EXISTS (SELECT 1 FROM "Lote" l WHERE l.id = s.lote_id)
    AND NOT EXISTS (
        SELECT 1 FROM "TransferenciaPendente" t WHERE t.id = 'migr-' || s.id
+   )
+   AND NOT EXISTS (
+       SELECT 1 FROM "TransferenciaPendente" t
+        WHERE t.lote_id = s.lote_id
+          AND t.direcao = 'para_satelite'
+          AND t.status = 'Aceito'
+          AND coalesce(t.deleted_at, '') = ''
+          AND t.data_aceite::date <= s.data_saida::date
    );
 
 -- 2. a saída passa a ser do satélite ----------------------------------
