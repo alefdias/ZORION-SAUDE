@@ -313,19 +313,55 @@ export default function SateliteInventario() {
     const med = ajusteModal.medicamento;
     if (!med) return;
 
-    // Validar se há lotes sem número
-    for (const item of ajusteModal.lotesItens) {
-      if (item.isNovo && (!item.numero_lote || !item.numero_lote.trim())) {
-        toast.error("Preencha o número do lote para todos os lotes adicionados.");
+    // Normaliza e valida TUDO antes de gravar qualquer coisa: sem transação
+    // entre as chamadas, um erro no meio deixaria lote gravado e medicamento não.
+    const soData = (v) => String(v || "").slice(0, 10);
+
+    const linhas = ajusteModal.lotesItens.map((it, idx) => {
+      const texto = String(it.quantidade_satelite ?? "").trim();
+      const bruto = texto === "" ? 0 : parseInt(texto, 10);
+      return {
+        ...it,
+        linha: idx + 1,
+        qtd: Number.isNaN(bruto) ? 0 : Math.max(0, bruto),
+      };
+    });
+
+    for (const it of linhas) {
+      if (it.isNovo && !String(it.numero_lote || "").trim()) {
+        toast.error(`Linha ${it.linha}: informe o número do lote.`);
+        return;
+      }
+      if (it.isNovo && !soData(it.data_validade)) {
+        toast.error(
+          `Linha ${it.linha}: informe a validade do lote ${it.numero_lote}. ` +
+          `Sem validade o lote não pode ser rastreado (e o sistema aceitaria duplicar).`
+        );
         return;
       }
     }
 
+    // Mesmo lote (número + validade) duas vezes na mesma contagem = soma dobrada
+    const identidades = new Set();
+    for (const it of linhas) {
+      const numero = String(it.numero_lote || "").trim().toUpperCase();
+      if (!numero || numero === "S/L") continue;
+      const chave = `${numero}|${soData(it.data_validade)}`;
+      if (identidades.has(chave)) {
+        toast.error(
+          `O lote ${it.numero_lote} vence ${soData(it.data_validade) || "sem validade"} aparece duas vezes. ` +
+          `Some as quantidades em uma linha só.`
+        );
+        return;
+      }
+      identidades.add(chave);
+    }
+
+    // Cópia de trabalho: um lote criado na linha 1 já é encontrado na linha 2
+    const lotesLocais = [...lotes];
+
     // Calcular soma total da contagem física
-    const totalContado = ajusteModal.lotesItens.reduce((acc, it) => {
-      const val = parseInt(it.quantidade_satelite, 10);
-      return acc + (isNaN(val) || val < 0 ? 0 : val);
-    }, 0);
+    const totalContado = linhas.reduce((acc, it) => acc + it.qtd, 0);
 
     const saldoAnterior = Number(med.estoque_satelite) || 0;
     const diferencaTotal = totalContado - saldoAnterior;
@@ -346,18 +382,19 @@ export default function SateliteInventario() {
       toast.loading("Gravando balanço satélite por lote...");
 
       // Processar cada lote individualmente com número limpo direto
-      for (const it of ajusteModal.lotesItens) {
-        const qtdFisicaLote = parseInt(it.quantidade_satelite, 10) || 0;
+      for (const it of linhas) {
+        const qtdFisicaLote = it.qtd;
         let targetLoteId = it.loteId;
 
         // Se for novo lote manual e ainda não tiver ID no banco
         if (it.isNovo && !targetLoteId && it.numero_lote) {
           const numLoteLimpo = it.numero_lote.trim();
-          const matchExisting = lotes.find(
+          const matchExisting = lotesLocais.find(
             (l) =>
               String(l.medicamento_id || l.medicamentoId || "") === String(med.id) &&
               l.numero_lote &&
-              l.numero_lote.trim().toLowerCase() === numLoteLimpo.toLowerCase()
+              l.numero_lote.trim().toLowerCase() === numLoteLimpo.toLowerCase() &&
+              soData(l.data_validade) === soData(it.data_validade)
           );
 
           if (matchExisting) {
@@ -378,6 +415,7 @@ export default function SateliteInventario() {
               created_at: new Date().toISOString(),
             });
             targetLoteId = novoLoteCriado?.id || null;
+            if (novoLoteCriado?.id) lotesLocais.push(novoLoteCriado);
           }
         } else if (targetLoteId) {
           // Lote existente: grava estritamente o número limpo contado para a Satélite (Central intocada!)

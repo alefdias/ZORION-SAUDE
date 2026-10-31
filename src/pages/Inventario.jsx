@@ -846,9 +846,9 @@ export default function Inventario() {
                                                     {visibleColumns.medicamento && (
                                                         <TableCell className="py-1">
                                                             <div>
-                                                                <p className="font-semibold text-slate-800 text-sm leading-tight">{item.medicamento_nome}</p>
+                                                                <p className="font-bold text-slate-900 text-base leading-tight">{item.medicamento_nome}</p>
                                                                 <div className="flex items-center gap-2 mt-0.5">
-                                                                    <span className="text-[9px] font-mono text-slate-500 uppercase tracking-tighter">LOTE: {item.numero_lote}</span>
+                                                                    <span className="text-[13px] font-mono font-bold text-slate-700 uppercase tracking-wide">LOTE: {item.numero_lote}</span>
                                                                 </div>
                                                             </div>
                                                         </TableCell>
