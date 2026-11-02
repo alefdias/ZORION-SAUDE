@@ -1382,8 +1382,7 @@ export function AjusteDiasEntregaModal({
           dataFimFmt = format(parseISO(dataFimCoberturaMed), "dd/MM/yyyy");
         } catch (e) {}
 
-        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
-        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no lote físico ou estoque da Central)
+        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no estoque da Central)
         if (med && medId) {
           try {
             await db.entities.Medicamento.update(medId, {
@@ -1391,6 +1390,24 @@ export function AjusteDiasEntregaModal({
             });
           } catch (medErr) {
             console.warn("Aviso ao atualizar estoque satélite do medicamento:", medErr);
+          }
+        }
+
+        // 1b. Debitar TAMBÉM o lote físico. Sem isso o lote fica com o saldo
+        // antigo, a soma dos lotes deixa de bater com o cadastro e o modal
+        // passa a mostrar "nenhum lote disponível" depois da baixa.
+        if (loteObj?.id && loteObj.id !== "SEM_LOTE") {
+          try {
+            const saldoLoteSat = Number(
+              loteObj.saldoSatelite !== undefined
+                ? loteObj.saldoSatelite
+                : loteObj.quantidade_satelite
+            ) || 0;
+            await db.entities.Lote.update(loteObj.id, {
+              quantidade_satelite: Math.max(0, saldoLoteSat - qtd),
+            });
+          } catch (loteErr) {
+            console.warn("Aviso ao atualizar lote satélite:", loteErr);
           }
         }
 

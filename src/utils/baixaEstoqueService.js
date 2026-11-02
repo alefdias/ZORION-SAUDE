@@ -69,6 +69,19 @@ export async function cancelarEstornarBaixaGrupo({
     const loteId = s.lote_id || s.loteId;
     if (loteId) {
       devolucoesLote[String(loteId)] = (devolucoesLote[String(loteId)] || 0) + qtd;
+    } else if (medId && s.numero_lote) {
+      // Saídas antigas sem lote_id: localiza o lote pelo número para o
+      // estorno não devolver só ao cadastro e deixar o lote zerado.
+      const numero = String(s.numero_lote).trim().toUpperCase();
+      const loteDoNumero = (lotes || []).find(
+        (l) =>
+          String(l.medicamento_id || l.medicamentoId) === String(medId) &&
+          String(l.numero_lote || "").trim().toUpperCase() === numero
+      );
+      if (loteDoNumero) {
+        devolucoesLote[String(loteDoNumero.id)] =
+          (devolucoesLote[String(loteDoNumero.id)] || 0) + qtd;
+      }
     }
 
     if (s.prescricao_id) {
