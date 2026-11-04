@@ -330,8 +330,14 @@ export function SeparacaoLoteModal({
         }
       }
 
-      if (!map.has(medId)) {
-        map.set(medId, {
+      // Agrupa por NOME + CONCENTRACAO (nao por id): assim dois cadastros
+      // duplicados do mesmo medicamento viram uma linha so, e 25 MG nunca
+      // se mistura com 100 MG.
+      const chave = `${(medNome || "").trim().toLowerCase()}|${(concentracao || "").trim().toLowerCase()}`;
+
+      if (!map.has(chave)) {
+        map.set(chave, {
+          chave,
           medicamentoId: medId,
           medicamentoNome: medNome,
           concentracao,
@@ -346,7 +352,7 @@ export function SeparacaoLoteModal({
         });
       }
 
-      const item = map.get(medId);
+      const item = map.get(chave);
       item.qtdSugerida += qtdSugerida;
       item.qtdTotal += qtdSugerida;
       item.pacientesAtendidos.push({
@@ -483,7 +489,7 @@ export function SeparacaoLoteModal({
   const handleUpdateQtdTotal = (medId, novaQtd) => {
     setItensConsolidados((prev) =>
       prev.map((item) => {
-        if (item.medicamentoId !== medId) return item;
+        if (item.chave !== medId) return item;
         const q = Math.max(0, parseInt(novaQtd) || 0);
 
         let novasAlocs = item.alocacoes;
@@ -508,7 +514,7 @@ export function SeparacaoLoteModal({
   const handleToggleConferido = (medId) => {
     setItensConsolidados((prev) =>
       prev.map((item) =>
-        item.medicamentoId === medId ? { ...item, conferido: !item.conferido } : item
+        item.chave === medId ? { ...item, conferido: !item.conferido } : item
       )
     );
   };
@@ -516,11 +522,11 @@ export function SeparacaoLoteModal({
   // Marcar todos como conferidos dentro do filtro ativo
   const handleMarcarTodosConferidos = () => {
     const todosMarcados = itensFiltrados.every((i) => i.conferido);
-    const idsFiltrados = new Set(itensFiltrados.map((i) => i.medicamentoId));
+    const idsFiltrados = new Set(itensFiltrados.map((i) => i.chave));
 
     setItensConsolidados((prev) =>
       prev.map((item) => {
-        if (idsFiltrados.has(item.medicamentoId)) {
+        if (idsFiltrados.has(item.chave)) {
           return { ...item, conferido: !todosMarcados };
         }
         return item;
@@ -532,7 +538,7 @@ export function SeparacaoLoteModal({
   const handleUpdateAlocacao = (medId, allocId, campo, valor) => {
     setItensConsolidados((prev) =>
       prev.map((item) => {
-        if (item.medicamentoId !== medId) return item;
+        if (item.chave !== medId) return item;
         const novasAlocs = item.alocacoes.map((aloc) => {
           if (aloc.id !== allocId) return aloc;
           if (campo === "quantidade") {
@@ -558,7 +564,7 @@ export function SeparacaoLoteModal({
   const handleAdicionarLoteSplit = (medId) => {
     setItensConsolidados((prev) =>
       prev.map((item) => {
-        if (item.medicamentoId !== medId) return item;
+        if (item.chave !== medId) return item;
 
         const medLotes = (allLotes || [])
           .filter((l) => isLoteDoMedicamento(l, item, medicamentos))
@@ -590,7 +596,7 @@ export function SeparacaoLoteModal({
   const handleRemoverLoteSplit = (medId, allocId) => {
     setItensConsolidados((prev) =>
       prev.map((item) => {
-        if (item.medicamentoId !== medId) return item;
+        if (item.chave !== medId) return item;
         if (item.alocacoes.length <= 1) return item;
 
         const filtradas = item.alocacoes.filter((a) => a.id !== allocId);
@@ -1363,10 +1369,10 @@ export function SeparacaoLoteModal({
                         );
                         const isAlocacaoCorreta = somaAlocacoes === item.qtdTotal;
                         const temEstoqueSuficiente = estoqueSat >= item.qtdTotal;
-                        const isExpanded = !!expandedMeds[item.medicamentoId];
+                        const isExpanded = !!expandedMeds[item.chave];
 
                         return (
-                          <React.Fragment key={item.medicamentoId}>
+                          <React.Fragment key={item.chave}>
                             <TableRow
                               className={cn(
                                 "transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-900/50",
@@ -1377,7 +1383,7 @@ export function SeparacaoLoteModal({
                               <TableCell className="text-center">
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleConferido(item.medicamentoId)}
+                                  onClick={() => handleToggleConferido(item.chave)}
                                   className="cursor-pointer text-slate-400 hover:text-emerald-600 transition-colors p-1"
                                   title="Marcar como conferido no armário"
                                 >
@@ -1417,7 +1423,7 @@ export function SeparacaoLoteModal({
                               <TableCell className="text-center">
                                 <button
                                   type="button"
-                                  onClick={() => toggleExpandMed(item.medicamentoId)}
+                                  onClick={() => toggleExpandMed(item.chave)}
                                   className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
                                   title="Ver lista de pacientes que tomam este medicamento"
                                 >
@@ -1445,7 +1451,7 @@ export function SeparacaoLoteModal({
                                           type="number"
                                           min="0"
                                           value={item.qtdTotal}
-                                          onChange={(e) => handleUpdateQtdTotal(item.medicamentoId, e.target.value)}
+                                          onChange={(e) => handleUpdateQtdTotal(item.chave, e.target.value)}
                                           className="w-24 min-w-[5.5rem] h-8 px-1 text-center font-mono font-black text-sm bg-white dark:bg-slate-900 border-slate-300 text-indigo-900"
                                           title="Total somado de todos os pacientes (você pode editar antes da baixa)"
                                         />
@@ -1475,7 +1481,7 @@ export function SeparacaoLoteModal({
                                           <Select
                                             value={aloc.loteId}
                                             onValueChange={(val) =>
-                                              handleUpdateAlocacao(item.medicamentoId, aloc.id, "loteId", val)
+                                              handleUpdateAlocacao(item.chave, aloc.id, "loteId", val)
                                             }
                                           >
                                             <SelectTrigger className="h-7 text-xs font-mono font-semibold bg-white dark:bg-slate-900 border-slate-300">
@@ -1522,7 +1528,7 @@ export function SeparacaoLoteModal({
                                           type="button"
                                           variant="ghost"
                                           size="icon"
-                                          onClick={() => handleRemoverLoteSplit(item.medicamentoId, aloc.id)}
+                                          onClick={() => handleRemoverLoteSplit(item.chave, aloc.id)}
                                           className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50"
                                           title="Remover este lote dividido"
                                         >
@@ -1536,7 +1542,7 @@ export function SeparacaoLoteModal({
                                   <div className="flex items-center justify-between pt-0.5">
                                     <button
                                       type="button"
-                                      onClick={() => handleAdicionarLoteSplit(item.medicamentoId)}
+                                      onClick={() => handleAdicionarLoteSplit(item.chave)}
                                       className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
                                     >
                                       <Plus className="w-3 h-3" />
