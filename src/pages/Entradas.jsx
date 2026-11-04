@@ -138,8 +138,15 @@ export default function Entradas({ isTab = false }) {
         // 1. Obter dados frescos do DB para evitar problemas no Bulk Import
         const existingLotes = await db.entities.Lote.list();
         const normLote = (str) => (str || "").trim().toUpperCase();
+        const soData = (v) => (v ? String(v).split("T")[0] : "");
+        // O lote é identificado por MEDICAMENTO + NÚMERO + VALIDADE.
+        // Antes casava só o número e sobrescrevia a validade: duas compras do
+        // mesmo número com validades diferentes viravam um lote só (errado).
         let loteParam = existingLotes.find(
-          l => String(l.medicamento_id) === String(data.medicamento_id) && normLote(l.numero_lote) === normLote(data.numero_lote)
+          (l) =>
+            String(l.medicamento_id) === String(data.medicamento_id) &&
+            normLote(l.numero_lote) === normLote(data.numero_lote) &&
+            soData(l.data_validade) === soData(data.data_validade)
         );
 
         const volFrasco = data.volume_frasco_ml ? Number(data.volume_frasco_ml) : null;
@@ -154,7 +161,6 @@ export default function Entradas({ isTab = false }) {
           await db.entities.Lote.update(loteParam.id, {
             quantidade_atual: novaQtd,
             quantidade_inicial: novaQtdInicial,
-            data_validade: data.data_validade || loteParam.data_validade,
             status: "disponivel",
             volume_frasco_ml: volFrasco || loteParam.volume_frasco_ml || null,
           });

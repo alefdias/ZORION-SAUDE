@@ -198,9 +198,6 @@ function App() {
             ALTER TABLE "PrescricaoPaciente" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'Ativa';
             ALTER TABLE "Ala" ADD COLUMN IF NOT EXISTS "leitos" INTEGER DEFAULT 10;
             DELETE FROM "GavetaPaciente";
-            UPDATE "PrescricaoPaciente" 
-            SET "totalDiario" = ROUND("totalDiario") 
-            WHERE "totalDiario" IS NOT NULL AND ("totalDiario"::numeric % 1) != 0;
           `,
         });
         queryClientInstance.invalidateQueries();

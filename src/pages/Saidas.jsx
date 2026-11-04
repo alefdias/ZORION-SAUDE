@@ -153,13 +153,32 @@ export default function Saidas({ isTab = false }) {
       const pacNomeLimpo = (commonData.paciente_nome || "").trim();
       const alaNomeLimpa = (commonData.ala_nome || "").trim();
 
+      // Acumula por medicamento/lote: duas linhas do mesmo medicamento
+      // antes partiam do mesmo saldo e a segunda sobrescrevia a primeira.
+      const debitoMed = {};
+      const debitoLote = {};
+      const baseMed = {};
+      const baseLote = {};
+
       for (const item of itens) {
+        // Se o formulário não trouxe lote, usa o lote do medicamento com
+        // saldo na satélite (FEFO). Antes a saída ficava sem lote e o débito
+        // caía só no cadastro.
+        const medItem = medicamentos.find(m => m.id === item.medicamento_id);
+        const loteFallback = medItem
+          ? (lotes || [])
+              .filter(l => String(l.medicamento_id || l.medicamentoId) === String(medItem.id) && (Number(l.quantidade_satelite) || 0) > 0)
+              .sort((a, b) => new Date(a.data_validade || 9999999999999) - new Date(b.data_validade || 9999999999999))[0]
+          : null;
+        const loteIdFinal = item.lote_id || loteFallback?.id || null;
+        const numeroLoteFinal = item.numero_lote || loteFallback?.numero_lote || "S/ Lote";
+
         const saidaData = {
           ...commonData,
           medicamento_id: item.medicamento_id,
           medicamento_nome: item.medicamento_nome,
-          lote_id: item.lote_id,
-          numero_lote: item.numero_lote,
+          lote_id: loteIdFinal,
+          numero_lote: numeroLoteFinal,
           quantidade: item.quantidade,
           paciente_id: commonData.paciente_id || null,
           paciente_nome: pacNomeLimpo || null,
@@ -186,23 +205,34 @@ export default function Saidas({ isTab = false }) {
           `Baixa manual de ${item.quantidade} un do medicamento '${item.medicamento_nome}' (Lote: ${item.numero_lote || 'N/I'}). Destino: ${saidaData.destino || 'Não especificado'}, Motivo: ${saidaData.motivo || 'Manual'}`
         );
 
-        // 3. Atualizar estoque do medicamento (Apenas Satélite)
+        // 3. Acumula o débito do medicamento (Apenas Satélite)
         const medicamento = medicamentos.find(m => m.id === saidaData.medicamento_id);
         if (medicamento) {
-          await db.entities.Medicamento.update(medicamento.id, {
-            estoque_satelite: Math.max(0, (medicamento.estoque_satelite || 0) - saidaData.quantidade),
-          });
+          if (baseMed[medicamento.id] === undefined) baseMed[medicamento.id] = Number(medicamento.estoque_satelite) || 0;
+          debitoMed[medicamento.id] = (debitoMed[medicamento.id] || 0) + Number(saidaData.quantidade || 0);
         }
 
-        // 4. Atualizar quantidade_satelite do lote correspondente se houver lote vinculado
+        // 4. Acumula o débito do lote correspondente
         const loteId = saidaData.lote_id;
         if (loteId) {
           const loteObj = (lotes || []).find(l => String(l.id) === String(loteId));
           if (loteObj) {
-            const novaQtdSat = Math.max(0, (Number(loteObj.quantidade_satelite) || 0) - saidaData.quantidade);
-            await db.entities.Lote.update(loteId, { quantidade_satelite: novaQtdSat });
+            if (baseLote[loteId] === undefined) baseLote[loteId] = Number(loteObj.quantidade_satelite) || 0;
+            debitoLote[loteId] = (debitoLote[loteId] || 0) + Number(saidaData.quantidade || 0);
           }
         }
+      }
+
+      // Aplica os débitos uma vez por medicamento/lote
+      for (const [id, total] of Object.entries(debitoMed)) {
+        await db.entities.Medicamento.update(id, {
+          estoque_satelite: Math.max(0, (baseMed[id] || 0) - total),
+        });
+      }
+      for (const [id, total] of Object.entries(debitoLote)) {
+        await db.entities.Lote.update(id, {
+          quantidade_satelite: Math.max(0, (baseLote[id] || 0) - total),
+        });
       }
       return createdSaidas;
     },

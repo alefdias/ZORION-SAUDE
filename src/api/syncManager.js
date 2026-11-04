@@ -109,9 +109,6 @@ export async function initializeApp() {
                     ip, dbName, password,
                     query: `
                         DELETE FROM "GavetaPaciente";
-                        UPDATE "PrescricaoPaciente" 
-                        SET "totalDiario" = ROUND("totalDiario") 
-                        WHERE "totalDiario" IS NOT NULL AND ("totalDiario"::numeric % 1) != 0;
                     `
                 });
             } catch (e) {

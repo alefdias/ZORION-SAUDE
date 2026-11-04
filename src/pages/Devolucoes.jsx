@@ -319,14 +319,22 @@ export default function Devolucoes({ isTab = false }) {
         estoque_satelite: novoEstoqueSatelite
       });
 
-      // 1b. Credita o lote da devolução (mantém cadastro e lote alinhados)
-      if (form.lote_id) {
-        const loteDev = (lotes || []).find((l) => l.id === form.lote_id);
-        if (loteDev) {
-          await db.entities.Lote.update(loteDev.id, {
-            quantidade_satelite: (Number(loteDev.quantidade_satelite) || 0) + qtdNum
-          });
-        }
+      // 1b. Credita o lote da devolução (mantém cadastro e lote alinhados).
+      // Se o usuário não escolheu lote, usa um lote do próprio medicamento —
+      // antes a devolução entrava só no cadastro e deixava o lote defasado.
+      let loteDev = form.lote_id
+        ? (lotes || []).find((l) => l.id === form.lote_id)
+        : null;
+      if (!loteDev) {
+        const doMed = (lotes || []).filter(
+          (l) => String(l.medicamento_id || l.medicamentoId) === String(med.id)
+        );
+        loteDev = doMed.find((l) => (Number(l.quantidade_satelite) || 0) > 0) || doMed[0] || null;
+      }
+      if (loteDev) {
+        await db.entities.Lote.update(loteDev.id, {
+          quantidade_satelite: (Number(loteDev.quantidade_satelite) || 0) + qtdNum
+        });
       }
 
       // 2. Cria registro na tabela Entrada
@@ -334,9 +342,9 @@ export default function Devolucoes({ isTab = false }) {
         medicamento_id: med.id,
         medicamento_nome: med.nome,
         fornecedor_nome: origemFormatada,
-        lote_id: form.lote_id || null,
-        numero_lote: form.numero_lote || "DEVOLVIDO",
-        data_validade: form.data_validade || null,
+        lote_id: loteDev?.id || form.lote_id || null,
+        numero_lote: loteDev?.numero_lote || form.numero_lote || "DEVOLVIDO",
+        data_validade: loteDev?.data_validade || form.data_validade || null,
         quantidade: qtdNum,
         data_entrada: todayStr,
         created_at: nowIso,

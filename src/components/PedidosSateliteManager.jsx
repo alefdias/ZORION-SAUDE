@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { format, parseISO, differenceInCalendarDays, addDays } from "date-fns";
+import { safeFormatDate } from "@/utils/dateUtils";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
@@ -687,7 +688,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
             if (alocsValidas.length > 0) {
               loteDesc = alocsValidas.map(a => {
                 const num = a.numero_lote || a.lote || "S/L";
-                const val = a.data_validade ? format(new Date(a.data_validade), "dd/MM/yy") : "-";
+                const val = a.data_validade ? safeFormatDate(a.data_validade, "dd/MM/yy") : "-";
                 return `L: ${num} (V: ${val}) [${a.quantidade || a.qtd} un]`;
               }).join(" | ");
             }
@@ -706,7 +707,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
               .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
             if (medLotes.length > 0) {
               const fefo = medLotes[0];
-              const val = fefo.data_validade ? format(new Date(fefo.data_validade), "dd/MM/yy") : "-";
+              const val = fefo.data_validade ? safeFormatDate(fefo.data_validade, "dd/MM/yy") : "-";
               loteDesc = `⭐ FEFO: ${fefo.numero_lote} (Val: ${val})`;
               if (medLotes.length > 1) {
                 loteDesc += ` • Disp: ${fefo.quantidade_atual} un`;
@@ -769,7 +770,7 @@ export function PedidosSateliteManager({ mode = "satelite" }) {
         let loteDesc = "";
         if (medLotes.length > 0) {
           const fefo = medLotes[0];
-          const val = fefo.data_validade ? format(new Date(fefo.data_validade), "dd/MM/yy") : "-";
+          const val = fefo.data_validade ? safeFormatDate(fefo.data_validade, "dd/MM/yy") : "-";
           loteDesc = `⭐ FEFO: ${fefo.numero_lote} (Val: ${val})`;
           if (medLotes.length > 1) {
             loteDesc += ` • Disp: ${fefo.quantidade_atual} un`;
@@ -3717,7 +3718,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                                             <SelectContent>
                                               {medLotes.map((l, lIdx) => (
                                                 <SelectItem key={l.id} value={l.id} className="text-xs font-mono">
-                                                  {l.numero_lote} (Val: {l.data_validade ? format(new Date(l.data_validade), "dd/MM/yy") : "-"}) — Saldo: {l.quantidade_atual} un
+                                                  {l.numero_lote} (Val: {l.data_validade ? safeFormatDate(l.data_validade, "dd/MM/yy") : "-"}) — Saldo: {l.quantidade_atual} un
                                                   {lIdx === 0 ? " 🌟 [FEFO]" : ""}
                                                 </SelectItem>
                                               ))}
@@ -3758,7 +3759,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                                       <div className="flex items-center justify-between text-[10px] text-slate-500 px-0.5">
                                         <span>
                                           Saldo Central: <strong className={isExcedente ? "text-red-600" : "text-slate-800"}>{saldoLote} un</strong>
-                                          {loteObj?.data_validade && ` • Val: ${format(new Date(loteObj.data_validade), "dd/MM/yy")}`}
+                                          {loteObj?.data_validade && ` • Val: ${safeFormatDate(loteObj.data_validade, "dd/MM/yy")}`}
                                         </span>
                                         {isExcedente && (
                                           <span className="text-red-600 font-bold">⚠️ Excede saldo!</span>
@@ -3827,7 +3828,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                                 {item.alocacoes_lote.map((aloc, aIdx) => (
                                   <div key={aIdx} className="bg-indigo-50/80 border border-indigo-200 rounded px-1.5 py-0.5 text-[11px] flex items-center justify-between gap-1">
                                     <span className="font-bold text-indigo-950 font-mono">Lote: {aloc.numero_lote || "S/ Lote"}</span>
-                                    <span className="text-slate-600 text-[10px]">{aloc.data_validade ? `Val: ${format(new Date(aloc.data_validade), "dd/MM/yy")}` : ""}</span>
+                                    <span className="text-slate-600 text-[10px]">{aloc.data_validade ? `Val: ${safeFormatDate(aloc.data_validade, "dd/MM/yy")}` : ""}</span>
                                     <Badge className="bg-indigo-600 text-white font-mono text-[10px] px-1 py-0 h-4">{aloc.quantidade} un</Badge>
                                   </div>
                                 ))}
@@ -3840,7 +3841,7 @@ export function OrderDetailsModal({ open, onOpenChange, pedido, mode, onUpdateSt
                               </Badge>
                               {item.data_validade && (
                                 <span className="text-[11px] text-slate-600">
-                                  Val: {format(new Date(item.data_validade), "dd/MM/yyyy")}
+                                  Val: {safeFormatDate(item.data_validade, "dd/MM/yyyy")}
                                 </span>
                               )}
                             </div>

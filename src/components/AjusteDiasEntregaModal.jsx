@@ -1366,6 +1366,14 @@ export function AjusteDiasEntregaModal({
       const pacAlaId = patient?.alaId || patient?.ala_id || null;
       const pacAlaNome = patient?.alaNome || patient?.ala_nome || "Geral";
 
+      // Acumula os débitos por medicamento/lote: se o paciente tem duas
+      // prescrições do mesmo medicamento, antes cada uma partia do mesmo
+      // saldo e a segunda sobrescrevia a primeira (debitava só uma).
+      const debitoMed = {};
+      const debitoLote = {};
+      const baseMed = {};
+      const baseLote = {};
+
       for (const { item, qtd, diasEfetivos, dataFimCoberturaMed, loteObj } of itensParaBaixar) {
         const { pr, med, doseAtual } = item;
         const medId = med?.id || pr.medicamentoId;
@@ -1382,33 +1390,23 @@ export function AjusteDiasEntregaModal({
           dataFimFmt = format(parseISO(dataFimCoberturaMed), "dd/MM/yyyy");
         } catch (e) {}
 
-        // 1. Debitar EXCLUSIVAMENTE do estoque_satelite (NUNCA toca no estoque da Central)
+        // 1. Acumula o débito do cadastro (aplicado uma vez por medicamento)
         if (med && medId) {
-          try {
-            await db.entities.Medicamento.update(medId, {
-              estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - qtd),
-            });
-          } catch (medErr) {
-            console.warn("Aviso ao atualizar estoque satélite do medicamento:", medErr);
-          }
+          if (baseMed[medId] === undefined) baseMed[medId] = Number(med.estoque_satelite) || 0;
+          debitoMed[medId] = (debitoMed[medId] || 0) + qtd;
         }
 
-        // 1b. Debitar TAMBÉM o lote físico. Sem isso o lote fica com o saldo
-        // antigo, a soma dos lotes deixa de bater com o cadastro e o modal
-        // passa a mostrar "nenhum lote disponível" depois da baixa.
+        // 1b. Acumula o débito do lote físico
         if (loteObj?.id && loteObj.id !== "SEM_LOTE") {
-          try {
-            const saldoLoteSat = Number(
+          const chaveLote = loteObj.id;
+          if (baseLote[chaveLote] === undefined) {
+            baseLote[chaveLote] = Number(
               loteObj.saldoSatelite !== undefined
                 ? loteObj.saldoSatelite
                 : loteObj.quantidade_satelite
             ) || 0;
-            await db.entities.Lote.update(loteObj.id, {
-              quantidade_satelite: Math.max(0, saldoLoteSat - qtd),
-            });
-          } catch (loteErr) {
-            console.warn("Aviso ao atualizar lote satélite:", loteErr);
           }
+          debitoLote[chaveLote] = (debitoLote[chaveLote] || 0) + qtd;
         }
 
         // 2. Gravar registro em Saida com cobertura e lote rastreável
@@ -1458,6 +1456,26 @@ export function AjusteDiasEntregaModal({
           } catch (prErr) {
             console.warn("Aviso ao atualizar cobertura da prescrição:", prErr);
           }
+        }
+      }
+
+      // 3b. Aplica os débitos acumulados (uma vez por medicamento/lote)
+      for (const [id, total] of Object.entries(debitoMed)) {
+        try {
+          await db.entities.Medicamento.update(id, {
+            estoque_satelite: Math.max(0, (baseMed[id] || 0) - total),
+          });
+        } catch (medErr) {
+          console.warn("Aviso ao atualizar estoque satélite do medicamento:", medErr);
+        }
+      }
+      for (const [id, total] of Object.entries(debitoLote)) {
+        try {
+          await db.entities.Lote.update(id, {
+            quantidade_satelite: Math.max(0, (baseLote[id] || 0) - total),
+          });
+        } catch (loteErr) {
+          console.warn("Aviso ao atualizar lote satélite:", loteErr);
         }
       }
 
