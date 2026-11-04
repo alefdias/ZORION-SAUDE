@@ -800,10 +800,25 @@ export default function PacientesMedicao() {
           const medLotes = (lotes || [])
             .filter(l => (l.medicamento_id === med.id || l.medicamentoId === med.id))
             .sort((a, b) => new Date(a.data_validade) - new Date(b.data_validade));
-          const loteDoMed = medLotes[0] || lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
+          const loteDoMed =
+            medLotes.find(l => (Number(l.quantidade_satelite) || 0) > 0) ||
+            medLotes[0] ||
+            lotes.find(l => (l.medicamento_id === med.id || l.medicamentoId === med.id));
 
           const loteId = loteDoMed ? loteDoMed.id : null;
           const numeroLote = loteDoMed ? (loteDoMed.numero_lote || "S/ Lote") : "Saída Fixa Continuada";
+
+          // A dispensação sai do satélite: debita o lote físico junto com o
+          // cadastro (antes só o cadastro era debitado e a soma dos lotes
+          // deixava de bater com o estoque_satelite).
+          if (loteDoMed) {
+            sqlStatements.push(
+              db.buildUpdateSql("Lote", loteDoMed.id, {
+                quantidade_satelite: Math.max(0, (Number(loteDoMed.quantidade_satelite) || 0) - item.qtdPeriodo),
+                status: (Number(loteDoMed.quantidade_satelite) || 0) - item.qtdPeriodo <= 0 ? "esgotado" : loteDoMed.status,
+              })
+            );
+          }
 
           sqlStatements.push(
             db.buildInsertSql("Saida", {
