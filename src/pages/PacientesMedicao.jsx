@@ -591,6 +591,14 @@ export default function PacientesMedicao() {
       const d14 = parseFloat(data.dose14) || 0;
       const d22 = parseFloat(data.dose22) || 0;
       const d06 = parseFloat(data.dose06) || 0;
+
+      // O sistema não trabalha com dose fracionada: bloqueia 0,5 / 1,5 etc.
+      if ([d08, d14, d22, d06].some((v) => !Number.isInteger(v))) {
+        throw new Error(
+          "Dose fracionada não é permitida. Informe números inteiros (ex.: 1, 2, 3)."
+        );
+      }
+
       const totalDiario = d08 + d14 + d22 + d06;
       const esquema = `${d08}-${d14}-${d22}-${d06}`;
 

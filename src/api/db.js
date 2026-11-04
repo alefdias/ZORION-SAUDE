@@ -725,7 +725,8 @@ const createEntityProxy = (entityName) => ({
 
   get: async (id) => {
     const { ip, dbName, password } = getPgConfig();
-    const query = `SELECT * FROM "${entityName}" WHERE "id" = '${id}'`;
+    const safeId = String(id ?? "").replace(/'/g, "''");
+    const query = `SELECT * FROM "${entityName}" WHERE "id" = '${safeId}'`;
     try {
       const data = await invoke("query_postgres", { ip, dbName, password, query });
       if (data.length === 0) return null;
@@ -860,10 +861,9 @@ const createEntityProxy = (entityName) => ({
         if (entityName === "Medicamento") {
             // Soft delete Medicamento and cascade to Lote, InventarioItem, Saida, Entrada, Emprestimo
             const queries = [
+                // Saida/Entrada NAO sao apagadas: o historico de movimentacao
+                // tem de sobreviver a exclusao do cadastro.
                 `UPDATE "InventarioItem" SET deleted_at = CURRENT_TIMESTAMP WHERE medicamento_id = '${id}'`,
-                `UPDATE "Emprestimo" SET deleted_at = CURRENT_TIMESTAMP WHERE medicamento_id = '${id}'`,
-                `UPDATE "Saida" SET deleted_at = CURRENT_TIMESTAMP WHERE medicamento_id = '${id}'`,
-                `UPDATE "Entrada" SET deleted_at = CURRENT_TIMESTAMP WHERE medicamento_id = '${id}'`,
                 `UPDATE "Lote" SET deleted_at = CURRENT_TIMESTAMP WHERE medicamento_id = '${id}'`,
                 `UPDATE "Medicamento" SET deleted_at = CURRENT_TIMESTAMP WHERE "id" = '${id}'`
             ];
@@ -875,10 +875,8 @@ const createEntityProxy = (entityName) => ({
         } else if (entityName === "Lote") {
             // Soft delete Lote and cascade
             const queries = [
+                // Mantem Saida/Entrada: o historico fica visivel mesmo com o lote excluido.
                 `UPDATE "InventarioItem" SET deleted_at = CURRENT_TIMESTAMP WHERE lote_id = '${id}'`,
-                `UPDATE "Emprestimo" SET deleted_at = CURRENT_TIMESTAMP WHERE lote_id = '${id}'`,
-                `UPDATE "Saida" SET deleted_at = CURRENT_TIMESTAMP WHERE lote_id = '${id}'`,
-                `UPDATE "Entrada" SET deleted_at = CURRENT_TIMESTAMP WHERE lote_id = '${id}'`,
                 `UPDATE "Lote" SET deleted_at = CURRENT_TIMESTAMP WHERE "id" = '${id}'`
             ];
             for (let q of queries) {

@@ -73,13 +73,21 @@ export function calcularLotesSatelite({
     return [];
   }
 
+  // Lote vencido NÃO pode ser oferecido para dispensação.
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const isVencido = (l) => {
+    const d = safeParseISO(l.data_validade);
+    return d ? d < hoje : false;
+  };
+
   // PRIORIDADE 1: lotes com quantidade_satelite gravada.
   // Antes só retornava se a soma fosse EXATAMENTE igual ao saldo do cadastro;
   // qualquer 1 unidade de diferença escondia todos os lotes ("Nenhum lote
   // físico disponível"). Agora mostra os lotes que têm saldo e apenas avisa
   // da divergência — o lote nunca some por causa de arredondamento/atraso de
   // sincronização entre cadastro e lote.
-  const lotesGravados = lotesDoMed.filter((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0);
+  const lotesGravados = lotesDoMed.filter((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0 && !isVencido(l));
   const somaGravada = lotesGravados.reduce((s, l) => s + Number(l.quantidade_satelite || 0), 0);
 
   if (lotesGravados.length > 0) {
@@ -259,7 +267,7 @@ export function calcularLotesSatelite({
       ...l,
       saldoSatelite: Math.max(0, mapaSaldoLote[l.id] || 0),
     }))
-    .filter((l) => l.saldoSatelite > 0);
+    .filter((l) => l.saldoSatelite > 0 && !isVencido(l));
 
   // ---------------------------------------------------------------------
   // ATENÇÃO — aqui ficava a "reconciliação inteligente".
