@@ -745,6 +745,14 @@ export default function LivroRegistro() {
     }
     try {
       const qtdInt = parseInt(perdaQtd, 10);
+
+      // Localiza o lote pelo número para debitar o satélite do lote também
+      const lotePerda = (lotes || []).find(
+        (l) =>
+          String(l.medicamento_id || l.medicamentoId) === String(effectiveSelectedMedId) &&
+          String(l.numero_lote || "").trim().toUpperCase() === String(perdaLote || "").trim().toUpperCase()
+      );
+
       const saidaRes = await db.entities.Saida.create({
         medicamento_id: effectiveSelectedMedId,
         medicamento_nome: selectedMed?.nome || "Controlado",
@@ -752,6 +760,7 @@ export default function LivroRegistro() {
         destino: "Perda",
         motivo: finalMotivo,
         responsavel: currentUser.full_name,
+        lote_id: lotePerda?.id || null,
         numero_lote: perdaLote,
         data_saida: new Date().toISOString()
       });
@@ -759,6 +768,13 @@ export default function LivroRegistro() {
       if (selectedMed) {
         await db.entities.Medicamento.update(selectedMed.id, {
           estoque_satelite: Math.max(0, (selectedMed.estoque_satelite || 0) - qtdInt)
+        });
+      }
+
+      // Debita o lote físico junto (antes só o cadastro era debitado)
+      if (lotePerda) {
+        await db.entities.Lote.update(lotePerda.id, {
+          quantidade_satelite: Math.max(0, (Number(lotePerda.quantidade_satelite) || 0) - qtdInt)
         });
       }
 

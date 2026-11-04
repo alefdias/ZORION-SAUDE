@@ -689,15 +689,18 @@ export function SeparacaoLoteModal({
           if (qtdAloc <= 0) continue;
 
           const loteObj = (lotes || []).find((l) => String(l.id) === String(aloc.loteId));
-          if (loteObj && (Number(loteObj.quantidade_atual) || 0) > 0) {
-            const novoSaldoLote = Math.max(0, (Number(loteObj.quantidade_atual) || 0) - qtdAloc);
+          if (loteObj && (Number(loteObj.quantidade_satelite) || 0) > 0) {
+            // A separação sai da SATÉLITE: debita quantidade_satelite.
+            // Antes debitava quantidade_atual (central) e deixava o satélite
+            // do lote intacto — o que desalinhava cadastro e lote.
+            const novoSaldoLote = Math.max(0, (Number(loteObj.quantidade_satelite) || 0) - qtdAloc);
             sqlStatements.push(
               db.buildUpdateSql("Lote", loteObj.id, {
-                quantidade_atual: novoSaldoLote,
+                quantidade_satelite: novoSaldoLote,
                 status: novoSaldoLote <= 0 ? "esgotado" : loteObj.status,
               })
             );
-            loteObj.quantidade_atual = novoSaldoLote;
+            loteObj.quantidade_satelite = novoSaldoLote;
           }
         }
 

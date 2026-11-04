@@ -73,11 +73,22 @@ export function calcularLotesSatelite({
     return [];
   }
 
-  // PRIORIDADE 1: Se os lotes possuem quantidade_satelite gravada explicitamente E a soma bate com o saldo da Satélite
+  // PRIORIDADE 1: lotes com quantidade_satelite gravada.
+  // Antes só retornava se a soma fosse EXATAMENTE igual ao saldo do cadastro;
+  // qualquer 1 unidade de diferença escondia todos os lotes ("Nenhum lote
+  // físico disponível"). Agora mostra os lotes que têm saldo e apenas avisa
+  // da divergência — o lote nunca some por causa de arredondamento/atraso de
+  // sincronização entre cadastro e lote.
   const lotesGravados = lotesDoMed.filter((l) => l.quantidade_satelite !== undefined && l.quantidade_satelite !== null && Number(l.quantidade_satelite) > 0);
   const somaGravada = lotesGravados.reduce((s, l) => s + Number(l.quantidade_satelite || 0), 0);
-  
-  if (lotesGravados.length > 0 && somaGravada === saldoSat) {
+
+  if (lotesGravados.length > 0) {
+    if (somaGravada !== saldoSat) {
+      console.warn(
+        `[satelite] ${medNome || medId}: lotes somam ${somaGravada}, cadastro ${saldoSat}. ` +
+          `Exibindo os lotes mesmo assim.`
+      );
+    }
     return lotesGravados
       .map((l) => ({
         ...l,

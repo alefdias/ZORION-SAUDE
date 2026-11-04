@@ -235,6 +235,20 @@ export default function Devolucoes({ isTab = false }) {
         await db.entities.Medicamento.update(med.id, {
           estoque_satelite: novoEstoque
         });
+
+        // Estorna também o lote (entrada de devolução não pode deixar lote inflado)
+        let loteDev = (lotes || []).find(l => l.id === dev.lote_id);
+        if (!loteDev && dev.numero_lote) {
+          loteDev = (lotes || []).find(
+            (l) => String(l.medicamento_id || l.medicamentoId) === String(med.id) &&
+                   String(l.numero_lote || "").trim() === String(dev.numero_lote).trim()
+          );
+        }
+        if (loteDev) {
+          await db.entities.Lote.update(loteDev.id, {
+            quantidade_satelite: Math.max(0, (Number(loteDev.quantidade_satelite) || 0) - (dev.quantidade || 0))
+          });
+        }
       }
 
       // 2. Registrar no log de auditoria
@@ -304,6 +318,16 @@ export default function Devolucoes({ isTab = false }) {
       await db.entities.Medicamento.update(med.id, {
         estoque_satelite: novoEstoqueSatelite
       });
+
+      // 1b. Credita o lote da devolução (mantém cadastro e lote alinhados)
+      if (form.lote_id) {
+        const loteDev = (lotes || []).find((l) => l.id === form.lote_id);
+        if (loteDev) {
+          await db.entities.Lote.update(loteDev.id, {
+            quantidade_satelite: (Number(loteDev.quantidade_satelite) || 0) + qtdNum
+          });
+        }
+      }
 
       // 2. Cria registro na tabela Entrada
       const novaEntrada = await db.entities.Entrada.create({

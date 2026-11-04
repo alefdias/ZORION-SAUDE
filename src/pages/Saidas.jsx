@@ -272,11 +272,31 @@ export default function Saidas({ isTab = false }) {
           });
         }
 
+        // Devolve ao lote antigo
+        if (oldSaida.lote_id) {
+          const oldLote = (lotes || []).find(l => l.id === oldSaida.lote_id);
+          if (oldLote) {
+            await db.entities.Lote.update(oldLote.id, {
+              quantidade_satelite: (Number(oldLote.quantidade_satelite) || 0) + (Number(oldSaida.quantidade) || 0),
+            });
+          }
+        }
+
         const newMed = medicamentos.find(m => m.id === updateData.medicamento_id);
         if (newMed) {
           await db.entities.Medicamento.update(newMed.id, {
             estoque_satelite: Math.max(0, (newMed.estoque_satelite || 0) - updateData.quantidade), 
           });
+        }
+
+        // Debita do lote novo
+        if (updateData.lote_id) {
+          const newLote = (lotes || []).find(l => l.id === updateData.lote_id);
+          if (newLote) {
+            await db.entities.Lote.update(newLote.id, {
+              quantidade_satelite: Math.max(0, (Number(newLote.quantidade_satelite) || 0) - (Number(updateData.quantidade) || 0)),
+            });
+          }
         }
       } else {
         const diff = updateData.quantidade - oldSaida.quantidade; 
@@ -286,6 +306,14 @@ export default function Saidas({ isTab = false }) {
             await db.entities.Medicamento.update(med.id, {
               estoque_satelite: Math.max(0, (med.estoque_satelite || 0) - diff)
             });
+          }
+          if (updateData.lote_id) {
+            const lote = (lotes || []).find(l => l.id === updateData.lote_id);
+            if (lote) {
+              await db.entities.Lote.update(lote.id, {
+                quantidade_satelite: Math.max(0, (Number(lote.quantidade_satelite) || 0) - diff),
+              });
+            }
           }
         }
       }

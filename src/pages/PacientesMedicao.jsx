@@ -1167,6 +1167,13 @@ export default function PacientesMedicao() {
       });
 
       const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
+
+      // Credita o lote junto com o cadastro (devolução entra na satélite)
+      if (loteDoMed) {
+        await db.entities.Lote.update(loteDoMed.id, {
+          quantidade_satelite: (Number(loteDoMed.quantidade_satelite) || 0) + parseInt(qtd, 10)
+        });
+      }
       
       // Cria Entrada para constar no Livro Portaria e relatórios (Satélite)
       await db.entities.Entrada.create({
@@ -1313,6 +1320,12 @@ export default function PacientesMedicao() {
                 estoque_satelite: (med.estoque_satelite || 0) + devQtd
              });
              const loteDoMed = lotes.find(l => l.medicamento_id === med.id || l.medicamentoId === med.id);
+
+             if (loteDoMed) {
+               await db.entities.Lote.update(loteDoMed.id, {
+                 quantidade_satelite: (Number(loteDoMed.quantidade_satelite) || 0) + devQtd
+               });
+             }
              
              // Criar Entrada no DB (Satélite)
              await db.entities.Entrada.create({
