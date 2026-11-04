@@ -515,7 +515,8 @@ export const ChatService = {
     } catch (e) {
       console.warn("Aviso ao marcar mensagens como lidas:", e);
     }
-  }
+  },
+
   // Exclui mensagem (soft delete com registro de auditoria e NOTIFY)
   async deleteMessage(messageId) {
     try {
