@@ -752,6 +752,44 @@ export function AjusteDiasEntregaModal({
           ? 0
           : Math.max(0, Math.ceil(doseEfetiva * diasFinais));
 
+        // ── QUANTIDADE REAL JÁ ENTREGUE (busca nas Saídas gravadas no banco) ──
+        let qtdJaEntregue = 0;
+        let diasJaEntregues = 0;
+        if (jaDispensado || isReducaoDose) {
+          const saidasDaPresc = (Array.isArray(internalSaidas) ? internalSaidas : []).filter((s) => {
+            if (s.deleted_at) return false;
+            if (s.prescricao_id && String(s.prescricao_id) === String(pr.id)) return true;
+            // Fallback: mesmo paciente + mesmo medicamento + mesma data fim de cobertura
+            const sPacId = s.paciente_id || s.pacienteId;
+            if (!sPacId || !patient?.id || String(sPacId) !== String(patient.id)) return false;
+            const sMedId = s.medicamento_id || s.medicamentoId;
+            const mesmoMed = (medId && String(sMedId) === String(medId)) || namesMatch(s.medicamento_nome, medNome);
+            if (!mesmoMed) return false;
+            const sFim = String(s.data_fim_cobertura || "").split("T")[0];
+            return Boolean(cobertoAteStr && sFim && sFim === cobertoAteStr);
+          });
+          if (saidasDaPresc.length > 0) {
+            // Considera a(s) saída(s) da última data de dispensação
+            const datas = saidasDaPresc
+              .map((s) => String(s.data_saida || s.created_at || "").split("T")[0])
+              .filter(Boolean)
+              .sort();
+            const ultimaData = dataUltimaDispStr || datas[datas.length - 1];
+            const daUltima = saidasDaPresc.filter(
+              (s) => String(s.data_saida || s.created_at || "").split("T")[0] === ultimaData
+            );
+            const base = daUltima.length > 0 ? daUltima : saidasDaPresc;
+            qtdJaEntregue = base.reduce((acc, s) => acc + (Number(s.quantidade) || 0), 0);
+            diasJaEntregues = Math.max(0, ...base.map((s) => Number(s.dias_cobertura) || 0));
+          }
+          if (!qtdJaEntregue && pr.quantidade_ultimo_lote) {
+            qtdJaEntregue = Number(pr.quantidade_ultimo_lote) || 0;
+          }
+          if (!diasJaEntregues && pr.ultimo_lote_dias) {
+            diasJaEntregues = Number(pr.ultimo_lote_dias) || 0;
+          }
+        }
+
         const saldoTotalSat = Number(med?.estoque_satelite) || 0;
 
         // Candidatos de lotes para este medicamento
@@ -799,6 +837,8 @@ export function AjusteDiasEntregaModal({
           diasRestantes,
           diasFinais,
           qtdSugerida,
+          qtdJaEntregue,
+          diasJaEntregues,
           medLotes,
           estoqueSatelite: saldoTotalSat,
         };
@@ -991,14 +1031,14 @@ export function AjusteDiasEntregaModal({
               </span>
             </td>
             <td style="padding: 7px 6px; text-align: center; font-weight: bold; font-size: 12px; color: #1e293b;">
-              ${item.jaDispensado ? "0d" : `${diasFinais}d`}
+              ${item.jaDispensado ? (item.diasJaEntregues ? `${item.diasJaEntregues}d <br><span style="font-size: 9px; color: #059669;">(já entregue)</span>` : "Coberto") : `${diasFinais}d`}
             </td>
             <td style="padding: 7px 8px; text-align: left; font-size: 11px;">
               ${loteStr}
             </td>
             <td style="padding: 7px 8px; text-align: center;">
               <span style="font-size: 13px; font-weight: 900; color: #1e3a8a; font-family: monospace;">
-                ${item.jaDispensado ? "0" : valorFinal} un
+                ${item.jaDispensado ? `${item.qtdJaEntregue || 0}` : valorFinal} un${item.jaDispensado ? '<br><span style="font-size: 9px; color: #059669; font-family: sans-serif;">já entregue</span>' : ""}
               </span>
             </td>
             <td style="padding: 7px 6px; text-align: center; font-size: 14px; color: #94a3b8;">
@@ -1494,7 +1534,7 @@ export function AjusteDiasEntregaModal({
       }
 
       toast.success(
-        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) com sucesso com suas respectivas durações de tratamento.`,
+        `Ajuste concluído! ${itensParaBaixar.length} medicamento(s) entregue(s) — total de ${itensParaBaixar.reduce((a, x) => a + (Number(x.qtd) || 0), 0)} un: ${itensParaBaixar.map((x) => `${x.item.pr.medicamentoNome || "Medicamento"} (${x.qtd} un / ${x.diasEfetivos}d)`).join(", ")}.`,
         {
           action: {
             label: "Imprimir Relatório",
@@ -1926,7 +1966,7 @@ export function AjusteDiasEntregaModal({
                             {item.jaDispensado || item.isReducaoDose ? (
                               <div className="flex flex-col items-center justify-center">
                                 <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                  <Lock className="w-3 h-3 text-emerald-600" /> 0 dias ({item.isReducaoDose ? "Sobra com paciente" : "Já coberto"})
+                                  <Lock className="w-3 h-3 text-emerald-600" /> {item.isReducaoDose ? "0 dias (Sobra com paciente)" : (item.diasJaEntregues ? `${item.diasJaEntregues} dias entregues` : "Já coberto")}
                                 </Badge>
                                 {item.cobertoAteStr && (
                                   <span className="text-[9px] text-emerald-600 font-mono mt-0.5">
@@ -2051,7 +2091,7 @@ export function AjusteDiasEntregaModal({
                                   type="number"
                                   min="0"
                                   disabled={!isSelected || item.jaDispensado}
-                                  value={item.jaDispensado ? 0 : valorFinal}
+                                  value={item.jaDispensado ? (item.qtdJaEntregue || 0) : valorFinal}
                                   onChange={(e) => handleQtdChange(pr.id, e.target.value, item)}
                                   title="Digite a quantidade a enviar caso o paciente já tenha medicação no local."
                                   className={cn(
