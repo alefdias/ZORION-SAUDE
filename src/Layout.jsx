@@ -6,6 +6,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { useWelcome } from "@/lib/AppInitializer";
 import { TransferenciaAcceptModal } from "@/components/TransferenciaAcceptModal";
 import { ZorionChatWidget } from "@/components/chat/ZorionChatWidget";
+import { OmniCommandSearch } from "@/components/OmniCommandSearch";
 
 import {
   LayoutDashboard,
@@ -40,7 +41,9 @@ import {
   UserPlus,
   Plus,
   Printer,
-  RefreshCw
+  RefreshCw,
+  Search,
+  Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -55,12 +58,12 @@ import {
 import { Toaster } from "sonner";
 
 const THEMES_LIST = [
-  { id: "theme-ocean", name: "Oceano", color: "#0284c7" },
+  { id: "theme-ocean", name: "Oceano (Padrão)", color: "#0284c7" },
   { id: "theme-emerald", name: "Esmeralda", color: "#059669" },
   { id: "theme-sunset", name: "Pôr do Sol", color: "#ea580c" },
   { id: "theme-amethyst", name: "Ametista", color: "#9333ea" },
   { id: "theme-rose", name: "Rosa Elegance", color: "#e11d48" },
-  { id: "theme-midnight", name: "Meia-noite", color: "#475569" },
+  { id: "theme-midnight", name: "Noturno Clínico (Dark)", color: "#0f172a" },
 ];
 
 const moduleSections = [
@@ -329,10 +332,10 @@ export default function Layout({ children, currentPageName }) {
   const currentTab = new URLSearchParams(location.search).get("tab");
   const currentAction = new URLSearchParams(location.search).get("action");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    document.documentElement.classList.remove("dark");
     try {
       const stored = sessionStorage.getItem("axion_active_user") || localStorage.getItem("pharma_user");
       if (stored) {
@@ -364,13 +367,23 @@ export default function Layout({ children, currentPageName }) {
   const setThemeColor = (newTheme) => {
     document.documentElement.classList.remove(themeColor);
     document.documentElement.classList.add(newTheme);
+    if (newTheme === "theme-midnight") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
     localStorage.setItem("zorion_theme", newTheme);
     setThemeColorState(newTheme);
   };
 
   useEffect(() => {
     document.documentElement.classList.add(themeColor);
-  }, []);
+    if (themeColor === "theme-midnight") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [themeColor]);
 
   const { showWelcome } = useWelcome();
 
@@ -422,46 +435,83 @@ export default function Layout({ children, currentPageName }) {
   }, [isMedico, user]);
 
   return (
-    <div className="min-h-screen bg-slate-100 transition-colors flex flex-col">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors flex flex-col">
       <Toaster position="top-right" richColors />
       <TransferenciaAcceptModal activeSection={activeSection} />
 
       {/* TOP HEADER NAVIGATION BAR */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs px-4 sm:px-6 py-2.5 print:hidden transition-colors">
-        <div className="max-w-[1920px] mx-auto flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs px-3 sm:px-6 py-2.5 print:hidden transition-colors">
+        <div className="max-w-[1920px] mx-auto flex items-center justify-between gap-3 sm:gap-4">
 
-          {/* LEFT: ZORION Hospitalar Brand Text Only */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* LEFT: ZORION Hospitalar Brand + Sector Dropdown */}
+          <div className="flex items-center gap-3 shrink-0">
             <div className="flex flex-col justify-center">
               <h1 className="font-extrabold text-[22px] leading-none tracking-tight mb-0.5">
-                <span className="text-sky-600">ZOR</span><span className="text-slate-900">ION</span>
+                <span className="text-sky-600 dark:text-cyan-400">ZOR</span><span className="text-slate-900 dark:text-white">ION</span>
               </h1>
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] leading-none text-slate-400 font-semibold">Hospitalar</span>
-                <span className="w-1 h-1 rounded-full bg-sky-500"></span>
-                <button
-                  type="button"
-                  title="Clique para alternar entre Farmácia Central e Satélite"
-                  onClick={() => {
-                    if (isAuxiliar && (!hasCentral || !hasSatelite)) return;
-                    const nextTarget = activeSection.id === "satelite" ? "/Dashboard" : "/Satelite";
-                    const nextSecId = activeSection.id === "satelite" ? "estoque" : "satelite";
-                    try { sessionStorage.setItem("zorion_active_section", nextSecId); } catch (e) {}
-                    navigate(nextTarget);
-                  }}
-                  className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 hover:text-sky-700 hover:underline leading-none cursor-pointer group"
-                >
-                  <span>{activeSection.name}</span>
-                  {(!isAuxiliar || (hasCentral && hasSatelite)) && (
-                    <ArrowLeftRight className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                  )}
-                </button>
+                <span className="text-[11px] leading-none text-slate-400 dark:text-slate-500 font-semibold">Saúde</span>
+                <span className="w-1 h-1 rounded-full bg-sky-500 dark:bg-cyan-400"></span>
+                
+                {/* Sector Switcher Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      title="Clique para alternar entre os setores do hospital"
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 dark:text-cyan-400 hover:text-sky-700 dark:hover:text-cyan-300 hover:underline leading-none cursor-pointer group"
+                    >
+                      <span>{activeSection.name}</span>
+                      <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-transform" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xl rounded-2xl p-1.5 z-50">
+                    <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                      Módulos do Hospital
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
+                    {moduleSections.map((sec) => (
+                      <DropdownMenuItem
+                        key={sec.id}
+                        onClick={() => {
+                          try { sessionStorage.setItem("zorion_active_section", sec.id); } catch (e) {}
+                          navigate(createPageUrl(sec.mainPage));
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 text-xs font-semibold rounded-xl px-2.5 py-2 cursor-pointer transition-colors",
+                          activeSection.id === sec.id
+                            ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-cyan-400 font-bold"
+                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
+                        )}
+                      >
+                        <sec.icon className="w-3.5 h-3.5" />
+                        <span>{sec.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
+
+            {/* OMNI-SEARCH TRIGGER BUTTON (Ctrl+K) */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 dark:text-slate-400 bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 border border-slate-200/80 dark:border-slate-700/80 rounded-xl transition-all w-44 lg:w-56 xl:w-64 cursor-pointer group shadow-2xs"
+              title="Pressione Ctrl+K para busca rápida"
+            >
+              <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-500 dark:group-hover:text-cyan-400 transition-colors" />
+              <span className="flex-1 text-left truncate group-hover:text-slate-700 dark:group-hover:text-slate-200">
+                Buscar (Ctrl+K)...
+              </span>
+              <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-mono font-semibold bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 rounded-md shadow-2xs">
+                Ctrl K
+              </kbd>
+            </button>
           </div>
 
-          {/* CENTER: Clean Light Navigation Items (Vertical/Compact to save horizontal space) */}
-          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60 overflow-visible">
+          {/* CENTER: Navigation Items */}
+          <nav className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 overflow-visible">
             {activeSection.menu.map((item) => {
               const isActive = currentPageName === item.page;
               const hasSubItems = item.subItems && item.subItems.length > 0;
@@ -478,14 +528,14 @@ export default function Layout({ children, currentPageName }) {
                     className={cn(
                       "flex flex-col items-center justify-center gap-0.5 px-2.5 xl:px-3 py-1 min-w-[54px] xl:min-w-[62px] rounded-xl transition-all whitespace-nowrap cursor-pointer",
                       isActive
-                        ? "bg-white text-sky-700 shadow-sm font-bold"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium"
+                        ? "bg-white dark:bg-slate-900 text-sky-700 dark:text-cyan-400 shadow-xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 font-medium"
                     )}
                   >
                     <div className="flex items-center gap-1">
                       <item.icon className={cn(
                         "w-4 h-4 shrink-0 transition-colors",
-                        isActive ? "text-sky-600" : "text-slate-500"
+                        isActive ? "text-sky-600 dark:text-cyan-400" : "text-slate-500 dark:text-slate-400"
                       )} />
                       {hasSubItems && (
                         <ChevronDown className="w-2.5 h-2.5 opacity-40 group-hover:opacity-90 group-hover:rotate-180 transition-transform duration-200" />
@@ -497,8 +547,8 @@ export default function Layout({ children, currentPageName }) {
                   {/* Dropdown Popover ao passar o mouse */}
                   {hasSubItems && (
                     <div className="absolute top-full left-1/2 -translate-x-1/2 pt-1.5 opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-200 ease-out z-50">
-                      <div className="w-72 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 p-1.5 space-y-0.5">
-                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100/90 mb-1 flex items-center justify-between">
+                      <div className="w-72 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-800 p-1.5 space-y-0.5">
+                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100/90 dark:border-slate-800 mb-1 flex items-center justify-between">
                           <span>{item.name}</span>
                           <span className="text-[9px] font-medium text-slate-400 lowercase">atalhos rápidos</span>
                         </div>
@@ -525,8 +575,8 @@ export default function Layout({ children, currentPageName }) {
                               className={cn(
                                 "flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-all cursor-pointer group/sub",
                                 isSubActive
-                                  ? "bg-sky-50 text-sky-900 font-semibold border border-sky-100"
-                                  : "hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-transparent"
+                                  ? "bg-sky-50 dark:bg-slate-800 text-sky-900 dark:text-cyan-300 font-semibold border border-sky-100 dark:border-slate-700"
+                                  : "hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-transparent"
                               )}
                             >
                               <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover/sub:scale-110 shadow-xs", sub.color)}>
@@ -538,12 +588,12 @@ export default function Layout({ children, currentPageName }) {
                                     {sub.name}
                                   </span>
                                   {sub.badge && (
-                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                                       {sub.badge}
                                     </span>
                                   )}
                                 </div>
-                                <span className="block text-[10px] text-slate-400 truncate mt-0.5">
+                                <span className="block text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
                                   {sub.desc}
                                 </span>
                               </div>
@@ -559,37 +609,37 @@ export default function Layout({ children, currentPageName }) {
           </nav>
 
           {/* RIGHT: Actions */}
-          <div className="flex items-center gap-2.5 shrink-0 pl-2">
+          <div className="flex items-center gap-2 shrink-0 pl-1">
             {/* Theme Selector Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center justify-center w-8 h-8 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-colors text-slate-600 hover:text-slate-900 cursor-pointer"
-                  title="Alterar Tema Visual"
+                  className="flex items-center justify-center w-8 h-8 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-colors text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                  title="Alterar Tema Visual (Dark / Light)"
                 >
-                  <Palette className="w-4 h-4 text-sky-600" />
+                  <Palette className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44 bg-white border-slate-200 text-slate-800 shadow-xl rounded-2xl p-1.5 z-50">
+              <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xl rounded-2xl p-1.5 z-50">
                 <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
                   Temas do Sistema
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-slate-100" />
+                <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
                 {THEMES_LIST.map((t) => (
                   <DropdownMenuItem
                     key={t.id}
                     onClick={() => setThemeColor(t.id)}
                     className={cn(
                       "flex items-center justify-between text-xs font-medium rounded-xl px-2.5 py-1.5 cursor-pointer transition-colors",
-                      themeColor === t.id ? "bg-slate-100 font-bold text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      themeColor === t.id ? "bg-slate-100 dark:bg-slate-800 font-bold text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                     )}
                   >
                     <div className="flex items-center gap-2">
                       <span className="w-3 h-3 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: t.color }} />
                       <span>{t.name}</span>
                     </div>
-                    {themeColor === t.id && <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />}
+                    {themeColor === t.id && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 dark:bg-cyan-400" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -602,29 +652,29 @@ export default function Layout({ children, currentPageName }) {
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200/80 transition-colors cursor-pointer">
+                  <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-colors cursor-pointer">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-600 to-cyan-500 text-white flex items-center justify-center font-bold text-xs shadow-xs">
                       {user.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
                     </div>
                     <div className="text-left leading-tight hidden md:block pr-1">
-                      <div className="font-bold text-slate-800 text-xs truncate max-w-[130px]" title={user.full_name}>
+                      <div className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[130px]" title={user.full_name}>
                         {user.full_name}
                       </div>
-                      <div className="text-[10px] text-slate-400 capitalize">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 capitalize">
                         {user.cargo || "Farmácia"}
                       </div>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden md:block" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 bg-white border-slate-200 text-slate-800 shadow-xl rounded-2xl p-2">
+                <DropdownMenuContent align="end" className="w-56 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xl rounded-2xl p-2">
                   <DropdownMenuLabel className="text-xs font-normal text-slate-500 pb-1.5">
-                    Sessão ativa: <strong className="text-slate-900 block font-bold text-sm truncate">{user.full_name}</strong>
+                    Sessão ativa: <strong className="text-slate-900 dark:text-white block font-bold text-sm truncate">{user.full_name}</strong>
                   </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-slate-100" />
+                  <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
                   <DropdownMenuItem
                     onClick={handleLogout}
-                    className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 hover:bg-red-50 hover:text-red-600 rounded-xl px-2.5 py-2 transition-colors"
+                    className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 rounded-xl px-2.5 py-2 transition-colors"
                   >
                     <LogOut className="w-4 h-4 text-slate-500" />
                     <span>Trocar de Módulo / Sair</span>
@@ -638,7 +688,7 @@ export default function Layout({ children, currentPageName }) {
               variant="ghost"
               size="icon"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden w-8 h-8 text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="lg:hidden w-8 h-8 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
@@ -647,7 +697,7 @@ export default function Layout({ children, currentPageName }) {
 
         {/* MOBILE HORIZONTAL NAVIGATION MENU SLIDE-DOWN */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200/80 bg-white px-3 py-2 space-y-2 mt-2">
+          <div className="lg:hidden border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 space-y-2 mt-2">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                 Navegação: {activeSection.name}
@@ -669,13 +719,13 @@ export default function Layout({ children, currentPageName }) {
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all",
                           isActive
-                            ? "bg-sky-50 text-sky-700 border border-sky-200"
-                            : "text-slate-600 hover:bg-slate-100"
+                            ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-cyan-400 border border-sky-200 dark:border-slate-700"
+                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                         )}
                       >
                         <item.icon className={cn(
                           "w-4 h-4",
-                          isActive ? "text-sky-600" : "text-slate-400"
+                          isActive ? "text-sky-600 dark:text-cyan-400" : "text-slate-400"
                         )} />
                         <span className="truncate">{item.name}</span>
                         {hasSubItems && (
@@ -709,8 +759,8 @@ export default function Layout({ children, currentPageName }) {
                                 className={cn(
                                   "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors border",
                                   isSubActive
-                                    ? "bg-sky-100 text-sky-800 border-sky-200 font-bold"
-                                    : "bg-slate-50 text-slate-600 hover:bg-sky-50 hover:text-sky-700 border-slate-100"
+                                    ? "bg-sky-100 dark:bg-slate-700 text-sky-800 dark:text-cyan-300 border-sky-200 dark:border-slate-600 font-bold"
+                                    : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-sky-50 dark:hover:bg-slate-700 hover:text-sky-700 border-slate-100 dark:border-slate-700"
                                 )}
                               >
                                 <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-70" />
@@ -739,6 +789,9 @@ export default function Layout({ children, currentPageName }) {
 
       {/* Chat Zorion Flutuante no Canto Inferior Direito */}
       <ZorionChatWidget activeSection={activeSection} currentUser={user} />
+
+      {/* Omni-Search Global (Ctrl+K) */}
+      <OmniCommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }

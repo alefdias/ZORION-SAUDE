@@ -516,4 +516,25 @@ export const ChatService = {
       console.warn("Aviso ao marcar mensagens como lidas:", e);
     }
   }
+  // Exclui mensagem (soft delete com registro de auditoria e NOTIFY)
+  async deleteMessage(messageId) {
+    try {
+      await ensureChatTable();
+      const { ip, dbName, password } = getPgConfig();
+      const safeId = String(messageId).replace(/'/g, "''");
+      const now = new Date().toISOString();
+      const query = `
+        UPDATE "ChatMessage"
+        SET "deleted_at" = '${now}'
+        WHERE "id" = '${safeId}';
+        NOTIFY app_update;
+        NOTIFY table_change;
+      `;
+      await invoke("execute_postgres", { ip, dbName, password, query });
+      return true;
+    } catch (e) {
+      console.warn("Erro ao excluir mensagem:", e);
+      throw e;
+    }
+  },
 };

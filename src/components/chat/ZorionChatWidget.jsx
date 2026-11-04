@@ -22,9 +22,11 @@ import {
   UserPlus,
   MessageSquarePlus,
   Lock,
+  Trash2,
   Megaphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { ChatService, CHAT_CHANNELS } from "@/api/chatService";
 import { listen } from "@tauri-apps/api/event";
 
@@ -376,7 +378,22 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
   }, [messages, isOpen, activeTab, currentCanal]);
 
   // Envio de mensagem estritamente segura
-  const handleSendMessage = async (e) => {
+  
+  // Excluir mensagem do chat
+  const handleDeleteMessage = async (msgId, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm("Deseja realmente apagar esta mensagem?")) return;
+    try {
+      await ChatService.deleteMessage(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      toast.success("Mensagem apagada com sucesso.");
+    } catch (err) {
+      console.error("Erro ao apagar mensagem:", err);
+      toast.error("Não foi possível apagar a mensagem.");
+    }
+  };
+
+const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     const texto = inputText.trim();
     if (!texto || isSending || !currentCanal) return;
@@ -1195,15 +1212,25 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                           </span>
                         </div>
                         <div
-                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs break-words shadow-2xs ${
+                          className={`relative group/msg max-w-[85%] rounded-2xl px-3.5 py-2 text-xs break-words shadow-2xs ${
                             isMe
                               ? "bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-tr-xs"
                               : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 rounded-tl-xs"
                           }`}
                         >
                           <p className="leading-relaxed whitespace-pre-wrap">{m.mensagem}</p>
-                          <div className={`text-[9px] mt-1 flex items-center justify-end gap-1 ${isMe ? "text-sky-100" : "text-slate-400"}`}>
+                          <div className={`text-[9px] mt-1 flex items-center justify-end gap-1.5 ${isMe ? "text-sky-100" : "text-slate-400"}`}>
                             <span>{formatHora(m.created_at)}</span>
+                            {isMe && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteMessage(m.id, e)}
+                                title="Apagar mensagem"
+                                className="opacity-0 group-hover/msg:opacity-100 p-0.5 hover:text-red-300 transition-opacity cursor-pointer ml-1"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1291,7 +1318,7 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
 
                         {/* Balão de Mensagem */}
                         <div
-                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs break-words shadow-2xs ${
+                          className={`relative group/msg max-w-[85%] rounded-2xl px-3.5 py-2 text-xs break-words shadow-2xs ${
                             isMe
                               ? "bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-tr-xs"
                               : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 rounded-tl-xs"
@@ -1299,23 +1326,33 @@ export function ZorionChatWidget({ activeSection, currentUser: propUser }) {
                         >
                           <p className="leading-relaxed whitespace-pre-wrap">{m.mensagem}</p>
                           <div
-                            className={`text-[9px] mt-1 flex items-center justify-end gap-1 ${
+                            className={`text-[9px] mt-1 flex items-center justify-end gap-1.5 ${
                               isMe ? "text-sky-100" : "text-slate-400"
                             }`}
                           >
                             <span>{formatHora(m.created_at)}</span>
                             {isMe && (
-                              <div className="flex items-center ml-0.5">
-                                {(m.lida === true || m.lida === 1 || m.lida === "t" || m.lida === "true") ? (
-                                  <span title="Visualizada" className="flex items-center text-sky-300 drop-shadow-[0_0_2px_rgba(56,189,248,0.8)]">
-                                    <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  </span>
-                                ) : (
-                                  <span title="Enviada" className="flex items-center text-white/70">
-                                    <Check className="w-3.5 h-3.5 stroke-[2.2]" />
-                                  </span>
-                                )}
-                              </div>
+                              <>
+                                <div className="flex items-center ml-0.5">
+                                  {(m.lida === true || m.lida === 1 || m.lida === "t" || m.lida === "true") ? (
+                                    <span title="Visualizada" className="flex items-center text-sky-300 drop-shadow-[0_0_2px_rgba(56,189,248,0.8)]">
+                                      <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    </span>
+                                  ) : (
+                                    <span title="Enviada" className="flex items-center text-white/70">
+                                      <Check className="w-3.5 h-3.5 stroke-[2.2]" />
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteMessage(m.id, e)}
+                                  title="Apagar mensagem"
+                                  className="opacity-0 group-hover/msg:opacity-100 p-0.5 hover:text-red-300 transition-opacity cursor-pointer ml-1"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
