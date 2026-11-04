@@ -644,8 +644,10 @@ export function WelcomeScreen({ onEnter }) {
     }
 
     // Success login
-    sessionStorage.setItem("axion_active_user", JSON.stringify(user));
-    localStorage.setItem("pharma_user", JSON.stringify(user));
+    const userWithSelectedMod = { ...user, selected_module: selectedModule.key, modulo_ativo: selectedModule.key };
+    sessionStorage.setItem("axion_active_user", JSON.stringify(userWithSelectedMod));
+    sessionStorage.setItem("zorion_selected_module", selectedModule.key);
+    localStorage.setItem("pharma_user", JSON.stringify(userWithSelectedMod));
     if (carrinhoSubMode) {
       sessionStorage.setItem("axion_carrinho_mode", carrinhoSubMode);
     }
@@ -676,11 +678,12 @@ export function WelcomeScreen({ onEnter }) {
     }
 
     const users = JSON.parse(localStorage.getItem("axion_users") || "[]");
-    const updatedUser = { ...loggedInUser, password: newPassword, first_login: false };
+    const updatedUser = { ...loggedInUser, password: newPassword, first_login: false, selected_module: selectedModule.key, modulo_ativo: selectedModule.key };
     const updatedUsers = users.map(u => u.id === loggedInUser.id ? updatedUser : u);
     localStorage.setItem("axion_users", JSON.stringify(updatedUsers));
     
     sessionStorage.setItem("axion_active_user", JSON.stringify(updatedUser));
+    sessionStorage.setItem("zorion_selected_module", selectedModule.key);
     localStorage.setItem("pharma_user", JSON.stringify(updatedUser));
     if (carrinhoSubMode) {
       sessionStorage.setItem("axion_carrinho_mode", carrinhoSubMode);

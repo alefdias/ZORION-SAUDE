@@ -178,7 +178,10 @@ export function AppInitializer({ children }) {
             responsavel_tecnico: "rt"
           };
           if (sectionMap[modKey]) {
-            try { sessionStorage.setItem("zorion_active_section", sectionMap[modKey]); } catch (e) {}
+            try {
+              sessionStorage.setItem("zorion_active_section", sectionMap[modKey]);
+              sessionStorage.setItem("zorion_selected_module", modKey);
+            } catch (e) {}
           }
           
           if (routeMap[modKey]) {

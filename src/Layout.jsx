@@ -6,7 +6,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { useWelcome } from "@/lib/AppInitializer";
 import { TransferenciaAcceptModal } from "@/components/TransferenciaAcceptModal";
 import { ZorionChatWidget } from "@/components/chat/ZorionChatWidget";
-import { OmniCommandSearch } from "@/components/OmniCommandSearch";
+// OmniCommandSearch mantido no projeto para reativação futura conforme necessidade
+// import { OmniCommandSearch } from "@/components/OmniCommandSearch";
 
 import {
   LayoutDashboard,
@@ -252,10 +253,21 @@ const moduleSections = [
 
 function getCurrentSection(pageName) {
   let savedSectionId = null;
+  let selectedMod = null;
   try {
     savedSectionId = sessionStorage.getItem("zorion_active_section");
+    selectedMod = sessionStorage.getItem("zorion_selected_module");
   } catch (e) {
     // ignore
+  }
+
+  // Se o módulo selecionado for Farmácia Satélite, prioriza satélite
+  if (selectedMod === "farmacia_satelite") {
+    const sat = moduleSections.find(sec => sec.id === "satelite");
+    if (pageName === "CarrinhoParada") {
+      return moduleSections.find(sec => sec.id === "carrinho") || sat;
+    }
+    return sat || moduleSections[1];
   }
 
   // Se a seção ativa previamente salva já contiver esta página em seu menu, mantém a mesma seção!
@@ -332,7 +344,6 @@ export default function Layout({ children, currentPageName }) {
   const currentTab = new URLSearchParams(location.search).get("tab");
   const currentAction = new URLSearchParams(location.search).get("action");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -388,6 +399,10 @@ export default function Layout({ children, currentPageName }) {
   const { showWelcome } = useWelcome();
 
   const handleLogout = () => {
+    try {
+      sessionStorage.removeItem("zorion_selected_module");
+      sessionStorage.removeItem("zorion_active_section");
+    } catch (e) {}
     showWelcome();
   };
 
@@ -405,27 +420,48 @@ export default function Layout({ children, currentPageName }) {
     return Array.isArray(mods) ? mods : [];
   }, [user]);
 
-  const hasCentral = userModules.includes("estoque_farmacia") || (userModules.length === 0 && isAuxiliar);
-  const hasSatelite = userModules.includes("farmacia_satelite") || (userModules.length === 0 && isAuxiliar);
+  const selectedModule = sessionStorage.getItem("zorion_selected_module") || user?.selected_module || user?.modulo_ativo || "";
+  const isMasterAdmin = (user?.cargo || user?.perfil || "").toLowerCase() === "administrador" || (user?.cargo || user?.perfil || "").toLowerCase() === "admin";
+
+  // Se a sessão for da Farmácia Satélite ou o usuário só tiver módulo de satélite:
+  const isSateliteSession = selectedModule === "farmacia_satelite" || (userModules.includes("farmacia_satelite") && !userModules.includes("estoque_farmacia") && !isMasterAdmin);
+
+  // Farmácia Satélite NÃO TEM ACESSO à Farmácia Central!
+  const hasCentral = !isSateliteSession && (isMasterAdmin || userModules.includes("estoque_farmacia"));
+  const hasSatelite = isMasterAdmin || userModules.includes("farmacia_satelite") || isSateliteSession;
+  const hasRT = !isSateliteSession && (isMasterAdmin || userModules.includes("responsavel_tecnico"));
+  const hasCarrinho = !isSateliteSession && (isMasterAdmin || userModules.includes("carrinho_parada") || userModules.includes("carrinho_farmacia") || userModules.includes("carrinho_enfermagem"));
+
+  const visibleSections = useMemo(() => {
+    return moduleSections.filter(sec => {
+      if (sec.id === "estoque") return hasCentral;
+      if (sec.id === "satelite") return hasSatelite;
+      if (sec.id === "rt") return hasRT;
+      if (sec.id === "carrinho") return hasCarrinho;
+      return true;
+    });
+  }, [hasCentral, hasSatelite, hasRT, hasCarrinho]);
 
   const centralPages = ["Dashboard", "Medicamentos", "Movimentacoes", "Estoque", "Vencimentos", "Compras", "Relatorios", "Inventario"];
   const satelitePages = ["Satelite", "SateliteEvolucao", "PacientesMedicao", "SateliteAdiantamento", "SateliteMovimentacoes", "LivroRegistro", "SateliteEstoque", "SateliteInventario", "MapaDispensacao", "PassagemPlantao", "SatelitePortaria"];
 
+  // Bloqueio rigoroso de rotas: Farmácia Satélite não acessa Farmácia Central
   useEffect(() => {
-    if (isAuxiliar && user) {
-      const allowedPages = [
-        ...(hasCentral ? centralPages : []),
-        ...(hasSatelite ? satelitePages : [])
-      ];
-      if (allowedPages.length > 0 && !allowedPages.includes(currentPageName)) {
-        if (hasSatelite && !hasCentral) {
-          navigate("/Satelite");
-        } else {
-          navigate("/Dashboard");
-        }
-      }
+    if (!user) return;
+
+    if ((isSateliteSession || !hasCentral) && centralPages.includes(currentPageName)) {
+      toast.error("Acesso restrito: A Farmácia Satélite não possui permissão para acessar a Farmácia Central.");
+      navigate("/Satelite", { replace: true });
+      return;
     }
-  }, [isAuxiliar, user, currentPageName, navigate, hasCentral, hasSatelite]);
+
+    const rtPages = ["ResponsavelTecnico", "Cadastros", "Emprestimos", "Configuracoes"];
+    if (!hasRT && rtPages.includes(currentPageName)) {
+      toast.error("Acesso restrito: Você não possui permissão para o módulo Responsável Técnico.");
+      navigate(hasSatelite ? "/Satelite" : "/Dashboard", { replace: true });
+      return;
+    }
+  }, [user, isSateliteSession, hasCentral, hasRT, hasSatelite, currentPageName, navigate]);
 
   useEffect(() => {
     if (isMedico && user) {
@@ -454,60 +490,50 @@ export default function Layout({ children, currentPageName }) {
                 <span className="w-1 h-1 rounded-full bg-sky-500 dark:bg-cyan-400"></span>
                 
                 {/* Sector Switcher Dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      title="Clique para alternar entre os setores do hospital"
-                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 dark:text-cyan-400 hover:text-sky-700 dark:hover:text-cyan-300 hover:underline leading-none cursor-pointer group"
-                    >
-                      <span>{activeSection.name}</span>
-                      <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-transform" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xl rounded-2xl p-1.5 z-50">
-                    <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
-                      Módulos do Hospital
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
-                    {moduleSections.map((sec) => (
-                      <DropdownMenuItem
-                        key={sec.id}
-                        onClick={() => {
-                          try { sessionStorage.setItem("zorion_active_section", sec.id); } catch (e) {}
-                          navigate(createPageUrl(sec.mainPage));
-                        }}
-                        className={cn(
-                          "flex items-center gap-2 text-xs font-semibold rounded-xl px-2.5 py-2 cursor-pointer transition-colors",
-                          activeSection.id === sec.id
-                            ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-cyan-400 font-bold"
-                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
-                        )}
+                {visibleSections.length > 1 ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        title="Clique para alternar entre os setores do hospital"
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-sky-600 dark:text-cyan-400 hover:text-sky-700 dark:hover:text-cyan-300 hover:underline leading-none cursor-pointer group"
                       >
-                        <sec.icon className="w-3.5 h-3.5" />
-                        <span>{sec.name}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                        <span>{activeSection.name}</span>
+                        <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-transform" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xl rounded-2xl p-1.5 z-50">
+                      <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                        Módulos do Hospital
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
+                      {visibleSections.map((sec) => (
+                        <DropdownMenuItem
+                          key={sec.id}
+                          onClick={() => {
+                            try { sessionStorage.setItem("zorion_active_section", sec.id); } catch (e) {}
+                            navigate(createPageUrl(sec.mainPage));
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 text-xs font-semibold rounded-xl px-2.5 py-2 cursor-pointer transition-colors",
+                            activeSection.id === sec.id
+                              ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-cyan-400 font-bold"
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
+                          )}
+                        >
+                          <sec.icon className="w-3.5 h-3.5" />
+                          <span>{sec.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-sky-600 dark:text-cyan-400 leading-none">
+                    {activeSection.name}
+                  </span>
+                )}
               </div>
             </div>
-
-            {/* OMNI-SEARCH TRIGGER BUTTON (Ctrl+K) */}
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 dark:text-slate-400 bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 border border-slate-200/80 dark:border-slate-700/80 rounded-xl transition-all w-44 lg:w-56 xl:w-64 cursor-pointer group shadow-2xs"
-              title="Pressione Ctrl+K para busca rápida"
-            >
-              <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-500 dark:group-hover:text-cyan-400 transition-colors" />
-              <span className="flex-1 text-left truncate group-hover:text-slate-700 dark:group-hover:text-slate-200">
-                Buscar (Ctrl+K)...
-              </span>
-              <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-mono font-semibold bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 rounded-md shadow-2xs">
-                Ctrl K
-              </kbd>
-            </button>
           </div>
 
           {/* CENTER: Navigation Items */}
@@ -789,9 +815,6 @@ export default function Layout({ children, currentPageName }) {
 
       {/* Chat Zorion Flutuante no Canto Inferior Direito */}
       <ZorionChatWidget activeSection={activeSection} currentUser={user} />
-
-      {/* Omni-Search Global (Ctrl+K) */}
-      <OmniCommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }
