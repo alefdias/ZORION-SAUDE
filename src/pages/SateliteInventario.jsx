@@ -15,9 +15,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Sliders,
-  CheckCircle2,
   FileCheck2,
-  User,
   HeartPulse,
   AlertTriangle,
   RotateCcw,
@@ -26,7 +24,9 @@ import {
   Trash2,
   Building2,
   Calendar,
-  Info
+  Check,
+  Users,
+  Calculator
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -43,6 +43,19 @@ import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { safeFormatDate } from "@/utils/dateUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 import logo from "../assets/logo-tr.png";
+
+/**
+ * Divide um total inteiro entre N partes, distribuindo o resto +1 nas
+ * primeiras partes. Ex.: 50 em 15 => 5 partes com 4 e 10 partes com 3.
+ */
+function dividirEmPartesInteiras(total, quantidadePartes) {
+  const totalInt = Math.max(0, Math.floor(Number(total) || 0));
+  const partes = Math.max(0, Math.floor(Number(quantidadePartes) || 0));
+  if (partes === 0) return [];
+  const base = Math.floor(totalInt / partes);
+  const resto = totalInt % partes;
+  return Array.from({ length: partes }, (_, index) => base + (index < resto ? 1 : 0));
+}
 
 export default function SateliteInventario() {
   const queryClient = useQueryClient();
@@ -62,11 +75,18 @@ export default function SateliteInventario() {
     motivo: "Ajuste de Balanço Físico Manual",
     tipoResolucao: "paciente", // 'paciente' | 'perda'
     pacienteId: "",
+    pacientesSelecionados: [],
     medicoNome: "",
     medicoCrm: "",
     perdaMotivo: "Quebra acidental de ampola durante o plantão",
     observacao: ""
   });
+
+  // Estados auxiliares da seleção múltipla de pacientes no balanço
+  const [buscaPacienteModal, setBuscaPacienteModal] = useState("");
+  const [filtroAlaModal, setFiltroAlaModal] = useState("todas");
+  const [distribuicaoManual, setDistribuicaoManual] = useState({});
+  const [confirmouAdministracao, setConfirmouAdministracao] = useState(false);
 
   // Usuário Logado
   let currentUser = { nome: "Farmacêutico Responsável", crf: "CRF-SP" };
@@ -126,6 +146,97 @@ export default function SateliteInventario() {
   const pacientesAtivos = useMemo(() => {
     return pacientes.filter(p => !p.deleted_at && p.status !== 'Inativo');
   }, [pacientes]);
+
+  const alasPacientesModal = useMemo(() => {
+    const set = new Set();
+    pacientesAtivos.forEach((p) => {
+      const ala = p.alaNome || p.ala_nome;
+      if (ala) set.add(ala);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pacientesAtivos]);
+
+  const pacientesFiltradosModal = useMemo(() => {
+    const termo = normalizeSearch(buscaPacienteModal);
+    const termos = termo ? termo.split(/\s+/).filter(Boolean) : [];
+
+    return pacientesAtivos.filter((p) => {
+      const ala = p.alaNome || p.ala_nome || "Geral";
+      if (filtroAlaModal !== "todas" && ala !== filtroAlaModal) return false;
+      if (!termos.length) return true;
+
+      const texto = normalizeSearch(
+        `${p.nome || ""} ${p.prontuario || ""} ${p.leito || ""} ${ala}`
+      );
+      return termos.every((t) => texto.includes(t));
+    });
+  }, [pacientesAtivos, buscaPacienteModal, filtroAlaModal]);
+
+  // Resumo da contagem e distribuição da falta entre os pacientes selecionados
+  const resumoDistribuicao = useMemo(() => {
+    const med = ajusteModal.medicamento;
+    const saldoAnterior = Number(med?.estoque_satelite) || 0;
+
+    const linhasCalculadas = (ajusteModal.lotesItens || []).map((item, idx) => {
+      const texto = String(item.quantidade_satelite ?? "").trim();
+      const qtd = texto === "" ? 0 : Math.max(0, parseInt(texto, 10) || 0);
+      const saldoAnteriorLote = Number(item.saldo_satelite_anterior) || 0;
+      return {
+        ...item,
+        linha: idx + 1,
+        qtd,
+        saldoAnteriorLote,
+        faltaLote: Math.max(0, saldoAnteriorLote - qtd),
+      };
+    });
+
+    const totalContado = linhasCalculadas.reduce((acc, item) => acc + item.qtd, 0);
+    const diferencaTotal = totalContado - saldoAnterior;
+    const totalFalta = diferencaTotal < 0 ? Math.abs(diferencaTotal) : 0;
+    const faltasLotes = linhasCalculadas.filter((item) => item.faltaLote > 0);
+    const somaFaltasLotes = faltasLotes.reduce((acc, item) => acc + item.faltaLote, 0);
+
+    const idsSelecionados = new Set(
+      (ajusteModal.pacientesSelecionados || []).map((id) => String(id))
+    );
+    const selecionados = pacientesAtivos.filter((p) => idsSelecionados.has(String(p.id)));
+    const automatica = dividirEmPartesInteiras(totalFalta, selecionados.length);
+
+    const valores = selecionados.map((paciente, index) => {
+      const manual = distribuicaoManual[String(paciente.id)];
+      const quantidade =
+        manual === undefined || manual === ""
+          ? automatica[index] || 0
+          : Math.max(0, parseInt(manual, 10) || 0);
+      return { paciente, quantidade };
+    });
+
+    const somaDistribuida = valores.reduce((acc, item) => acc + item.quantidade, 0);
+    const base = selecionados.length > 0 ? Math.floor(totalFalta / selecionados.length) : 0;
+    const resto = selecionados.length > 0 ? totalFalta % selecionados.length : 0;
+
+    return {
+      linhasCalculadas,
+      saldoAnterior,
+      totalContado,
+      diferencaTotal,
+      totalFalta,
+      faltasLotes,
+      somaFaltasLotes,
+      selecionados,
+      valores,
+      somaDistribuida,
+      base,
+      resto,
+      divergenciaLotes: totalFalta > 0 && somaFaltasLotes !== totalFalta,
+    };
+  }, [
+    ajusteModal.medicamento,
+    ajusteModal.lotesItens,
+    ajusteModal.pacientesSelecionados,
+    pacientesAtivos,
+    distribuicaoManual,
+  ]);
 
   // Itens filtrados para o balanço satélite
   const processedItems = useMemo(() => {
@@ -260,11 +371,17 @@ export default function SateliteInventario() {
       motivo: "Ajuste de Balanço Físico Manual",
       tipoResolucao: "paciente",
       pacienteId: pacientesAtivos[0]?.id || "",
+      pacientesSelecionados: [],
       medicoNome: "",
       medicoCrm: "",
       perdaMotivo: "Quebra acidental de ampola durante o plantão",
       observacao: ""
     });
+
+    setBuscaPacienteModal("");
+    setFiltroAlaModal("todas");
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
   };
 
   // Adicionar linha de lote manual
@@ -305,6 +422,55 @@ export default function SateliteInventario() {
       };
       return { ...prev, lotesItens: novosLotes };
     });
+    // A contagem mudou: a divisão automática precisa ser recalculada
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
+  };
+
+  // Alternar seleção de um paciente
+  const togglePaciente = (id) => {
+    setAjusteModal((prev) => {
+      const atuais = (prev.pacientesSelecionados || []).map(String);
+      const idStr = String(id);
+      const proximos = atuais.includes(idStr)
+        ? atuais.filter((item) => item !== idStr)
+        : [...atuais, idStr];
+      return { ...prev, pacientesSelecionados: proximos };
+    });
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
+  };
+
+  // Selecionar todos os pacientes do filtro atual
+  const selecionarTodosFiltrados = () => {
+    setAjusteModal((prev) => {
+      const set = new Set((prev.pacientesSelecionados || []).map(String));
+      pacientesFiltradosModal.forEach((p) => set.add(String(p.id)));
+      return { ...prev, pacientesSelecionados: Array.from(set) };
+    });
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
+  };
+
+  // Limpar todos os pacientes selecionados
+  const limparSelecaoPacientes = () => {
+    setAjusteModal((prev) => ({ ...prev, pacientesSelecionados: [] }));
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
+  };
+
+  // Editar manualmente a quantidade de um paciente
+  const atualizarDistribuicaoManual = (pacienteId, value) => {
+    setDistribuicaoManual((prev) => ({ ...prev, [String(pacienteId)]: value }));
+    setConfirmouAdministracao(false);
+  };
+
+  const fecharModalAjuste = () => {
+    setAjusteModal((prev) => ({ ...prev, isOpen: false }));
+    setBuscaPacienteModal("");
+    setFiltroAlaModal("todas");
+    setDistribuicaoManual({});
+    setConfirmouAdministracao(false);
   };
 
   // Salvar Ajuste com Distribuição por Lote (sem mexer na Central)
@@ -367,16 +533,54 @@ export default function SateliteInventario() {
     const diferencaTotal = totalContado - saldoAnterior;
 
     // Se for psicotrópico e houver falta (redução)
-    let selectedPac = null;
     if (ajusteModal.isControlado && diferencaTotal < 0) {
+      const { totalFalta, somaFaltasLotes, divergenciaLotes, selecionados, valores, somaDistribuida } =
+        resumoDistribuicao;
+
+      if (totalFalta <= 0) {
+        toast.error("Não foi possível apurar a falta para justificativa no Livro 344.");
+        return;
+      }
+
+      if (divergenciaLotes) {
+        toast.error(
+          `A soma das faltas por lote (${somaFaltasLotes} un) não confere com a divergência total (${totalFalta} un). ` +
+          `Revise a contagem dos lotes antes de confirmar.`
+        );
+        return;
+      }
+
       if (ajusteModal.tipoResolucao === "paciente") {
-        selectedPac = pacientes.find((p) => String(p.id) === String(ajusteModal.pacienteId));
-        if (!selectedPac) {
-          toast.error("Selecione o paciente do plantão para justificar a saída legal no Livro 344.");
+        if (selecionados.length === 0) {
+          toast.error("Selecione pelo menos um paciente para justificar a saída legal no Livro 344.");
+          return;
+        }
+        if (selecionados.length > totalFalta) {
+          toast.error(
+            `A falta é de ${totalFalta} unidade(s). Selecione no máximo ${totalFalta} paciente(s), ` +
+            `para que ninguém receba quantidade zero.`
+          );
+          return;
+        }
+        if (valores.some((item) => item.quantidade <= 0)) {
+          toast.error("Todos os pacientes selecionados precisam receber pelo menos 1 unidade.");
+          return;
+        }
+        if (somaDistribuida !== totalFalta) {
+          toast.error(
+            `A distribuição soma ${somaDistribuida} un, mas a falta apurada é de ${totalFalta} un. ` +
+            `Ajuste as quantidades antes de confirmar.`
+          );
+          return;
+        }
+        if (!confirmouAdministracao) {
+          toast.error("Confirme que as doses foram efetivamente administradas aos pacientes selecionados.");
           return;
         }
       }
     }
+
+    const baixasPorLote = [];
 
     try {
       toast.loading("Gravando balanço satélite por lote...");
@@ -427,40 +631,83 @@ export default function SateliteInventario() {
         const saldoAntLote = Number(it.saldo_satelite_anterior) || 0;
         const diffLote = qtdFisicaLote - saldoAntLote;
 
-        // Se for psicotrópico (Portaria 344) e houver perda ou falta, registra saída legal para justificar no Livro 344
+        // Se for psicotrópico (Portaria 344) e houver falta, acumula a baixa
+        // para depois distribuir entre os pacientes selecionados.
         if (ajusteModal.isControlado && diffLote < 0) {
-          const qtdBaixa = Math.abs(diffLote);
-          await db.entities.Saida.create({
-            medicamento_id: med.id,
-            medicamento_nome: med.nome,
-            lote_id: targetLoteId,
+          baixasPorLote.push({
+            loteId: targetLoteId,
             numero_lote: it.numero_lote,
-            quantidade: qtdBaixa,
-            destino:
-              ajusteModal.tipoResolucao === "paciente"
-                ? "Paciente"
-                : "Ajuste de Balanço Satélite",
-            motivo:
-              ajusteModal.tipoResolucao === "paciente"
-                ? "Dispensação Hospitalar - Balanço Satélite"
-                : ajusteModal.tipoResolucao === "perda"
-                ? "Perda"
-                : "Ajuste de Balanço Físico Manual",
-            tipo: "SAIDA",
-            origem: "satelite",
-            paciente_id: ajusteModal.tipoResolucao === "paciente" ? selectedPac?.id : null,
-            paciente_nome: ajusteModal.tipoResolucao === "paciente" ? selectedPac?.nome : null,
-            ala_nome:
-              ajusteModal.tipoResolucao === "paciente"
-                ? selectedPac?.alaNome || "Enfermaria"
-                : null,
-            responsavel: currentUser.nome,
-            responsavel_crf: currentUser.crf,
-            data_saida: new Date().toISOString(),
-            observacao: ajusteModal.tipoResolucao === "perda"
-              ? `Perda registrada no Balanço Satélite: ${ajusteModal.perdaMotivo}. ${ajusteModal.observacao || ""}`.trim()
-              : `Conciliação de dose não baixada no plantão: ${ajusteModal.observacao || "Uso regular no leito"}`,
+            quantidade: Math.abs(diffLote),
           });
+        }
+      }
+
+      // Criar as saídas legais da Portaria 344
+      if (ajusteModal.isControlado && baixasPorLote.length > 0) {
+        if (ajusteModal.tipoResolucao === "paciente") {
+          // Distribui cada baixa de lote entre os pacientes, mantendo a
+          // rastreabilidade: um registro por paciente e por lote utilizado.
+          const restantes = resumoDistribuicao.valores.map((item) => ({ ...item, usado: 0 }));
+
+          for (const baixa of baixasPorLote) {
+            let restanteLote = baixa.quantidade;
+
+            for (const item of restantes) {
+              if (restanteLote <= 0) break;
+
+              const disponivelPaciente = item.quantidade - item.usado;
+              if (disponivelPaciente <= 0) continue;
+
+              const quantidadeUsada = Math.min(disponivelPaciente, restanteLote);
+              const paciente = item.paciente;
+
+              await db.entities.Saida.create({
+                medicamento_id: med.id,
+                medicamento_nome: med.nome,
+                lote_id: baixa.loteId,
+                numero_lote: baixa.numero_lote,
+                quantidade: quantidadeUsada,
+                destino: "Paciente",
+                motivo: "Dispensação Hospitalar - Balanço Satélite",
+                tipo: "SAIDA",
+                origem: "satelite",
+                paciente_id: paciente.id,
+                paciente_nome: paciente.nome,
+                ala_nome: paciente.alaNome || paciente.ala_nome || "Enfermaria",
+                responsavel: currentUser.nome,
+                responsavel_crf: currentUser.crf,
+                data_saida: new Date().toISOString(),
+                observacao:
+                  `Conciliação de dose não baixada no plantão: ${ajusteModal.observacao || "Uso regular no leito"}. ` +
+                  `Distribuição do balanço: ${quantidadeUsada} de ${resumoDistribuicao.totalFalta} un ` +
+                  `entre ${resumoDistribuicao.selecionados.length} paciente(s).`,
+              });
+
+              item.usado += quantidadeUsada;
+              restanteLote -= quantidadeUsada;
+            }
+          }
+        } else if (ajusteModal.tipoResolucao === "perda") {
+          for (const baixa of baixasPorLote) {
+            await db.entities.Saida.create({
+              medicamento_id: med.id,
+              medicamento_nome: med.nome,
+              lote_id: baixa.loteId,
+              numero_lote: baixa.numero_lote,
+              quantidade: baixa.quantidade,
+              destino: "Ajuste de Balanço Satélite",
+              motivo: "Perda",
+              tipo: "SAIDA",
+              origem: "satelite",
+              paciente_id: null,
+              paciente_nome: null,
+              ala_nome: null,
+              responsavel: currentUser.nome,
+              responsavel_crf: currentUser.crf,
+              data_saida: new Date().toISOString(),
+              observacao: `Perda registrada no Balanço Satélite: ${ajusteModal.perdaMotivo}. ${ajusteModal.observacao || ""}`.trim(),
+            });
+          }
         }
       }
 
@@ -477,8 +724,17 @@ export default function SateliteInventario() {
       await queryClient.invalidateQueries({ queryKey: ["pedidos_satelite"] });
 
       toast.dismiss();
+      const distribuiuPacientes =
+        ajusteModal.isControlado &&
+        diferencaTotal < 0 &&
+        ajusteModal.tipoResolucao === "paciente" &&
+        resumoDistribuicao.selecionados.length > 0;
+
       toast.success(
-        `Balanço de ${med.nome} concluído com sucesso! Estoque satélite ajustado para ${totalContado} un.`
+        `Balanço de ${med.nome} concluído com sucesso! Estoque satélite ajustado para ${totalContado} un.` +
+        (distribuiuPacientes
+          ? ` Falta de ${resumoDistribuicao.totalFalta} un distribuída entre ${resumoDistribuicao.selecionados.length} paciente(s).`
+          : "")
       );
 
       setAjusteModal({
@@ -489,11 +745,16 @@ export default function SateliteInventario() {
         motivo: "",
         tipoResolucao: "paciente",
         pacienteId: "",
+        pacientesSelecionados: [],
         medicoNome: "",
         medicoCrm: "",
         perdaMotivo: "",
         observacao: "",
       });
+      setBuscaPacienteModal("");
+      setFiltroAlaModal("todas");
+      setDistribuicaoManual({});
+      setConfirmouAdministracao(false);
     } catch (err) {
       toast.dismiss();
       toast.error("Erro ao salvar balanço por lote: " + (err.message || err));
@@ -920,7 +1181,7 @@ export default function SateliteInventario() {
       {/* ========================================================================= */}
       <Dialog
         open={ajusteModal.isOpen}
-        onOpenChange={(open) => !open && setAjusteModal(prev => ({ ...prev, isOpen: false }))}
+        onOpenChange={(open) => !open && fecharModalAjuste()}
       >
         <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
@@ -1157,10 +1418,10 @@ export default function SateliteInventario() {
                       >
                         <div className="flex items-center gap-1.5 text-xs font-bold">
                           <HeartPulse className="w-4 h-4 text-indigo-600" />
-                          Uso em Paciente
+                          Uso em Paciente(s)
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1 font-normal leading-tight">
-                          Dose administrada no plantão (baixa esquecida)
+                          Doses administradas no plantão (baixa esquecida). Pode dividir entre vários pacientes.
                         </p>
                       </button>
 
@@ -1184,27 +1445,215 @@ export default function SateliteInventario() {
                       </button>
                     </div>
 
-                    {/* Formulário de Paciente */}
+                    {/* Formulário de Paciente(s) */}
                     {ajusteModal.tipoResolucao === "paciente" && (
-                      <div className="space-y-1.5 pt-1">
-                        <Label htmlFor="pacienteSelect" className="text-xs font-semibold text-slate-700">
-                          Selecione o Paciente do Plantão:
-                        </Label>
-                        <Select
-                          value={ajusteModal.pacienteId}
-                          onValueChange={(val) => setAjusteModal(prev => ({ ...prev, pacienteId: val }))}
-                        >
-                          <SelectTrigger id="pacienteSelect" className="h-9 text-xs">
-                            <SelectValue placeholder="Selecione o paciente..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {pacientesAtivos.map(p => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.nome} {p.prontuario ? `(Pront: ${p.prontuario})` : ""} - {p.alaNome || "Geral"}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs font-semibold text-slate-700">
+                            Selecione os pacientes que receberam as doses:
+                          </Label>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-200 font-bold shrink-0"
+                          >
+                            {resumoDistribuicao.selecionados.length} selecionado(s)
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                            <Input
+                              value={buscaPacienteModal}
+                              onChange={(e) => setBuscaPacienteModal(e.target.value)}
+                              placeholder="Buscar por nome, prontuário ou leito..."
+                              className="h-9 pl-8 text-xs"
+                            />
+                          </div>
+                          <Select value={filtroAlaModal} onValueChange={setFiltroAlaModal}>
+                            <SelectTrigger className="h-9 text-xs">
+                              <SelectValue placeholder="Filtrar por ala..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todas">Todas as alas</SelectItem>
+                              {alasPacientesModal.map((ala) => (
+                                <SelectItem key={ala} value={ala}>
+                                  {ala}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-slate-500">
+                            {pacientesFiltradosModal.length} paciente(s) encontrado(s)
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={selecionarTodosFiltrados}
+                              className="h-7 text-[10px] font-bold"
+                            >
+                              Selecionar todos
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={limparSelecaoPacientes}
+                              className="h-7 text-[10px] font-bold text-slate-500"
+                            >
+                              Limpar
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+                          {pacientesFiltradosModal.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-slate-500">
+                              Nenhum paciente encontrado para o filtro.
+                            </div>
+                          ) : (
+                            pacientesFiltradosModal.map((p) => {
+                              const selecionado = (ajusteModal.pacientesSelecionados || [])
+                                .map(String)
+                                .includes(String(p.id));
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={p.id}
+                                  onClick={() => togglePaciente(p.id)}
+                                  className={cn(
+                                    "w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors cursor-pointer",
+                                    selecionado ? "bg-indigo-50/80" : "hover:bg-slate-50"
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      "w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                                      selecionado
+                                        ? "bg-indigo-600 border-indigo-600 text-white"
+                                        : "border-slate-300 bg-white"
+                                    )}
+                                  >
+                                    {selecionado && <Check className="w-3 h-3" />}
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-xs font-semibold text-slate-800 truncate">
+                                      {p.nome}
+                                    </span>
+                                    <span className="block text-[10px] text-slate-500 truncate">
+                                      {p.prontuario ? `Pront. ${p.prontuario}` : "Sem prontuário"} •{" "}
+                                      {p.alaNome || p.ala_nome || "Geral"}
+                                      {p.leito ? ` • Leito ${p.leito}` : ""}
+                                    </span>
+                                  </span>
+                                  <Users className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {resumoDistribuicao.selecionados.length > resumoDistribuicao.totalFalta && (
+                          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold">
+                            A falta é de {resumoDistribuicao.totalFalta} unidade(s). Selecione no máximo{" "}
+                            {resumoDistribuicao.totalFalta} paciente(s).
+                          </div>
+                        )}
+
+                        {resumoDistribuicao.divergenciaLotes && (
+                          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold">
+                            A soma das faltas por lote ({resumoDistribuicao.somaFaltasLotes} un) não confere
+                            com a divergência total ({resumoDistribuicao.totalFalta} un). Revise a contagem
+                            dos lotes antes de confirmar.
+                          </div>
+                        )}
+
+                        {resumoDistribuicao.selecionados.length > 0 && (
+                          <div className="rounded-xl border border-indigo-200 bg-white overflow-hidden">
+                            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-indigo-50/70 border-b border-indigo-100">
+                              <div className="text-[11px] font-bold text-indigo-900 flex items-center gap-1.5">
+                                <Calculator className="w-3.5 h-3.5" />
+                                {resumoDistribuicao.totalFalta} un ÷{" "}
+                                {resumoDistribuicao.selecionados.length} paciente(s)
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDistribuicaoManual({})}
+                                className="h-6 text-[10px] font-bold text-indigo-700"
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1" />
+                                Recalcular
+                              </Button>
+                            </div>
+
+                            <div className="px-3 py-1.5 text-[10px] text-slate-500 border-b border-slate-100">
+                              {resumoDistribuicao.base} un para cada
+                              {resumoDistribuicao.resto > 0
+                                ? ` + ${resumoDistribuicao.resto} paciente(s) com ${resumoDistribuicao.base + 1} un`
+                                : ""}.
+                              Você pode ajustar as quantidades abaixo.
+                            </div>
+
+                            <div className="max-h-44 overflow-y-auto divide-y divide-slate-100">
+                              {resumoDistribuicao.valores.map(({ paciente, quantidade }) => (
+                                <div key={paciente.id} className="flex items-center gap-2 px-3 py-1.5">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-semibold text-slate-800 truncate">
+                                      {paciente.nome}
+                                    </p>
+                                    <p className="text-[9px] text-slate-500 truncate">
+                                      {paciente.prontuario ? `Pront. ${paciente.prontuario}` : "Sem prontuário"} •{" "}
+                                      {paciente.alaNome || paciente.ala_nome || "Geral"}
+                                    </p>
+                                  </div>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={quantidade}
+                                    onChange={(e) => atualizarDistribuicaoManual(paciente.id, e.target.value)}
+                                    className="h-7 w-16 text-center text-xs font-mono font-bold"
+                                  />
+                                  <span className="text-[10px] text-slate-500 w-5">un</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div
+                              className={cn(
+                                "flex items-center justify-between px-3 py-2 border-t text-[11px] font-bold",
+                                resumoDistribuicao.somaDistribuida === resumoDistribuicao.totalFalta
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : "bg-red-50 text-red-800 border-red-200"
+                              )}
+                            >
+                              <span>Total distribuído</span>
+                              <span>
+                                {resumoDistribuicao.somaDistribuida} / {resumoDistribuicao.totalFalta} un
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        <label className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-200 bg-white cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={confirmouAdministracao}
+                            onChange={(e) => setConfirmouAdministracao(e.target.checked)}
+                            className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+                          />
+                          <span className="text-[11px] text-slate-700 font-medium leading-snug">
+                            Confirmo que as doses foram efetivamente administradas aos pacientes
+                            selecionados e que a distribuição representa a baixa real do plantão.
+                          </span>
+                        </label>
                       </div>
                     )}
 
@@ -1264,7 +1713,7 @@ export default function SateliteInventario() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setAjusteModal(prev => ({ ...prev, isOpen: false }))}
+                    onClick={fecharModalAjuste}
                   >
                     Cancelar
                   </Button>

@@ -23,7 +23,6 @@ import {
   Check, 
   RefreshCw, 
   Layers, 
-  Pill, 
   Sparkles, 
   X,
   ChevronRight,
@@ -38,6 +37,7 @@ import { differenceInDays, format } from "date-fns";
 import { safeFormatDate, safeParseISO } from "@/utils/dateUtils";
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
+import { RelatorioEstoqueSatelite } from "@/components/relatorios/RelatorioEstoqueSatelite";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -1001,6 +1001,12 @@ export default function SateliteEstoque() {
           {renderMedList(naoPadronizados)}
         </TabsContent>
       </Tabs>
+
+      {/* Relatório exclusivo de impressão (não aparece na tela) */}
+      <RelatorioEstoqueSatelite
+        itens={filteredEstoque}
+        filtros={{ busca: search, statusFilter, sortBy }}
+      />
 
     </div>
   );
