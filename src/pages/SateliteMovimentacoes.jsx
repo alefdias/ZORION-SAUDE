@@ -3,9 +3,10 @@ import { useLocation } from "react-router-dom";
 import Saidas from "./Saidas";
 import Devolucoes from "./Devolucoes";
 import PassagemPlantao from "./PassagemPlantao";
-import { PackagePlus, RotateCcw, PackageMinus, ClipboardList, Calendar } from "lucide-react";
+import { PackagePlus, RotateCcw, PackageMinus, ClipboardList, Calendar, BarChart3 } from "lucide-react";
 import PedidosSateliteUrgencia from "@/components/PedidosSateliteUrgencia";
 import { MapaMensalDispensacao } from "@/components/relatorios/MapaMensalDispensacao";
+import { ResumoDiarioDispensacao } from "@/components/relatorios/ResumoDiarioDispensacao";
 import { cn } from "@/lib/utils";
 
 // ─── Página Principal ─────────────────────────────────────────────────────────
@@ -71,6 +72,22 @@ export default function SateliteMovimentacoes() {
         </button>
 
         <button
+          onClick={() => setActiveTab("resumo_dia")}
+          className={cn(
+            "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
+            activeTab === "resumo_dia"
+              ? "border-emerald-600 text-emerald-700 font-bold bg-emerald-50/40"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:bg-slate-50/50"
+          )}
+        >
+          <BarChart3 className="w-4 h-4 text-emerald-600" />
+          Resumo do Dia
+          <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+            Soma
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("passagem_plantao")}
           className={cn(
             "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0",
@@ -110,6 +127,10 @@ export default function SateliteMovimentacoes() {
           <Devolucoes isTab={true} />
         ) : activeTab === "saidas" ? (
           <Saidas isTab={true} />
+        ) : activeTab === "resumo_dia" ? (
+          <div className="p-4">
+            <ResumoDiarioDispensacao />
+          </div>
         ) : activeTab === "mapa_mensal" ? (
           <div className="p-6">
             <MapaMensalDispensacao />
