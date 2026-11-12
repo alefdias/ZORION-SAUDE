@@ -1,5 +1,5 @@
 import { normalizeSearch } from "@/utils/searchUtils";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays, format } from "date-fns";
 import { safeFormatDate, safeParseISO } from "@/utils/dateUtils";
@@ -54,7 +55,22 @@ export default function SateliteEstoque() {
   const [copiedCode, setCopiedCode] = useState(null);
   const [statusFilter, setStatusFilter] = useState("todos"); // "todos", "com_saldo", "alerta_minimo", "sem_saldo", "mav", "psico", "vencendo"
   const [sortBy, setSortBy] = useState("nome_asc"); // "nome_asc", "saldo_desc", "saldo_asc", "central_desc", "validade_asc"
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printSelectedIds, setPrintSelectedIds] = useState([]);
+  const [printBusca, setPrintBusca] = useState("");
+  const [itensParaImprimir, setItensParaImprimir] = useState(null);
+  const [printSelecaoManual, setPrintSelecaoManual] = useState(false);
   const hoje = new Date();
+
+  // Limpa a seleção de impressão após o diálogo nativo de impressão fechar
+  useEffect(() => {
+    const limparAposImprimir = () => {
+      setItensParaImprimir(null);
+      setPrintSelecaoManual(false);
+    };
+    window.addEventListener("afterprint", limparAposImprimir);
+    return () => window.removeEventListener("afterprint", limparAposImprimir);
+  }, []);
 
   const { data: medicamentos = [], isLoading: loadingMeds, isRefetching } = useQuery({
     queryKey: ['medicamentos'],
@@ -255,6 +271,51 @@ export default function SateliteEstoque() {
   const padronizados = useMemo(() => filteredEstoque.filter(m => m.padronizado !== false), [filteredEstoque]);
   const naoPadronizados = useMemo(() => filteredEstoque.filter(m => m.padronizado === false), [filteredEstoque]);
 
+  const itensSelecionadosImpressao = useMemo(() => {
+    const ids = new Set(printSelectedIds.map(String));
+    return filteredEstoque.filter((med) => ids.has(String(med.id)));
+  }, [filteredEstoque, printSelectedIds]);
+
+  const itensFiltradosDialogoImpressao = useMemo(() => {
+    const termo = normalizeSearch(printBusca);
+    if (!termo) return filteredEstoque;
+    const termos = termo.split(/\s+/).filter(Boolean);
+    return filteredEstoque.filter((med) => {
+      const texto = normalizeSearch(
+        `${med.nome || ""} ${med.codigo || ""} ${med.principio_ativo || ""} ${med.concentracao || ""} ${med.apresentacao || ""}`
+      );
+      return termos.every((t) => texto.includes(t));
+    });
+  }, [filteredEstoque, printBusca]);
+
+  const togglePrintItem = (id) => {
+    setPrintSelectedIds((prev) => {
+      const idStr = String(id);
+      return prev.map(String).includes(idStr)
+        ? prev.map(String).filter((item) => item !== idStr)
+        : [...prev.map(String), idStr];
+    });
+  };
+
+  const selecionarTodosImpressao = () => {
+    setPrintSelectedIds(itensFiltradosDialogoImpressao.map((med) => String(med.id)));
+  };
+
+  const limparSelecaoImpressao = () => setPrintSelectedIds([]);
+
+  const imprimirItens = (itens, selecaoManual = false) => {
+    setItensParaImprimir(itens);
+    setPrintSelecaoManual(selecaoManual);
+    setPrintDialogOpen(false);
+    setTimeout(() => window.print(), 200);
+  };
+
+  const handlePrint = () => {
+    setPrintSelectedIds([]);
+    setPrintBusca("");
+    setPrintDialogOpen(true);
+  };
+
   const handleExportCSV = () => {
     try {
       const headers = [
@@ -302,10 +363,6 @@ export default function SateliteEstoque() {
       console.error(error);
       toast.error("Erro ao exportar CSV");
     }
-  };
-
-  const handlePrint = () => {
-    window.print();
   };
 
   if (isLoading) {
@@ -1004,9 +1061,147 @@ export default function SateliteEstoque() {
 
       {/* Relatório exclusivo de impressão (não aparece na tela) */}
       <RelatorioEstoqueSatelite
-        itens={filteredEstoque}
-        filtros={{ busca: search, statusFilter, sortBy }}
+        itens={itensParaImprimir || filteredEstoque}
+        filtros={{
+          busca: search,
+          statusFilter,
+          sortBy,
+          selecaoManual: printSelecaoManual,
+        }}
       />
+
+      {/* Seleção dos medicamentos que entrarão no relatório impresso */}
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+              <Printer className="w-5 h-5 text-emerald-600" />
+              Selecionar medicamentos para impressão
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Marque apenas os medicamentos que devem aparecer no relatório. Se preferir, use
+              “Imprimir todos” para incluir tudo o que está filtrado na tela.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                value={printBusca}
+                onChange={(e) => setPrintBusca(e.target.value)}
+                placeholder="Buscar medicamento por nome, código ou princípio ativo..."
+                className="h-9 pl-9 text-xs"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-500 font-medium">
+                {itensFiltradosDialogoImpressao.length} item(ns) •{" "}
+                <strong className="text-indigo-700">{printSelectedIds.length} selecionado(s)</strong>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selecionarTodosImpressao}
+                  className="h-7 text-[10px] font-bold"
+                >
+                  Selecionar todos
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={limparSelecaoImpressao}
+                  className="h-7 text-[10px] font-bold text-slate-500"
+                >
+                  Limpar
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 max-h-[45vh] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800">
+              {itensFiltradosDialogoImpressao.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  Nenhum medicamento encontrado para os filtros atuais.
+                </div>
+              ) : (
+                itensFiltradosDialogoImpressao.map((med) => {
+                  const selecionado = printSelectedIds.map(String).includes(String(med.id));
+                  return (
+                    <button
+                      type="button"
+                      key={med.id}
+                      onClick={() => togglePrintItem(med.id)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2 text-left transition-colors cursor-pointer",
+                        selecionado ? "bg-emerald-50/70 dark:bg-emerald-950/30" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                          selecionado
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                        )}
+                      >
+                        {selecionado && <Check className="w-3 h-3" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                          {med.nome}
+                        </span>
+                        <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {med.codigo || "S/C"}
+                          {med.concentracao ? ` • ${med.concentracao}` : ""}
+                          {med.apresentacao ? ` • ${med.apresentacao}` : ""}
+                        </span>
+                      </span>
+                      <span className="text-right shrink-0">
+                        <span className="block text-xs font-black text-indigo-700 dark:text-indigo-400 font-mono">
+                          {med.saldoSat} un
+                        </span>
+                        <span className="block text-[9px] text-slate-400">saldo satélite</span>
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPrintDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => imprimirItens(filteredEstoque, false)}
+              className="gap-1.5"
+            >
+              <Printer className="w-4 h-4 text-slate-500" />
+              Imprimir todos ({filteredEstoque.length})
+            </Button>
+            <Button
+              type="button"
+              onClick={() => imprimirItens(itensSelecionadosImpressao, true)}
+              disabled={itensSelecionadosImpressao.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir selecionados ({itensSelecionadosImpressao.length})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

@@ -290,6 +290,7 @@ export function RelatorioEstoqueSatelite({ itens = [], filtros = {} }) {
   const filtroAtivo = ROTULOS_FILTRO[filtros.statusFilter] || ROTULOS_FILTRO.todos;
   const ordenacao = ROTULOS_ORDENACAO[filtros.sortBy] || ROTULOS_ORDENACAO.nome_asc;
   const busca = (filtros.busca || "").trim();
+  const selecaoManual = Boolean(filtros.selecaoManual);
 
   return (
     <>
@@ -321,6 +322,11 @@ export function RelatorioEstoqueSatelite({ itens = [], filtros = {} }) {
                 </>
               ) : null}
               {" "}• Ordenação: <strong>{ordenacao}</strong>
+              {selecaoManual ? (
+                <>
+                  {" "}• Seleção manual: <strong>{itens.length} item(ns)</strong>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
