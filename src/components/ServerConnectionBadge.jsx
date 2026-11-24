@@ -175,7 +175,7 @@ export function ServerConnectionBadge() {
             </div>
             <div className="space-y-2">
               <Label>Senha do Postgres</Label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha (admin123)" />
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha do banco" />
             </div>
           </div>
           <div className="flex justify-end gap-2">

@@ -1447,7 +1447,7 @@ export default function ResponsavelTecnico() {
               <div className="space-y-1">
                 <p className="font-bold text-sky-900 dark:text-sky-200">Supervisão Técnica Universal:</p>
                 <p className="text-sky-800/90 dark:text-sky-300 leading-relaxed">
-                  Lembrete: A senha mestre do Administrador (<span className="font-mono font-bold bg-white/80 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-sky-300">admin123</span>) possui acesso universal de supervisão e funciona para todos os usuários cadastrados no hospital.
+                  Lembrete: use a senha do próprio usuário responsável pela ação. Não existe senha mestre no sistema.
                 </p>
               </div>
             </div>

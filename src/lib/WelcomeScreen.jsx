@@ -493,37 +493,7 @@ export function WelcomeScreen({ onEnter }) {
       }
       
       const saved = localStorage.getItem("axion_users");
-      let users = saved ? JSON.parse(saved) : [];
-      
-      const adminIndex = users.findIndex(u => u.username === "admin");
-      const allModules = ["estoque_farmacia", "pacientes_medicao", "farmacia_satelite", "responsavel_tecnico", "carrinho_parada", "carrinho_enfermagem", "carrinho_farmacia", "enfermagem"];
-      
-      if (adminIndex === -1) {
-        users.push({
-          id: "1",
-          nome: "Administrador RT",
-          username: "admin",
-          password: "admin123",
-          modules: allModules,
-          first_login: false
-        });
-        localStorage.setItem("axion_users", JSON.stringify(users));
-      } else {
-        let changed = false;
-        if (users[adminIndex].password !== "admin123") {
-          users[adminIndex].password = "admin123";
-          changed = true;
-        }
-        allModules.forEach(m => {
-          if (!users[adminIndex].modules.includes(m)) {
-            users[adminIndex].modules.push(m);
-            changed = true;
-          }
-        });
-        if (changed) {
-          localStorage.setItem("axion_users", JSON.stringify(users));
-        }
-      }
+      const users = saved ? JSON.parse(saved) : [];
       setAvailableUsers(users);
     };
 
@@ -589,8 +559,8 @@ export function WelcomeScreen({ onEnter }) {
       console.warn("Erro no fetch de usuarios durante login", err);
     }
 
-    // A senha mestre admin123 funciona para qualquer usuário cadastrado
-    const user = users.find(u => (u.username === username || (u.coren && u.coren === username)) && (u.password === password || password === "admin123"));
+    // Valida contra o usuário cadastrado (sem senha mestre)
+    const user = users.find(u => (u.username === username || (u.coren && u.coren === username)) && u.password === password);
 
     if (!user) {
       toast.error("Usuário ou senha incorretos.");
@@ -599,7 +569,7 @@ export function WelcomeScreen({ onEnter }) {
 
     // Permission check for modules and roles
     const userRoleStr = (user.cargo || "").toLowerCase();
-    const isMasterAdmin = user.cargo === "administrador" || user.cargo === "admin" || password === "admin123";
+    const isMasterAdmin = user.cargo === "administrador" || user.cargo === "admin";
 
     // 1. Diretriz: Médico só pode acessar o Módulo Médico
     if (userRoleStr === "medico" && !isMasterAdmin) {

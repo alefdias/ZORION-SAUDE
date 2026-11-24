@@ -14,8 +14,8 @@ export function getActiveUser() {
 }
 
 /**
- * Valida se a senha digitada corresponde à senha do próprio usuário logado,
- * a qualquer usuário cadastrado no banco ou à senha mestre (admin123).
+ * Valida se a senha digitada corresponde à senha do próprio usuário logado.
+ * Não existe senha mestre: cada ação sensível exige a senha do próprio usuário.
  *
  * @param {string} inputSenha Senha digitada
  * @returns {Promise<boolean>} Verdadeiro se a senha for válida
@@ -24,10 +24,7 @@ export async function validarSenhaUsuario(inputSenha) {
   const input = (inputSenha || "").trim();
   if (!input) return false;
 
-  // 1. Senha mestre do sistema sempre aceita
-  if (input === "admin123") return true;
-
-  // 2. Validação contra o usuário atualmente ativo na sessão
+  // 1. Validação contra o usuário atualmente ativo na sessão
   const currentUser = getActiveUser();
   if (currentUser) {
     if (currentUser.senha && currentUser.senha === input) return true;
@@ -50,10 +47,6 @@ export async function validarSenhaUsuario(inputSenha) {
           return true;
         }
       }
-
-      // Se nenhum usuário específico foi mapeado, permite se qualquer usuário cadastrado bater com a senha
-      const anyMatch = users.find((u) => u.senha === input || u.password === input);
-      if (anyMatch) return true;
     }
   } catch (err) {
     console.warn("Aviso ao consultar usuários para validação de senha:", err);
