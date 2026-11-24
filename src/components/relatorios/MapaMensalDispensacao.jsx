@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { db } from "@/api/db";
 import {
@@ -190,6 +190,17 @@ export function MapaMensalDispensacao() {
   const [apenasComSaida, setApenasComSaida] = useState(false); // Ocultar medicamentos zerados no período
   const [modoVisualizacao, setModoVisualizacao] = useState("ambas"); // "ambas" | "q1" | "q2"
   const [termoBusca, setTermoBusca] = useState("");
+  const [somenteComSaidaNaImpressao, setSomenteComSaidaNaImpressao] = useState(false);
+
+  // Ao imprimir, mostra somente medicamentos com saída no período.
+  useEffect(() => {
+    if (!somenteComSaidaNaImpressao) return undefined;
+    const timer = setTimeout(() => {
+      window.print();
+      setSomenteComSaidaNaImpressao(false);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [somenteComSaidaNaImpressao]);
 
   // Lista dinâmica de anos (de 2023 até o ano atual + 10 ou mais, adaptável dinamicamente)
   const anosDisponiveis = useMemo(() => {
@@ -743,7 +754,13 @@ export function MapaMensalDispensacao() {
     });
   }, [matrizDispensacao.linhas, categoriaFiltro, apenasComSaida, termoBusca]);
 
-  // Totais Reativos estritamente baseados nas linhas filtradas na tela/impressão
+  // Na tela mostra as linhas filtradas; na impressão mostra apenas quem teve saída.
+  const linhasExibicao = useMemo(() => {
+    if (!somenteComSaidaNaImpressao) return linhasFiltradas;
+    return linhasFiltradas.filter((item) => (Number(item.totalMes) || 0) > 0);
+  }, [linhasFiltradas, somenteComSaidaNaImpressao]);
+
+  // Totais Reativos estritamente baseados nas linhas exibidas na tela/impressão
   const totaisFiltrados = useMemo(() => {
     const porDia = {};
     for (let d = 1; d <= totalDiasMes; d++) {
@@ -754,7 +771,7 @@ export function MapaMensalDispensacao() {
     let q2 = 0;
     let geral = 0;
 
-    linhasFiltradas.forEach((item) => {
+    linhasExibicao.forEach((item) => {
       for (let d = 1; d <= totalDiasMes; d++) {
         porDia[d] += item.dias[d] || 0;
       }
@@ -779,7 +796,7 @@ export function MapaMensalDispensacao() {
       geral,
       diaPico,
     };
-  }, [linhasFiltradas, totalDiasMes]);
+  }, [linhasExibicao, totalDiasMes]);
 
   // Exportação CSV formatado para Excel com Ala e Categoria
   const exportarExcel = () => {
@@ -941,7 +958,7 @@ export function MapaMensalDispensacao() {
               </Button>
 
               <Button
-                onClick={() => window.print()}
+                onClick={() => setSomenteComSaidaNaImpressao(true)}
                 className="h-9 px-4 text-xs font-bold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
               >
                 <Printer className="w-4 h-4" />
@@ -1262,14 +1279,14 @@ export function MapaMensalDispensacao() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-400">
-                  {linhasFiltradas.length === 0 ? (
+                  {linhasExibicao.length === 0 ? (
                     <tr>
                       <td colSpan={18} className="text-center py-8 text-slate-400 print:text-slate-600">
                         Nenhum medicamento encontrado para os filtros selecionados.
                       </td>
                     </tr>
                   ) : (
-                    linhasFiltradas.map((item, idx) => {
+                    linhasExibicao.map((item, idx) => {
                       const med = item.medicamento;
                       return (
                         <tr
@@ -1307,8 +1324,8 @@ export function MapaMensalDispensacao() {
 
                           <td className="cat-cell text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
-                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
-                                {item.listaP344 || "P344"}
+                              <Badge variant="outline" title={item.listaP344 || "Psicotrópico / Portaria 344"} className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
+                                Psico
                               </Badge>
                             ) : item.isMav ? (
                               <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-red-50 text-red-700 border-red-200 print:bg-transparent print:text-black print:border-slate-600">
@@ -1492,14 +1509,14 @@ export function MapaMensalDispensacao() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-400">
-                  {linhasFiltradas.length === 0 ? (
+                  {linhasExibicao.length === 0 ? (
                     <tr>
                       <td colSpan={19} className="text-center py-8 text-slate-400 print:text-slate-600">
                         Nenhum medicamento encontrado para os filtros selecionados.
                       </td>
                     </tr>
                   ) : (
-                    linhasFiltradas.map((item, idx) => {
+                    linhasExibicao.map((item, idx) => {
                       const med = item.medicamento;
                       return (
                         <tr
@@ -1537,8 +1554,8 @@ export function MapaMensalDispensacao() {
 
                           <td className="cat-cell text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
-                              <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
-                                {item.listaP344 || "P344"}
+                              <Badge variant="outline" title={item.listaP344 || "Psicotrópico / Portaria 344"} className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
+                                Psico
                               </Badge>
                             ) : item.isMav ? (
                               <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-red-50 text-red-700 border-red-200 print:bg-transparent print:text-black print:border-slate-600">
@@ -1612,6 +1629,11 @@ export function MapaMensalDispensacao() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Legenda da coluna Cat. */}
+            <div className="hidden print:block text-[7px] text-slate-700 font-sans mt-2 mb-1">
+              <strong>Legenda Cat.:</strong> Psico = Psicotrópico/Controlado (Portaria 344) • MAV = Alta Vigilância • Geral = Clínico Geral.
             </div>
 
             {/* Campo Hospitalar de Assinaturas e Carimbo (Folha 2) */}
