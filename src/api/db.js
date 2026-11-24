@@ -241,8 +241,8 @@ const ensureTableQuery = {
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "especialidade" TEXT;
     ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "primeiro_acesso" BOOLEAN DEFAULT true;
     INSERT INTO "Usuario" ("id", "nome", "login", "senha", "perfil", "primeiro_acesso") 
-    VALUES ('user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin', false)
-    ON CONFLICT DO NOTHING;
+    SELECT 'user-admin-uuid', 'Administrador', 'admin', 'admin123', 'admin', false
+    WHERE NOT EXISTS (SELECT 1 FROM "Usuario");
   `,
   NotificacaoFarmacia: `
     CREATE TABLE IF NOT EXISTS "NotificacaoFarmacia" (

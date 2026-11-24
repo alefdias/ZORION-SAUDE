@@ -30,15 +30,6 @@ export default function AuthDialog({ open, onSuccess }) {
                 setUsuario("");
                 setSenha("");
                 onSuccess();
-            } else if (usuario === "admin" && senha === "admin123" && users.length === 0) {
-                 // Fallback temporário se tabela estiver vazia mas não inseriu o seed
-                const timestamp = new Date().getTime();
-                localStorage.setItem("pharma_auth_time", timestamp.toString());
-                localStorage.setItem("pharma_auth_user", "admin");
-                toast.success("Autenticação de sistema (admin) realizada!");
-                setUsuario("");
-                setSenha("");
-                onSuccess();
             } else {
                 toast.error("Usuário ou senha incorretos!");
             }

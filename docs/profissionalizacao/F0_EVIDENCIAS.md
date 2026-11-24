@@ -156,3 +156,42 @@ Não mexer agora. A F3 decide arquivar/renomear com aprovação.
 | Tempo de restore no servidor real | ⏳ pendente |
 
 **F0 automatizada concluída.** Falta apenas o teste manual dos 9 fluxos com o app apontando para `Zorion_test`.
+
+---
+
+## 8. Bloco 1 aplicado — integridade básica (24/11 ~11:56)
+
+**Backup imediatamente antes:** `backups/Zorion_20261124_115626.dump` (924 KB, checksum OK).
+
+Aplicado primeiro em `Zorion_test`, depois em produção com `--force-prod`:
+
+| Migration | Efeito em produção |
+|---|---|
+| `0001_dedupe_legado.sql` | removeu **61** linhas idênticas de `Usuario` e **6** linhas excluídas duplicadas de `Ala` |
+| `0002_primary_keys.sql` | criou PK em **36** tabelas (total agora: **37**, antes: 1) |
+| `0003_unique_login.sql` | índice único em `lower(login)` (bloqueia login duplicado) |
+
+**Antes → depois**
+
+| Item | Antes | Depois |
+|---|---:|---:|
+| Linhas em `Usuario` | 62 | **1** |
+| IDs distintos em `Usuario` | 1 | 1 |
+| Linhas em `Ala` | 25 | **19** |
+| Chaves primárias | 1 | **37** |
+| Logins duplicados | 1 grupo (62) | **0** |
+
+**Código ajustado (build OK):**
+- `db.js`: seed do admin agora usa `WHERE NOT EXISTS` — não cria mais uma linha por inicialização.
+- `AuthDialog.jsx`: removido o fallback fixo `admin/admin123` para tabela vazia.
+
+**Não aplicado ainda:**
+- FKs (`NOT VALID`) — próximo bloco, pois exigem observar o app em uso.
+- Dedupe de `Medicamento` (3 grupos) e tratamento das 41 prescrições órfãs.
+
+**Rollback:** restaurar o dump de 11:56 no banco de produção:
+
+```bash
+./scripts/f0/restore.sh backups/Zorion_20261124_115626.dump Zorion --recreate --force-prod
+```
+
