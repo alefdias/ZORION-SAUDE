@@ -32,8 +32,50 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { isMav, isPsicotropico, getPortaria344List } from "@/utils/mavUtils";
+import { normalizeSearch } from "@/utils/searchUtils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+// Nomes oficiais das alas (tabela "Ala") e apelidos antigos encontrados
+// em pacientes, prescrições e saídas.
+// Corrige nomes antigos gravados com encoding errado (mojibake).
+const repararNomeAla = (nome) =>
+  String(nome || "")
+    .replace(/REABILITAÃ‡ÃƒO/gi, "REABILITAÇÃO")
+    .replace(/Ã‡ÃƒO/gi, "ÇÃO")
+    .replace(/Ã‡/g, "Ç")
+    .replace(/Ãƒ/g, "Ã")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizarNomeAla = (nome) =>
+  normalizeSearch(repararNomeAla(nome)).replace(/\s+/g, " ").trim();
+
+const ALIASES_ALA = {
+  cl1: "CASA LAR l",
+  cl2: "CASA LAR ll",
+  n2: "NEUROLOGICA ll",
+  "neuro i": "NEUROLOGICA l (A)",
+  "neurologica i": "NEUROLOGICA l (A)",
+  "r1 f": "REABILITAÇÃO l ADOLECENTE",
+  "r1 m": "REABILITAÇÃO l MASCULINA",
+  r1m: "REABILITAÇÃO l MASCULINA",
+  r2: "REABILITAÇÃO ll",
+  "r3 dq": "REABILITAÇÃO lll DEPENDENCIA QUIMICA",
+  "r3 t": "REABILITAÇÃO lll TRANSTORNO",
+  r3t: "REABILITAÇÃO lll TRANSTORNO",
+  "reabilitacao ii": "REABILITAÇÃO ll",
+  "reabilitacao ll": "REABILITAÇÃO ll",
+};
+
+const nomeCanonicoAla = (nome) => {
+  const normalizado = normalizarNomeAla(nome);
+  if (!normalizado) return "";
+  return ALIASES_ALA[normalizado] || repararNomeAla(nome);
+};
+
+const nomeEhAlaValida = (nome) =>
+  !!nome && !/perda|almoxarifado|farm[aá]cia sat[eé]lite/i.test(nome);
 
 export function formatarApresentacaoMed(med) {
   if (!med) return "COMPRIMIDO";
@@ -187,48 +229,32 @@ export function MapaMensalDispensacao() {
     queryFn: () => db.entities.Paciente.list(),
   });
 
-  // Lista unificada e padronizada de Alas disponíveis no sistema
+  // Lista oficial de alas: somente a tabela "Ala", com os nomes canônicos.
+  // Pacientes/saídas antigos servem apenas para completar IDs órfãos.
   const listaAlasOpcoes = useMemo(() => {
     const map = new Map();
 
+    const adicionar = (id, nome) => {
+      const idStr = String(id || "").trim();
+      if (!idStr || map.has(idStr)) return;
+
+      const nomeOficial = nomeCanonicoAla(nome);
+      if (!nomeEhAlaValida(nomeOficial)) return;
+
+      map.set(idStr, { id: idStr, nome: nomeOficial });
+    };
+
     alas.forEach((a) => {
-      if (a?.nome && a.nome.trim()) {
-        map.set(a.nome.trim().toUpperCase(), {
-          id: String(a.id),
-          nome: a.nome.trim(),
-        });
-      }
+      if (a?.deleted_at) return;
+      adicionar(a.id, a.nome);
     });
 
-    pacientes.forEach((p) => {
-      const nomeAla = p.alaNome || p.ala_nome;
-      if (nomeAla && nomeAla.trim()) {
-        const upper = nomeAla.trim().toUpperCase();
-        if (!map.has(upper)) {
-          map.set(upper, {
-            id: p.alaId || p.ala_id || upper,
-            nome: nomeAla.trim(),
-          });
-        }
-      }
-    });
+    // Mantém IDs antigos que ainda existam em pacientes/saídas, mas sempre
+    // com o nome oficial (sem criar opções "CL1", "N2", "R1M" etc.).
+    pacientes.forEach((p) => adicionar(p.alaId || p.ala_id, p.alaNome || p.ala_nome));
+    saidas.forEach((s) => adicionar(s.ala_id || s.alaId, s.ala_nome || s.alaNome));
 
-    saidas.forEach((s) => {
-      const nomeAla = s.ala_nome || s.alaNome;
-      if (nomeAla && nomeAla.trim()) {
-        const upper = nomeAla.trim().toUpperCase();
-        if (!map.has(upper)) {
-          map.set(upper, {
-            id: s.ala_id || s.alaId || upper,
-            nome: nomeAla.trim(),
-          });
-        }
-      }
-    });
-
-    const lista = Array.from(map.values());
-    lista.sort((a, b) => a.nome.localeCompare(b.nome));
-    return lista;
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [alas, pacientes, saidas]);
 
   // Nome legível da Ala atualmente selecionada
@@ -279,13 +305,25 @@ export function MapaMensalDispensacao() {
     const mapAla = new Map();
     alas.forEach((a) => mapAla.set(String(a.id), a));
 
-    return { mapPac, mapPr, mapAla };
+    // Nome normalizado/apelido -> registro oficial da tabela "Ala"
+    const mapAlaPorNome = new Map();
+    alas.forEach((a) => {
+      if (!a?.deleted_at && a?.nome) {
+        mapAlaPorNome.set(normalizarNomeAla(a.nome), a);
+      }
+    });
+    Object.entries(ALIASES_ALA).forEach(([alias, nomeOficial]) => {
+      const alvo = mapAlaPorNome.get(normalizarNomeAla(nomeOficial));
+      if (alvo) mapAlaPorNome.set(alias, alvo);
+    });
+
+    return { mapPac, mapPr, mapAla, mapAlaPorNome };
   }, [pacientes, prescricoes, alas]);
 
   // Total acumulado por Ala no mês selecionado (para exibição rápida no dropdown)
   const totaisPorAla = useMemo(() => {
     const totais = {};
-    const { mapPac, mapPr, mapAla } = mapasBusca;
+    const { mapPac, mapPr, mapAla, mapAlaPorNome } = mapasBusca;
     const mesStr = String(mes + 1).padStart(2, "0");
     const anoStr = String(ano);
 
@@ -343,6 +381,15 @@ export function MapaMensalDispensacao() {
       }
       if (!alaNome) alaNome = "Sem Ala Definida";
 
+      // Sempre prioriza o nome oficial da tabela "Ala" e resolve apelidos
+      const alaIdSaidaTotal = saida.ala_id || saida.alaId;
+      if (alaIdSaidaTotal && mapAla.has(String(alaIdSaidaTotal))) {
+        alaNome = mapAla.get(String(alaIdSaidaTotal)).nome.trim();
+      }
+      alaNome = nomeCanonicoAla(alaNome);
+      const alaOficialTotal = mapAlaPorNome.get(normalizarNomeAla(alaNome));
+      if (alaOficialTotal?.nome) alaNome = alaOficialTotal.nome.trim();
+
       const dataSaidaStr = saida.data_inicio_cobertura || saida.data_saida || saida.created_at;
       if (!dataSaidaStr) return;
 
@@ -376,7 +423,7 @@ export function MapaMensalDispensacao() {
   const matrizDispensacao = useMemo(() => {
     if (!medicamentos.length) return { linhas: [], totaisPorDia: {}, totalGeral: 0, totalQ1: 0, totalQ2: 0, diaPico: null };
 
-    const { mapPac, mapPr, mapAla } = mapasBusca;
+    const { mapPac, mapPr, mapAla, mapAlaPorNome } = mapasBusca;
 
     // Mapa acumulador: medId -> { dias: { [dia]: quantidade }, totalQ1, totalQ2, totalMes }
     const mapaMeds = {};
@@ -476,6 +523,20 @@ export function MapaMensalDispensacao() {
           if (!alaNomeSaida && alaIdSaida && mapAla.has(String(alaIdSaida))) {
             alaNomeSaida = mapAla.get(String(alaIdSaida)).nome.trim();
           }
+        }
+      }
+
+      // Prioriza o ID oficial da tabela "Ala" e resolve apelidos antigos
+      // (CL1, N2, R1M, R3T etc.) para o nome completo da ala.
+      if (alaIdSaida && mapAla.has(String(alaIdSaida))) {
+        alaNomeSaida = mapAla.get(String(alaIdSaida)).nome.trim();
+      } else if (alaNomeSaida) {
+        const alaOficial = mapAlaPorNome.get(normalizarNomeAla(alaNomeSaida));
+        if (alaOficial) {
+          alaIdSaida = String(alaOficial.id);
+          alaNomeSaida = alaOficial.nome.trim();
+        } else {
+          alaNomeSaida = nomeCanonicoAla(alaNomeSaida);
         }
       }
 
