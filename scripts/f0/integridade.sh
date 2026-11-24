@@ -80,6 +80,34 @@ for t in "${TABLES[@]}"; do
 done
 
 echo
+echo "== Chaves (pré-requisito para criar PK) =="
+DUP_ROWS="$(psql -d "$TARGET" -tA -F'|' -c "
+WITH t AS (
+  SELECT table_name FROM information_schema.tables
+  WHERE table_schema='public' AND table_type='BASE TABLE'
+),
+m AS (
+  SELECT t.table_name,
+    (xpath('/row/c/text()', query_to_xml(format('select count(*) - count(distinct id) as c from %I', t.table_name), false, true, '')))[1]::text::int AS dups,
+    (xpath('/row/c/text()', query_to_xml(format('select count(*) filter (where id is null) as c from %I', t.table_name), false, true, '')))[1]::text::int AS nulos
+  FROM t
+  WHERE EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema='public' AND c.table_name=t.table_name AND c.column_name='id'
+  )
+)
+SELECT table_name, dups, nulos FROM m WHERE dups > 0 OR nulos > 0 ORDER BY dups DESC;" 2>/dev/null || true)"
+if [[ -z "$DUP_ROWS" ]]; then
+  ok "nenhum id duplicado ou nulo nas tabelas com coluna id"
+else
+  while IFS='|' read -r t d n; do
+    [[ -n "$t" ]] || continue
+    fail "id duplicado em $t: $d (nulos: $n)"
+    CRIT=$((CRIT + 1))
+  done <<< "$DUP_ROWS"
+fi
+
+echo
 echo "== Órfãos (registros apontando para algo inexistente) =="
 check_zero "Lotes sem medicamento" \
   "SELECT count(*) FROM \"Lote\" l WHERE l.\"medicamento_id\" IS NOT NULL AND l.\"deleted_at\" IS NULL AND NOT EXISTS (SELECT 1 FROM \"Medicamento\" m WHERE m.\"id\" = l.\"medicamento_id\")"
