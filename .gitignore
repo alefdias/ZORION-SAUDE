@@ -1,5 +1,6 @@
 #env
-# .env foi removido para permitir envio ao GitHub
+# .env não é versionado (pode conter credenciais)
+.env
 .env.*
 
 # Logs

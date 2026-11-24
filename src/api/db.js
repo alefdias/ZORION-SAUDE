@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
+// Escapa um valor para uso seguro em literal SQL (evita injeção em campos de texto).
+function sqlLit(value) {
+  if (value === null || value === undefined) return "NULL";
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
 // Helper to get Postgres credentials
 function getPgConfig() {
   const ip = localStorage.getItem("pg_ip");
@@ -17,16 +23,12 @@ async function logAuditoria(entityName, acao, entidadeId, detalhes, ip, dbName, 
     const userName = user ? (user.nome || user.login || "Sistema") : "Sistema";
     const auditId = crypto.randomUUID();
     const now = new Date().toISOString();
-    let safeDetalhes = "";
-    if (typeof detalhes === "object") {
-      try { safeDetalhes = JSON.stringify(detalhes); } catch (e) { safeDetalhes = "Objeto modificado"; }
-    } else {
-      safeDetalhes = detalhes || "";
-    }
-    const safeDetalhesEscaped = safeDetalhes.replace(/'/g, "''");
-    
+    const safeDetalhes = typeof detalhes === "object"
+      ? (() => { try { return JSON.stringify(detalhes); } catch { return "Objeto modificado"; } })()
+      : (detalhes || "");
+
     const q = `INSERT INTO "Auditoria" ("id", "acao", "entidade", "entidade_id", "detalhes", "usuario", "data_hora", "created_at") 
-               VALUES ('${auditId}', '${acao}', '${entityName}', '${entidadeId}', '${safeDetalhesEscaped}', '${userName}', '${now}', '${now}')`;
+               VALUES (${sqlLit(auditId)}, ${sqlLit(acao)}, ${sqlLit(entityName)}, ${sqlLit(entidadeId)}, ${sqlLit(safeDetalhes)}, ${sqlLit(userName)}, ${sqlLit(now)}, ${sqlLit(now)})`;
     await invoke("execute_postgres", { ip, dbName, password, query: q });
   } catch (e) {
     console.warn("[db.js] Falha ao registrar auditoria silenciosamente:", e);

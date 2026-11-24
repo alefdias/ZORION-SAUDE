@@ -1,8 +1,11 @@
-# F0 — Evidências da execução (banco real)
+# F0 — Evidências (banco LOCAL de teste)
+
+> **Correção importante:** este relatório é da **cópia local** desta máquina, **não do servidor do hospital**.
+> O servidor real está em outro computador e **nunca foi acessado nem alterado**.
 
 **Data:** 24/11/2026 ~11:30
 **Ambiente:** PostgreSQL 18.6 em `127.0.0.1:5432`
-**Banco de origem:** `Zorion` (15 MB, 39 tabelas)
+**Banco de origem:** `Zorion` local (15 MB, 39 tabelas) — cópia de teste
 **Banco de teste:** `Zorion_test`
 **Baseline git:** tag `baseline-profissionalizacao` (commit `2617eb1`)
 **Branch de trabalho:** `profissionalizacao/f0-rede-seguranca` (commit `5b3b88c`)
@@ -68,7 +71,7 @@
 | Dois backups no mesmo segundo | não sobrescreve |
 | Script de integridade com erro de tipo de coluna | corrigido e reexecutado |
 
-## 5. Achados reais do banco (linha de base para F1/F3)
+## 5. Achados da cópia local (diagnóstico apenas — nada foi alterado)
 
 ### 5.1 Estrutura — muito mais fraca que o schema do repositório
 
@@ -135,13 +138,12 @@ Não mexer agora. A F3 decide arquivar/renomear com aprovação.
 
 ## 6. Impacto no plano
 
-- **F1** cresce um item: dedupe de `Usuario` + PK/unique + fim do `admin123`.
-- **F3** não pode criar FK antes de existir **unique index** nas colunas referenciadas. Ordem obrigatória:
-  1. dedupe aprovado (`Usuario`, `Ala`);
-  2. unique indexes;
-  3. FKs `NOT VALID`;
-  4. relatório de órfãos (já pronto em `integridade.sh`).
-- **F5** ganha evidência concreta: hoje o perfil é validado no cliente e todos os 62 registros são admin.
+> **Banco congelado por decisão do responsável.** Nenhum item abaixo será executado no banco — nem local, nem no servidor.
+
+- ~~**F1** dedupe de `Usuario` + PK/unique~~ — **descartado** (altera dado/schema).
+- ~~**F3** migrações, unique indexes, FKs `NOT VALID`~~ — **suspensa** (altera schema).
+- **F5** continua valendo no código: permissões e auditoria podem ser endurecidas no cliente/Rust sem tocar no banco.
+- O diagnóstico fica como referência para o servidor, caso um dia o responsável autorize uma intervenção planejada.
 
 ## 7. Portão da F0
 
@@ -159,39 +161,31 @@ Não mexer agora. A F3 decide arquivar/renomear com aprovação.
 
 ---
 
-## 8. Bloco 1 aplicado — integridade básica (24/11 ~11:56)
+## 8. Bloco 1 — aplicado e REVERTIDO no banco local (24/11)
 
-**Backup imediatamente antes:** `backups/Zorion_20261124_115626.dump` (924 KB, checksum OK).
+**Decisão do responsável:** banco de dados **congelado**. Nenhuma alteração de schema ou de dados será feita — nem aqui, nem no servidor. Somente código e segurança.
 
-Aplicado primeiro em `Zorion_test`, depois em produção com `--force-prod`:
+O que aconteceu:
+1. Backup antes: `backups/Zorion_20261124_115626.dump`.
+2. Migrations aplicadas **apenas no banco local** `Zorion` (ensaio).
+3. Ordem recebida: reverter tudo.
+4. Backup de segurança do estado alterado: `Zorion_20261124_124832.dump`.
+5. `Zorion` restaurado do dump de 11:56 e conferido.
 
-| Migration | Efeito em produção |
-|---|---|
-| `0001_dedupe_legado.sql` | removeu **61** linhas idênticas de `Usuario` e **6** linhas excluídas duplicadas de `Ala` |
-| `0002_primary_keys.sql` | criou PK em **36** tabelas (total agora: **37**, antes: 1) |
-| `0003_unique_login.sql` | índice único em `lower(login)` (bloqueia login duplicado) |
+**Estado final do banco local (igual ao original):**
 
-**Antes → depois**
+| Item | Valor |
+|---|---:|
+| Linhas em `Usuario` | **62** |
+| Linhas em `Ala` | **25** |
+| Chaves primárias | **1** |
+| Índice único de login | **0** |
 
-| Item | Antes | Depois |
-|---|---:|---:|
-| Linhas em `Usuario` | 62 | **1** |
-| IDs distintos em `Usuario` | 1 | 1 |
-| Linhas em `Ala` | 25 | **19** |
-| Chaves primárias | 1 | **37** |
-| Logins duplicados | 1 grupo (62) | **0** |
+O clone `Zorion_test` foi removido. Os arquivos de migration foram retirados do repositório (`database/migrations/`), mas continuam no histórico git (commit `39938d5`) caso um dia sejam reavaliados — **não devem ser aplicados**.
 
-**Código ajustado (build OK):**
-- `db.js`: seed do admin agora usa `WHERE NOT EXISTS` — não cria mais uma linha por inicialização.
-- `AuthDialog.jsx`: removido o fallback fixo `admin/admin123` para tabela vazia.
+**Código mantido (não toca no banco):**
+- `db.js`: seed do admin com `WHERE NOT EXISTS` — evita criar linha nova a cada inicialização.
+- `AuthDialog.jsx`: removido o fallback fixo `admin/admin123`.
+- `db.js`: `logAuditoria` agora escapa todos os campos (fim da injeção por nome/entidade).
 
-**Não aplicado ainda:**
-- FKs (`NOT VALID`) — próximo bloco, pois exigem observar o app em uso.
-- Dedupe de `Medicamento` (3 grupos) e tratamento das 41 prescrições órfãs.
-
-**Rollback:** restaurar o dump de 11:56 no banco de produção:
-
-```bash
-./scripts/f0/restore.sh backups/Zorion_20261124_115626.dump Zorion --recreate --force-prod
-```
 

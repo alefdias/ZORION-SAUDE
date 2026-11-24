@@ -4,6 +4,8 @@
 > Nenhuma fase apaga, renomeia ou altera tipo de nada existente. Só adiciona.
 > Toda mudança roda antes em um clone do banco real (`pg_dump` → `zorion_test`).
 
+> **DECISÃO DE 24/11/2026 — BANCO CONGELADO:** nenhuma alteração de schema ou de dados será feita, nem no banco local nem no servidor. O escopo passa a ser **somente código e segurança**. A fase F3 está suspensa.
+
 Diagrama visual: [`DIAGRAMA_PLANO.html`](./DIAGRAMA_PLANO.html)
 
 ---
@@ -129,7 +131,6 @@ flowchart LR
 - [ ] Credenciais fora do `localStorage` (keyring do SO / arquivo protegido)
 - [ ] TLS na conexão Postgres (`NoTls` → `Tls`)
 - [ ] Usuário PG dedicado `zorion_app`, sem superuser, grants mínimos
-- [ ] Dedupe revisado de `Usuario` + PK/unique em `id` e `login` (com backup)
 - [ ] Remover `admin/admin123`, forçar troca no primeiro acesso
 - [ ] Queries parametrizadas (eliminar interpolação em `db.js`)
 - [ ] CSP no `tauri.conf.json` (hoje `null`)
@@ -148,21 +149,12 @@ flowchart LR
 - **Muda no banco:** nada
 - **Rollback:** telas continuam no caminho antigo até a paridade fechar
 
-### F3 — Integridade aditiva (1-2 semanas)
-**Objetivo:** blindar o banco sem quebrar dado legado.
+### F3 — Integridade aditiva — **SUSPENSA (banco congelado)**
+**Decisão de 24/11:** o banco não será alterado. Nenhuma migration, PK, FK, índice ou dedupe será executado — nem no local, nem no servidor.
 
-> **Achado real (24/11):** o banco tem 39 tabelas, **1 PK** e **0 FK**. Não dá para criar FK sem unique index na coluna referenciada. A ordem passa a ser: dedupe aprovado → unique indexes → FKs `NOT VALID`. Duplicidades conhecidas: `Usuario` (62→1 id) e `Ala` (6 ids duplicados).
+Os scripts de migration existem apenas no histórico git (commit `39938d5`) como referência futura. **Não aplicar.**
 
-- [ ] `database/migrations/0001_*.sql` numeradas e idempotentes
-- [ ] Dedupe aprovado de `Usuario` e `Ala` (com backup e relatório antes/depois)
-- [ ] Unique indexes nas colunas que serão referenciadas
-- [ ] FKs como `NOT VALID` (novos registros validados, legado ignorado)
-- [ ] Índices: lote, medicamento, paciente, data de movimentação
-- [ ] Colunas tipadas em paralelo (`TIMESTAMPTZ`, `NUMERIC`) + trigger de preenchimento
-- [ ] Relatório de órfãos (somente leitura) — já disponível em `scripts/f0/integridade.sh`
-- [ ] **Gate:** migration 2× sem erro, contagem antes = depois, app antigo lendo tudo
-- **Muda no banco:** só adições
-- **Rollback:** script de down removendo apenas o criado na fase
+O diagnóstico (duplicidades, órfãos, ausência de PK/FK) fica registrado em `F0_EVIDENCIAS.md` para o dia em que houver autorização formal e janela planejada.
 
 ### F4 — Quebra de monólitos + CI (3-5 semanas)
 **Objetivo:** parar de ter medo de mexer.
