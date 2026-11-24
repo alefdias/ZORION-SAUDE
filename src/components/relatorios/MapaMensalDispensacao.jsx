@@ -5,10 +5,7 @@ import {
   format,
   parseISO,
   isValid,
-  startOfMonth,
-  endOfMonth,
   getDaysInMonth,
-  getDay,
   isWeekend,
   addDays,
 } from "date-fns";
@@ -28,11 +25,6 @@ import {
   FileSpreadsheet,
   Calendar,
   Filter,
-  Package,
-  Layers,
-  Sparkles,
-  Info,
-  TrendingUp,
   Search,
   X,
   Hospital,
@@ -1172,10 +1164,10 @@ export function MapaMensalDispensacao() {
               <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
                 <thead className="sticky top-0 z-20 shadow-xs print:static print:shadow-none">
                   <tr className="border-b-2 border-slate-300 dark:border-slate-700 print:border-slate-800">
-                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[27%]">
+                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[25%]">
                       Medicamento / Apresentação
                     </th>
-                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-12 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[4%]">
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-14 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[6%]">
                       Cat.
                     </th>
                     {diasQ1.map((d) => {
@@ -1187,7 +1179,7 @@ export function MapaMensalDispensacao() {
                         <th
                           key={d}
                           className={cn(
-                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[4.2%]",
+                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[4%]",
                             fds
                               ? "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 print:bg-slate-300 print:text-black"
                               : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 print:bg-transparent print:text-black"
@@ -1203,7 +1195,7 @@ export function MapaMensalDispensacao() {
                         </th>
                       );
                     })}
-                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[70px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 border-l-2 border-blue-300 dark:border-blue-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[7%]">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[70px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 border-l-2 border-blue-300 dark:border-blue-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[9%]">
                       TOTAL 1ª Q.
                     </th>
                   </tr>
@@ -1252,7 +1244,7 @@ export function MapaMensalDispensacao() {
                             </div>
                           </td>
 
-                          <td className="text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
+                          <td className="cat-cell text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
                               <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
                                 {item.listaP344 || "P344"}
@@ -1399,10 +1391,10 @@ export function MapaMensalDispensacao() {
               <table className="w-full border-collapse text-[11px] print:text-[8.5px] print:border-collapse">
                 <thead className="sticky top-0 z-20 shadow-xs print:static print:shadow-none">
                   <tr className="border-b-2 border-slate-300 dark:border-slate-700 print:border-slate-800">
-                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[26%]">
+                    <th className="sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-800 text-left py-2 px-3 min-w-[220px] max-w-[260px] font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 shadow-[1px_0_0_0_#cbd5e1] dark:shadow-[1px_0_0_0_#334155] print:static print:bg-transparent print:border print:border-slate-600 print:shadow-none print:min-w-0 print:max-w-none print:w-[23%]">
                       Medicamento / Apresentação
                     </th>
-                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-12 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[4%]">
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-center py-2 px-1 w-14 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 print:static print:bg-transparent print:border print:border-slate-600 print:w-[6%]">
                       Cat.
                     </th>
                     {diasQ2.map((d) => {
@@ -1414,7 +1406,7 @@ export function MapaMensalDispensacao() {
                         <th
                           key={d}
                           className={cn(
-                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[3.9%]",
+                            "sticky top-0 z-20 text-center py-1.5 px-0.5 w-8 font-mono font-bold border-r border-slate-200 dark:border-slate-700 print:static print:border print:border-slate-600 print:w-[3.5%]",
                             fds
                               ? "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 print:bg-slate-300 print:text-black"
                               : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 print:bg-transparent print:text-black"
@@ -1430,10 +1422,10 @@ export function MapaMensalDispensacao() {
                         </th>
                       );
                     })}
-                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[65px] font-bold bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 border-l-2 border-emerald-300 dark:border-emerald-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[6.5%]">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[65px] font-bold bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 border-l-2 border-emerald-300 dark:border-emerald-700 print:static print:bg-slate-300 print:text-black print:border print:border-slate-800 print:w-[7%]">
                       TOTAL 2ª Q.
                     </th>
-                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[75px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400 dark:border-blue-600 print:static print:bg-slate-400 print:text-black print:border print:border-slate-800 print:w-[7.5%]">
+                    <th className="sticky top-0 z-20 text-center py-2 px-2 min-w-[75px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-950 dark:text-blue-100 border-l-2 border-blue-400 dark:border-blue-600 print:static print:bg-slate-400 print:text-black print:border print:border-slate-800 print:w-[8%]">
                       TOTAL MÊS
                     </th>
                   </tr>
@@ -1482,7 +1474,7 @@ export function MapaMensalDispensacao() {
                             </div>
                           </td>
 
-                          <td className="text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
+                          <td className="cat-cell text-center py-1.5 px-1 font-mono text-[10px] print:text-[8px] print:border print:border-slate-400">
                             {item.isPsicotropico ? (
                               <Badge variant="outline" className="text-[9px] print:text-[7px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 print:bg-transparent print:text-black print:border-slate-600">
                                 {item.listaP344 || "P344"}
@@ -1635,6 +1627,19 @@ export function MapaMensalDispensacao() {
             padding: 3px 2px !important;
             border: 1px solid #475569 !important;
             color: #000000 !important;
+          }
+          .cat-cell {
+            padding-left: 1px !important;
+            padding-right: 1px !important;
+            overflow: visible !important;
+          }
+          .cat-cell > * {
+            white-space: nowrap !important;
+            max-width: none !important;
+            padding-left: 2px !important;
+            padding-right: 2px !important;
+            font-size: 6.5px !important;
+            line-height: 1.1 !important;
           }
         }
       `}</style>
