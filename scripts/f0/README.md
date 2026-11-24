@@ -16,10 +16,22 @@ PGPASSWORD='***' DBNAME=zorion ./scripts/f0/backup.sh
 PGPASSWORD='***' ./scripts/f0/clone_prod_para_test.sh zorion zorion_test
 
 # 3) Conferência avulsa entre dois bancos
-PGPASSWORD='***' ./scripts/f0/conferir_clone.sh zorion zorion_test
+PGPASSWORD='***' ./scripts/f0/conferir_clone.sh Zorion Zorion_test
 
-# 4) Restore manual de um dump específico
+# 4) Diagnóstico de integridade (somente leitura) no clone
+PGPASSWORD='***' ./scripts/f0/integridade.sh Zorion_test
+
+# 5) Restore manual de um dump específico
 PGPASSWORD='***' ./scripts/f0/restore.sh backups/zorion_20261124_120000.dump zorion_test --recreate
+```
+
+Atalhos via npm:
+
+```bash
+npm run f0:check
+npm run f0:backup
+npm run f0:clone
+npm run f0:integridade
 ```
 
 ## Variáveis aceitas
@@ -33,6 +45,8 @@ PGPASSWORD='***' ./scripts/f0/restore.sh backups/zorion_20261124_120000.dump zor
 | `DBNAME` | `zorion` | banco do backup |
 | `PROD_DB` | `zorion` | banco protegido contra restore |
 | `RETENTION_DAYS` | `30` | retenção dos backups |
+
+> **Atenção ao nome:** no ambiente atual o banco se chama `Zorion` (Z maiúsculo, case-sensitive). Use `PROD_DB=Zorion` ou passe o nome nos comandos.
 
 As variáveis também podem vir do `.env` na raiz do projeto.
 

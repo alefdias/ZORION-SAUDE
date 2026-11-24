@@ -124,9 +124,12 @@ flowchart LR
 ### F1 — Segurança P0 (1-2 semanas)
 **Objetivo:** fechar o que um auditor vê primeiro.
 
+> **Achado real (24/11):** `Usuario` tem 62 linhas, 1 único id, login `admin` e senha `admin123` em todas, sem PK. O `ON CONFLICT DO NOTHING` insere uma linha nova a cada inicialização. Isso entra na F1.
+
 - [ ] Credenciais fora do `localStorage` (keyring do SO / arquivo protegido)
 - [ ] TLS na conexão Postgres (`NoTls` → `Tls`)
 - [ ] Usuário PG dedicado `zorion_app`, sem superuser, grants mínimos
+- [ ] Dedupe revisado de `Usuario` + PK/unique em `id` e `login` (com backup)
 - [ ] Remover `admin/admin123`, forçar troca no primeiro acesso
 - [ ] Queries parametrizadas (eliminar interpolação em `db.js`)
 - [ ] CSP no `tauri.conf.json` (hoje `null`)
@@ -148,11 +151,15 @@ flowchart LR
 ### F3 — Integridade aditiva (1-2 semanas)
 **Objetivo:** blindar o banco sem quebrar dado legado.
 
+> **Achado real (24/11):** o banco tem 39 tabelas, **1 PK** e **0 FK**. Não dá para criar FK sem unique index na coluna referenciada. A ordem passa a ser: dedupe aprovado → unique indexes → FKs `NOT VALID`. Duplicidades conhecidas: `Usuario` (62→1 id) e `Ala` (6 ids duplicados).
+
 - [ ] `database/migrations/0001_*.sql` numeradas e idempotentes
+- [ ] Dedupe aprovado de `Usuario` e `Ala` (com backup e relatório antes/depois)
+- [ ] Unique indexes nas colunas que serão referenciadas
 - [ ] FKs como `NOT VALID` (novos registros validados, legado ignorado)
 - [ ] Índices: lote, medicamento, paciente, data de movimentação
 - [ ] Colunas tipadas em paralelo (`TIMESTAMPTZ`, `NUMERIC`) + trigger de preenchimento
-- [ ] Relatório de órfãos (somente leitura)
+- [ ] Relatório de órfãos (somente leitura) — já disponível em `scripts/f0/integridade.sh`
 - [ ] **Gate:** migration 2× sem erro, contagem antes = depois, app antigo lendo tudo
 - **Muda no banco:** só adições
 - **Rollback:** script de down removendo apenas o criado na fase
