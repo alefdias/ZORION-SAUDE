@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZORION SAÚDE — Diagrama do Plano de Profissionalização</title>
+<style>
+  :root{
+    --bg:#070d18; --panel:#0f1a2b; --panel2:#0b1422; --line:#1e3550;
+    --txt:#e6eefb; --muted:#8aa3c2;
+    --cyan:#22d3ee; --emerald:#34d399; --amber:#fbbf24; --rose:#fb7185; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 15% -10%, #10263f 0%, transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, #0d2b2b 0%, transparent 55%),
+      var(--bg);
+    color:var(--txt);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:1320px;margin:0 auto;padding:38px 26px 70px}
+  header.top{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+  .brand{display:flex;gap:16px;align-items:center}
+  .logo{width:58px;height:58px;border-radius:16px;background:linear-gradient(140deg,#0e7490,#059669);display:grid;place-items:center;font-size:28px;box-shadow:0 10px 30px rgba(34,211,238,.18)}
+  h1{font-size:25px;margin:0;letter-spacing:.2px}
+  h1 span{color:var(--cyan)}
+  .sub{color:var(--muted);font-size:13.5px;margin-top:4px}
+  .pill{font-size:11.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:7px 12px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--panel2)}
+  .rule{
+    display:flex;gap:16px;align-items:flex-start;
+    background:linear-gradient(90deg,rgba(251,191,36,.10),rgba(251,191,36,.02));
+    border:1px solid rgba(251,191,36,.35);border-left:5px solid var(--amber);
+    border-radius:14px;padding:18px 20px;margin:0 0 34px;
+  }
+  .rule .ico{font-size:24px;line-height:1}
+  .rule b{color:var(--amber)}
+  .rule p{margin:4px 0 0;color:#d8e3f3;font-size:14.5px}
+  h2{font-size:17px;letter-spacing:.4px;text-transform:uppercase;color:var(--cyan);margin:44px 0 16px;display:flex;align-items:center;gap:10px}
+  h2:before{content:"";width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+  .arch{display:grid;grid-template-columns:1fr 70px 1fr;gap:0;align-items:stretch}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;position:relative}
+  .box h3{margin:0 0 12px;font-size:14.5px;letter-spacing:.5px;text-transform:uppercase}
+  .box.now h3{color:var(--rose)} .box.next h3{color:var(--emerald)}
+  .stack{display:flex;flex-direction:column;gap:8px}
+  .layer{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13px;display:flex;justify-content:space-between;gap:10px}
+  .layer small{color:var(--muted);font-size:11.5px;text-align:right}
+  .arrowmid{display:grid;place-items:center;color:var(--muted);font-size:26px}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;background:#16263d;border:1px solid var(--line);color:var(--muted);margin:0 4px 4px 0}
+
+  /* Timeline */
+  .timeline{position:relative;margin-top:8px}
+  .timeline:before{content:"";position:absolute;left:27px;top:8px;bottom:8px;width:2px;background:linear-gradient(180deg,var(--cyan),var(--violet),var(--emerald));opacity:.55}
+  .phase{position:relative;padding:0 0 22px 76px}
+  .dot{position:absolute;left:11px;top:2px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--panel);border:2px solid var(--cyan);color:var(--cyan);box-shadow:0 0 0 6px rgba(34,211,238,.06)}
+  .phase.done .dot{border-color:var(--rose);color:var(--rose);box-shadow:0 0 0 6px rgba(251,113,133,.07)}
+  .phase.sec .dot{border-color:var(--amber);color:var(--amber);box-shadow:0 0 0 6px rgba(251,191,36,.07)}
+  .phase.mid .dot{border-color:var(--violet);color:var(--violet);box-shadow:0 0 0 6px rgba(167,139,250,.07)}
+  .phase.end .dot{border-color:var(--emerald);color:var(--emerald);box-shadow:0 0 0 6px rgba(52,211,153,.07)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:16px 18px}
+  .card .head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  .card h3{margin:0;font-size:16px}
+  .card .when{font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap}
+  .card .goal{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .grid3{display:grid;grid-template-columns:1.25fr 1fr 1.15fr;gap:12px}
+  .cell{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .cell h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+  .cell ul{margin:0;padding-left:16px;font-size:12.7px}
+  .cell li{margin:2px 0}
+  .cell.test{border-color:rgba(52,211,153,.35)}
+  .cell.test h4{color:var(--emerald)}
+  .cell.keep h4{color:var(--cyan)}
+  .rollback{margin-top:10px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:flex-start}
+  .rollback b{color:var(--amber);font-weight:700;white-space:nowrap}
+
+  /* Loop */
+  .loop{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-top:6px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center;position:relative}
+  .step .n{font-size:11px;color:var(--cyan);font-weight:800;letter-spacing:.5px}
+  .step .t{font-size:12.5px;font-weight:650;margin:3px 0 3px}
+  .step .d{font-size:11px;color:var(--muted);line-height:1.35}
+  .step:not(:last-child):after{content:"›";position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--line);font-size:20px;font-weight:800}
+
+  table{width:100%;border-collapse:collapse;font-size:12.8px;background:var(--panel);border-radius:12px;overflow:hidden}
+  th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left}
+  th{background:#12233a;font-size:10.8px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.c{text-align:center}
+  .ok{color:var(--emerald);font-weight:800}
+  .pt{color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+
+  .guards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .gbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .gbox h3{margin:0 0 10px;font-size:13px;letter-spacing:.6px;text-transform:uppercase}
+  .gbox.no{border-color:rgba(251,113,133,.4)} .gbox.no h3{color:var(--rose)}
+  .gbox.yes{border-color:rgba(52,211,153,.4)} .gbox.yes h3{color:var(--emerald)}
+  .gbox ul{margin:0;padding-left:18px;font-size:13px}
+  .gbox li{margin:5px 0}
+  code{background:#0a1626;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11.5px;color:#bcd3ee}
+
+  footer{margin-top:46px;border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--muted);margin:10px 0 0}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+
+  @media (max-width:980px){
+    .arch{grid-template-columns:1fr}
+    .arrowmid{transform:rotate(90deg);padding:6px 0}
+    .grid3{grid-template-columns:1fr}
+    .loop{grid-template-columns:1fr 1fr}
+    .step:not(:last-child):after{display:none}
+    .guards{grid-template-columns:1fr}
+  }
+  @media print{
+    body{background:#fff;color:#111}
+    .wrap{max-width:none;padding:10mm}
+    .card,.box,.cell,.step,.gbox,table{background:#fff;border-color:#bbb}
+    .rule{background:#fff8e6}
+    .timeline:before{background:#999}
+    .dot{background:#fff}
+    h2{color:#0e7490}
+    .sub,.goal,.d,.when,footer,.legend,.rollback{color:#444}
+    .cell h4{color:#555}
+    .txt,.layer{color:#111}
+    .layer,td,th{background:#fff}
+    .step:not(:last-child):after{color:#bbb}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="logo">🏥</div>
+      <div>
+        <h1>ZORION SAÚDE <span>· Plano de Profissionalização</span></h1>
+        <div class="sub">Diagrama de execução por fases · v3.2.80 · banco de produção preservado · teste em clone antes de cada entrega</div>
+      </div>
+    </div>
+    <div class="pill">Documento vivo · Gate obrigatório por fase</div>
+  </header>
+
+  <div class="rule">
+    <div class="ico">🔒</div>
+    <div>
+      <b>REGRA Nº 1 — O banco de hoje nunca deixa de funcionar.</b>
+      <p>Nenhuma fase pode <b>apagar, renomear ou alterar tipo</b> de nada existente. Só é permitido <b>adicionar</b> (tabela, coluna, índice, constraint). Toda mudança roda primeiro em um <b>clone do banco real</b> (<code>pg_dump</code> → <code>zorion_test</code>). Se o teste falhar, a chave é desligada e o banco continua exatamente como estava.</p>
+    </div>
+  </div>
+
+  <h2>Arquitetura: de onde estamos para onde vamos</h2>
+  <div class="arch">
+    <div class="box now">
+      <h3>⛔ Hoje (frágil)</h3>
+      <div class="stack">
+        <div class="layer"><span>React 18 + Tauri (desktop)</span><small>telas de até 5.611 linhas</small></div>
+        <div class="layer"><span>SQL montado por string no cliente</span><small>risco de injeção / erro silencioso</small></div>
+        <div class="layer"><span>invoke("query_postgres") direto</span><small>regra de negócio na tela</small></div>
+        <div class="layer"><span>Postgres · usuário <b>postgres</b> · <b>NoTls</b></span><small>senha em <code>localStorage</code></small></div>
+        <div class="layer"><span>Schema criado em runtime</span><small>0 FK · 526 colunas TEXT</small></div>
+        <div class="layer"><span>Sem testes · sync é stub</span><small>migrações manuais</small></div>
+      </div>
+    </div>
+    <div class="arrowmid">➜</div>
+    <div class="box next">
+      <h3>✅ Meta (profissional)</h3>
+      <div class="stack">
+        <div class="layer"><span>React + Tauri · módulos pequenos</span><small>páginas &lt; 300 linhas</small></div>
+        <div class="layer"><span>Repositórios + API local</span><small>queries parametrizadas</small></div>
+        <div class="layer"><span>Regra de negócio no servidor</span><small>perfis e permissões reais</small></div>
+        <div class="layer"><span>Postgres · usuário dedicado · TLS</span><small>segredo no cofre do SO</small></div>
+        <div class="layer"><span>Migrations versionadas e aditivas</span><small>FKs NOT VALID · índices · checks</small></div>
+        <div class="layer"><span>Testes + CI + auditoria imutável</span><small>gate verde para publicar</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--cyan)"></i>Mesmo banco, mesmas tabelas</span>
+    <span><i style="background:var(--emerald)"></i>Só adições — nada destrutivo</span>
+    <span><i style="background:var(--amber)"></i>Rollback por feature flag</span>
+  </div>
+
+  <h2>Pipeline de fases (cada uma termina em um portão de teste)</h2>
+  <div class="timeline">
+
+    <div class="phase done">
+      <div class="dot">F0</div>
+      <div class="card">
+        <div class="head"><h3>Rede de segurança</h3><span class="when">2–3 dias · antes de qualquer código</span></div>
+        <p class="goal">Garantir que existe volta. Sem isso, não começamos.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Backup automático diário + teste de restore</li>
+            <li>Tag git <code>baseline-v3.2.80</code></li>
+            <li>Script de clone: produção → <code>zorion_test</code></li>
+            <li>Roteiro de fumaça dos 9 fluxos críticos</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Zero alteração de schema</li>
+            <li>Zero alteração de tela</li>
+            <li>Zero alteração de dados</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Restaurar um dump real e abrir o app</li>
+            <li>9/9 fluxos críticos passam no clone</li>
+            <li>Backup e restore cronometrados</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> nada a reverter — não há mudança.</div>
+      </div>
+    </div>
+
+    <div class="phase sec">
+      <div class="dot">F1</div>
+      <div class="card">
+        <div class="head"><h3>Segurança P0 (sem tocar no schema)</h3><span class="when">1–2 semanas · risco alto, mudança pequena</span></div>
+        <p class="goal">Fechar as portas abertas que um auditor vê primeiro.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Senha do Postgres sai do <code>localStorage</code> → cofre do SO (keyring) / config protegida</li>
+            <li>TLS na conexão (hoje <code>NoTls</code>)</li>
+            <li>Usuário PG dedicado, sem superuser</li>
+            <li>Fim do <code>admin/admin123</code> + troca forçada</li>
+            <li>Queries parametrizadas (fim da concatenação)</li>
+            <li>CSP no Tauri (hoje <code>null</code>)</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Schema e dados intactos</li>
+            <li>Telas e fluxos idênticos</li>
+            <li>Modo conexão legada como fallback</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>9/9 fluxos com banco original</li>
+            <li>Teste de injeção (payload em busca/cadastro)</li>
+            <li>Conexão sem TLS é recusada</li>
+            <li>Login antigo expira corretamente</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> flag <code>useLegacyConnection</code> → volta ao comportamento atual em 1 clique.</div>
+      </div>
+    </div>
+
+    <div class="phase sec">
+      <div class="dot">F2</div>
+      <div class="card">
+        <div class="head"><h3>Camada de dados (repositórios)</h3><span class="when">2–4 semanas · comportamento idêntico</span></div>
+        <p class="goal">Tirar o SQL de dentro das telas sem mudar um único resultado.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li><code>src/data/repositories/*</code> por domínio (estoque, saída, satélite, paciente)</li>
+            <li>Validação com <code>zod</code> (já é dependência)</li>
+            <li>Testes de contrato: query nova = query antiga</li>
+            <li>Log de erro estruturado no lugar de <code>catch {}</code></li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Mesmas queries, mesmo resultado</li>
+            <li>Schema intocado</li>
+            <li>UX intocada</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Paridade 100% em clone (mesma consulta, mesmo número)</li>
+            <li>Comparação antes/depois em 30 registros por fluxo</li>
+            <li>Nenhum erro novo no console</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> páginas continuam chamando o caminho antigo até a paridade fechar.</div>
+      </div>
+    </div>
+
+    <div class="phase mid">
+      <div class="dot">F3</div>
+      <div class="card">
+        <div class="head"><h3>Integridade aditiva do banco</h3><span class="when">1–2 semanas · só ADICIONA</span></div>
+        <p class="goal">Começar a blindar o banco sem quebrar dado legado.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Migrations numeradas e idempotentes (<code>IF NOT EXISTS</code>)</li>
+            <li>FKs como <code>NOT VALID</code> (valem para novos registros)</li>
+            <li>Índices em lote/medicamento/paciente</li>
+            <li>Colunas novas tipadas em paralelo (ex.: <code>data_entrada_ts TIMESTAMPTZ</code>) preenchidas por trigger</li>
+            <li>Relatório de órfãos — apenas leitura</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Colunas TEXT antigas continuam</li>
+            <li>Nenhum DROP / RENAME / ALTER TYPE</li>
+            <li>App antigo continua lendo tudo</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Suíte completa no clone</li>
+            <li>Migration roda 2x sem erro (idempotência)</li>
+            <li>Contagem de linhas antes = depois</li>
+            <li>Relatório de órfãos sem bloqueio</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> remover apenas objetos criados na fase (script de down versionado).</div>
+      </div>
+    </div>
+
+    <div class="phase mid">
+      <div class="dot">F4</div>
+      <div class="card">
+        <div class="head"><h3>Quebra de monólitos + CI</h3><span class="when">3–5 semanas · dívida técnica</span></div>
+        <p class="goal">Parar de ter medo de mexer no sistema.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Dividir <code>PacientesMedicao</code> (5.611 linhas), <code>CarrinhoParada</code>, <code>ResponsavelTecnico</code></li>
+            <li>Vitest para regras (dose, cobertura, lote, validade)</li>
+            <li>Playwright/Puppeteer para E2E (Puppeteer já instalado)</li>
+            <li>CI: lint + typecheck + unit + e2e contra banco clonado</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Comportamento visual</li>
+            <li>Schema e dados</li>
+            <li>Fluxo do usuário</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Cobertura dos 9 fluxos críticos</li>
+            <li>Build Windows (.exe) verde no Actions</li>
+            <li>Nenhuma regressão nos relatórios/impressão</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> merge por PR pequeno; cada tela migrada é reversível isoladamente.</div>
+      </div>
+    </div>
+
+    <div class="phase mid">
+      <div class="dot">F5</div>
+      <div class="card">
+        <div class="head"><h3>Permissões no servidor + auditoria imutável</h3><span class="when">2–3 semanas · compliance</span></div>
+        <p class="goal">Perfil de usuário deixa de ser um detalhe de tela.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Perfis aplicados no banco/API (não no React)</li>
+            <li>Auditoria append-only (sem UPDATE/DELETE)</li>
+            <li>Segregação de funções: solicita ≠ aprova ≠ separa ≠ confere</li>
+            <li>Exportação da trilha para auditoria</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Usuários e senhas atuais migram</li>
+            <li>Dados históricos preservados</li>
+            <li>Fluxo de trabalho atual mantido</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Matriz de permissões testada por perfil</li>
+            <li>Tentativa de bypass falha</li>
+            <li>Trilha registra quem/o quê/quando/onde</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> permissões em modo <i>observação</i> antes de bloquear de fato.</div>
+      </div>
+    </div>
+
+    <div class="phase end">
+      <div class="dot">F6</div>
+      <div class="card">
+        <div class="head"><h3>Nível ERP (o “padrão SAP”)</h3><span class="when">contínuo · diferencial competitivo</span></div>
+        <p class="goal">Aqui sim entram os conceitos de ERP — sem trocar de produto.</p>
+        <div class="grid3">
+          <div class="cell"><h4>O que entra</h4><ul>
+            <li>Numeração de documentos (pedido, entrada, saída, lote)</li>
+            <li>Fechamento de período de estoque + estorno com motivo</li>
+            <li>Compras: curva ABC, ponto de pedido, alçada de aprovação, NF-e</li>
+            <li>Observabilidade: logs, healthcheck, updater assinado</li>
+            <li>LGPD: retenção, anonimização, backup offsite</li>
+          </ul></div>
+          <div class="cell keep"><h4>O que NÃO muda</h4><ul>
+            <li>Núcleo clínico/farmacêutico próprio</li>
+            <li>Portaria 344 / RDC 430 já implementadas</li>
+            <li>Operação do dia a dia</li>
+          </ul></div>
+          <div class="cell test"><h4>Portão de teste</h4><ul>
+            <li>Simulação de auditoria ANVISA/CFM</li>
+            <li>Fechamento + reabertura com estorno</li>
+            <li>Restore completo em ambiente limpo</li>
+          </ul></div>
+        </div>
+        <div class="rollback"><b>Rollback:</b> cada recurso é opcional e desligável por configuração.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <h2>O ciclo de teste de cada fase (sempre o mesmo)</h2>
+  <div class="loop">
+    <div class="step"><div class="n">01</div><div class="t">Clonar</div><div class="d">Dump da produção → banco de teste</div></div>
+    <div class="step"><div class="n">02</div><div class="t">Implementar</div><div class="d">Atrás de feature flag</div></div>
+    <div class="step"><div class="n">03</div><div class="t">Automatizar</div><div class="d">Unit + E2E nos 9 fluxos</div></div>
+    <div class="step"><div class="n">04</div><div class="t">Comparar</div><div class="d">Antes × depois, mesmo resultado</div></div>
+    <div class="step"><div class="n">05</div><div class="t">Piloto</div><div class="d">1 usuário / 1 setor</div></div>
+    <div class="step"><div class="n">06</div><div class="t">Liberar</div><div class="d">Deploy gradual</div></div>
+    <div class="step"><div class="n">07</div><div class="t">Monitorar</div><div class="d">Erro? Flag OFF</div></div>
+  </div>
+
+  <h2>Matriz de testes — o que precisa passar em cada fase</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Fluxo crítico</th><th class="c">F0</th><th class="c">F1</th><th class="c">F2</th><th class="c">F3</th><th class="c">F4</th><th class="c">F5</th><th class="c">F6</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Login, perfis e primeiro acesso</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td><td class="c pt">–</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td></tr>
+      <tr><td>Entrada + nota fiscal + lote/validade</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td><td class="c ok">●</td></tr>
+      <tr><td>Saída / dispensação / baixa por paciente</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td></tr>
+      <tr><td>Satélite: pedido → separação → entrega → recebimento</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td></tr>
+      <tr><td>Inventário e divergências</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td></tr>
+      <tr><td>Livro de registro / Portaria 344</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td></tr>
+      <tr><td>Carrinho de parada</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td><td class="c ok">●</td><td class="c pt">–</td><td class="c pt">–</td></tr>
+      <tr><td>Relatórios, impressão A4 e PDF</td><td class="c ok">●</td><td class="c ok">●</td><td class="c ok">●</td><td class="c pt">–</td><td class="c ok">●</td><td class="c pt">–</td><td class="c ok">●</td></tr>
+      <tr><td>Backup e restore completo</td><td class="c ok">●</td><td class="c pt">–</td><td class="c pt">–</td><td class="c ok">●</td><td class="c pt">–</td><td class="c pt">–</td><td class="c ok">●</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Guardrails — o que pode e o que não pode</h2>
+  <div class="guards">
+    <div class="gbox yes">
+      <h3>✅ Permitido no banco</h3>
+      <ul>
+        <li><code>CREATE TABLE IF NOT EXISTS</code></li>
+        <li><code>ADD COLUMN IF NOT EXISTS</code> (sempre nullable ou com default)</li>
+        <li><code>CREATE INDEX IF NOT EXISTS</code></li>
+        <li><code>ADD CONSTRAINT ... NOT VALID</code></li>
+        <li>Migrations numeradas, idempotentes e com script de <i>down</i></li>
+        <li>Trigger de sincronização para colunas novas</li>
+      </ul>
+    </div>
+    <div class="gbox no">
+      <h3>⛔ Proibido</h3>
+      <ul>
+        <li><code>DROP TABLE</code> / <code>DROP COLUMN</code></li>
+        <li><code>RENAME</code> de tabela ou coluna</li>
+        <li><code>ALTER COLUMN ... TYPE</code> em coluna em uso</li>
+        <li><code>DELETE</code> ou <code>UPDATE</code> em massa sem backup</li>
+        <li>Rodar migration direto na produção sem clone</li>
+        <li>Publicar sem gate verde</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <span>ZORION SAÚDE · Plano de profissionalização incremental · banco de produção preservado</span>
+    <span>F0 → F6 · ~10 a 14 semanas · cada fase aprovada por você antes da próxima</span>
+  </footer>
+
+</div>
+</body>
+</html>

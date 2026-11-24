@@ -15,6 +15,12 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Backups do banco (dados de paciente — LGPD, NUNCA commitar)
+backups/
+*.dump
+*.dump.sha256
+*.backup
 src-tauri/target/
 src-tauri/gen/schemas/
 relatorio-axion/
