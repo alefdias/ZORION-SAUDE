@@ -26,6 +26,7 @@ src-tauri/gen/schemas/
 relatorio-axion/
 *.sql
 !database/*.sql
+!database/migrations/*.sql
 
 
 # Editor directories and files
