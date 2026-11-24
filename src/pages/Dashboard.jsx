@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
 import { Package, TrendingUp, TrendingDown, Boxes } from "lucide-react";

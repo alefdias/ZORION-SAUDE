@@ -20,7 +20,6 @@ import {
   SelectValue,
   SelectGroup,
   SelectLabel,
-  SelectSeparator,
 } from "@/components/ui/select";
 import {
   Table,
@@ -34,11 +33,9 @@ import { db } from "@/api/db";
 import { toast } from "sonner";
 import {
   CalendarDays,
-  Clock,
   PackageMinus,
   Sparkles,
   AlertTriangle,
-  CheckCircle2,
   HelpCircle,
   Pill,
   Filter,
@@ -877,7 +874,7 @@ export function AjusteDiasEntregaModal({
     setSelectedPrescIds(initialSelected);
     setCustomQtds(initialQtds);
     setCustomDias(initialDias);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, dataFiltroReceita, apenasDataReferencia]);
 
   // Toggle de seleção individual por medicamento

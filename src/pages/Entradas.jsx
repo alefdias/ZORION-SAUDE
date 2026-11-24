@@ -1,4 +1,3 @@
-import { normalizeSearch } from "@/utils/searchUtils";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { db } from "@/api/db";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";

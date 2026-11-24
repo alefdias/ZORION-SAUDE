@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/api/db";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, ShoppingCart, ArrowRight, PackageCheck, Ban, AlertTriangle, X, Check, Stethoscope } from "lucide-react";
+import { Bell, ShoppingCart, ArrowRight, PackageCheck, Ban, X, Check, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {

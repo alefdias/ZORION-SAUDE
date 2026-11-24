@@ -6,13 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { 
     RotateCcw, Search, Plus, Trash2, FileText, Printer, 
     AlertTriangle, Settings2,
     Calendar as CalendarIcon, User, Building2, X, Sparkles, 
-    CalendarCheck, Bed, ArrowUpRight, CheckCircle2, ShieldAlert,
-    Clock, HelpCircle
+    CalendarCheck, HelpCircle
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";

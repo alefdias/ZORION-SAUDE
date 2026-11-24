@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
-import { format, differenceInDays, parseISO, isValid } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { safeParseISO } from "@/utils/dateUtils";
 import { normalizeSearch } from "@/utils/searchUtils";
@@ -8,7 +8,6 @@ import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -22,14 +21,11 @@ import {
   Download,
   Building2,
   Boxes,
-  ShieldAlert,
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  Calendar,
   CheckCircle2,
   XCircle,
-  Filter,
   Layers,
   ArrowUpDown,
   FileText,

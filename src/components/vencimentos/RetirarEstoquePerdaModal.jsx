@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { db } from "@/api/db";
 import { validarSenhaUsuario } from "@/utils/authUtils";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -23,14 +21,9 @@ import {
 } from "@/components/ui/select";
 import {
   Trash2,
-  AlertTriangle,
   Building2,
   Lock,
   PackageMinus,
-  CheckCircle2,
-  Layers,
-  Calendar,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

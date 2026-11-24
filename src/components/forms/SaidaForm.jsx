@@ -19,8 +19,6 @@ const getLocalDateString = () => {
 
 import { isMav, isPsicotropico } from "@/utils/mavUtils";
 import { isMedicamentoAntibiotico } from "@/utils/prescricaoUtils";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { calcularLotesSatelite } from "@/utils/sateliteLoteUtils";
 
 const emptyForm = {

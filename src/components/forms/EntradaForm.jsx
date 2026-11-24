@@ -3,11 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { ComboboxFornecedor } from "@/components/ui/combobox-fornecedor";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { AlertTriangle, CreditCard, ArrowLeftRight, CheckCircle2, Droplet } from "lucide-react";
+import { AlertTriangle, CreditCard, ArrowLeftRight, Droplet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";

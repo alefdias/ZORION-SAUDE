@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { 
   ClipboardList, 
-  Sun, 
-  Moon, 
   Clock, 
   User, 
   Plus, 
@@ -19,25 +16,20 @@ import {
   FileText, 
   RotateCcw, 
   PackageMinus, 
-  AlertTriangle, 
-  CheckCircle2, 
   LogOut, 
   Calendar as CalendarIcon, 
   ChevronLeft, 
   ChevronRight, 
   Sparkles, 
-  ShieldAlert, 
   Building2, 
   Pill, 
-  Trash2, 
-  Edit3,
+  Trash2,
   BookmarkCheck,
   SendHorizontal
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { format, parseISO, isValid, addDays, subDays } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { format, parseISO, addDays, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

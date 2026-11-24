@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { format, differenceInDays, parseISO, isValid } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { db } from "@/api/db";
 import { invoke } from "@tauri-apps/api/core";
 import { validarSenhaUsuario, getActiveUser } from "@/utils/authUtils";
-import { isPsicotropico, isMav } from "@/utils/mavUtils";
+import { isPsicotropico } from "@/utils/mavUtils";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -27,20 +24,13 @@ import {
 } from "@/components/ui/select";
 import {
   RefreshCw,
-  AlertTriangle,
   CalendarX2,
   Package,
-  Layers,
   User,
   ShieldCheck,
-  Building2,
   Lock,
-  ArrowRight,
   CheckCircle2,
-  AlertCircle,
-  FileCheck2,
-  Clock,
-  Sparkles
+  FileCheck2
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

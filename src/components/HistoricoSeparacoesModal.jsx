@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { db } from "@/api/db";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,6 @@ import { cancelarEstornarBaixaGrupo } from "@/utils/baixaEstoqueService";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -23,14 +22,9 @@ import {
   RotateCcw,
   Search,
   Calendar,
-  User,
-  AlertTriangle,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
   Clock,
-  Layers,
-  Users,
   ShieldAlert,
   Lock,
 } from "lucide-react";

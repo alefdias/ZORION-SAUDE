@@ -20,10 +20,7 @@ import {
   MapPin,
   CheckCircle2,
   ChevronLeft,
-  ChevronRight,
-  Filter,
-  Layers,
-  FileSpreadsheet
+  ChevronRight
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";

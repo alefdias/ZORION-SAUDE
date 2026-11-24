@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
-import { CheckCheck, XCircle, CheckSquare, Square, Loader2, ArrowRight } from "lucide-react";
+import { CheckCheck, XCircle, CheckSquare, Square, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function TransferenciaAcceptModal({ activeSection }) {

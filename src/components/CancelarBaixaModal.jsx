@@ -8,13 +8,11 @@ import { validarSenhaUsuario } from "@/utils/authUtils";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -32,13 +30,9 @@ import {
   AlertTriangle,
   Calendar,
   User,
-  Package,
-  Layers,
   ChevronDown,
   ChevronUp,
   Lock,
-  Trash2,
-  CheckCircle2,
 } from "lucide-react";
 
 export default function CancelarBaixaModal({ open, onOpenChange, onSuccess }) {

@@ -20,7 +20,6 @@ import {
   Menu,
   X,
   LogOut,
-  User,
   Settings,
   CalendarX2,
   Book,
@@ -32,7 +31,6 @@ import {
   Clock,
   CreditCard,
   ShoppingCart,
-  ShieldCheck,
   ClipboardList,
   ClipboardCheck,
   Calendar,
@@ -42,9 +40,7 @@ import {
   UserPlus,
   Plus,
   Printer,
-  RefreshCw,
-  Search,
-  Sparkles
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

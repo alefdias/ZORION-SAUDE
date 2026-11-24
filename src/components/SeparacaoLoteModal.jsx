@@ -35,16 +35,11 @@ import {
   Printer,
   Plus,
   Trash2,
-  CheckCircle2,
   AlertTriangle,
   Search,
   CheckSquare,
   Square,
   Calendar,
-  Layers,
-  FileText,
-  User,
-  Pill,
   ChevronDown,
   ChevronRight,
   Boxes,
@@ -57,7 +52,6 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   isPrescricaoDoPaciente,
-  isPrescricaoAtiva,
   calculatePrescQtdParaDias,
   getDoseForHora,
 } from "@/utils/prescricaoUtils";

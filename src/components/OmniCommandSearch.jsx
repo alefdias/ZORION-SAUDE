@@ -13,21 +13,12 @@ import {
 import {
   LayoutDashboard,
   Package,
-  ArrowLeftRight,
   Boxes,
-  Building2,
-  FileText,
   CalendarX2,
   Book,
   Activity,
-  Users,
-  ShoppingCart,
-  ClipboardCheck,
   UserPlus,
   Plus,
-  RotateCcw,
-  Sparkles,
-  Search,
 } from "lucide-react";
 import { db } from "@/api/db";
 

@@ -20,9 +20,7 @@ import {
   User, 
   Pill, 
   Clock, 
-  Calendar, 
   FileText, 
-  Building2, 
   Bed, 
   Plus, 
   Printer, 
@@ -32,8 +30,7 @@ import {
   UserCheck, 
   X, 
   ArrowLeftRight,
-  Activity, 
-  Heart,
+  Activity,
   Stethoscope,
   ShieldAlert,
   AlertTriangle,
@@ -41,7 +38,6 @@ import {
   FlaskConical,
   CheckCircle2,
   FileCheck,
-  Thermometer,
   Eye,
   Sparkles
 } from "lucide-react";

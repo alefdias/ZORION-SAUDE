@@ -7,17 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ComboboxMedicamento } from "@/components/ui/combobox-medicamento";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { format, parseISO, differenceInCalendarDays, addDays } from "date-fns";
+import { format, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { 
@@ -45,20 +43,17 @@ import {
   Calendar,
   Clock,
   X, 
-  Bed, 
   RotateCcw,
   Sparkles, 
   History,
-  UserCheck,
   Droplet,
   Check,
   ChevronDown,
   Filter,
-  ShieldAlert,
   Lock
 } from "lucide-react";
 import { PhotoCaptureField } from "@/components/ui/PhotoCaptureField";
-import { isLiquido, extrairVolumeMl, converterGotasParaMl, converterMlParaGotas, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
+import { isLiquido, extrairVolumeMl, converterGotasParaMl, calcularDuracaoFrascoDias } from "@/utils/liquidUtils";
 import { ProntuarioPacienteModal } from "@/components/ProntuarioPacienteModal";
 import { AjusteDiasEntregaModal } from "@/components/AjusteDiasEntregaModal";
 import { SeparacaoLoteModal } from "@/components/SeparacaoLoteModal";

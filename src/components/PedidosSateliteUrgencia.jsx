@@ -32,8 +32,7 @@ import {
   Layers, 
   Truck, 
   CheckCircle2, 
-  Eye, 
-  Search,
+  Eye,
   RotateCcw,
   AlertTriangle
 } from "lucide-react";

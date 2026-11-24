@@ -1,4 +1,4 @@
-import { normalizeSearch, matchesSearchLoose } from "@/utils/searchUtils";
+import { matchesSearchLoose } from "@/utils/searchUtils";
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { db } from "@/api/db";
